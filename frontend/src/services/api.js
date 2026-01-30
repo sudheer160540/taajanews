@@ -1,7 +1,7 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL = 'https://taajanews.onrender.com/api';
+const API_BASE_URL = 'http://localhost:5001/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

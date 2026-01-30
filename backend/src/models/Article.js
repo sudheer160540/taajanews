@@ -189,13 +189,29 @@ articleSchema.index({ isBreaking: 1, status: 1 });
 articleSchema.index({ 'engagement.views': -1 });
 articleSchema.index({ location: '2dsphere' });
 
-// Generate slug before saving - always use English for URL-friendly slugs
+// Generate slug before saving - use English if available, otherwise generate from timestamp
 articleSchema.pre('save', async function(next) {
-  // Always use English for slug generation since URLs should be ASCII
-  const titleInEnglish = this.title?.get('en');
-  
-  if (titleInEnglish && this.isModified('title')) {
-    this.slug = slugify(titleInEnglish);
+  // Only generate slug if it's a new document or title is modified and slug is not set
+  if (this.isNew || (this.isModified('title') && !this.slug)) {
+    // Prefer English for slug generation since URLs should be ASCII
+    const titleInEnglish = this.title?.get('en');
+    
+    if (titleInEnglish) {
+      this.slug = slugify(titleInEnglish);
+    } else {
+      // Fallback: generate slug from default language title or use timestamp-based slug
+      const defaultLang = await languageCache.getDefaultLanguageCode();
+      const titleInDefault = this.title?.get(defaultLang) || this.title?.values().next().value;
+      
+      if (titleInDefault) {
+        // For non-ASCII titles, create a slug using transliteration or timestamp
+        // Use first few words + timestamp for uniqueness
+        const baseSlug = slugify(titleInDefault) || 'article';
+        this.slug = baseSlug !== '' ? `${baseSlug}-${Date.now()}` : `article-${Date.now()}`;
+      } else {
+        this.slug = `article-${Date.now()}`;
+      }
+    }
     
     // Ensure unique slug
     const existingArticle = await this.constructor.findOne({ 

@@ -42,8 +42,8 @@ const CategoriesManager = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [formData, setFormData] = useState({
-    name: { en: '', hi: '' },
-    description: { en: '', hi: '' },
+    name: { te: '', en: '', hi: '' },
+    description: { te: '', en: '', hi: '' },
     parent: '',
     color: '#1976d2',
     isActive: true,
@@ -70,9 +70,19 @@ const CategoriesManager = () => {
   const handleOpenDialog = (category = null) => {
     if (category) {
       setEditingCategory(category);
+      // Get multilingual data from _multilingual field
+      const multilingual = category._multilingual || {};
       setFormData({
-        name: category.name || { en: '', hi: '' },
-        description: category.description || { en: '', hi: '' },
+        name: {
+          te: multilingual.name?.te || '',
+          en: multilingual.name?.en || '',
+          hi: multilingual.name?.hi || ''
+        },
+        description: {
+          te: multilingual.description?.te || '',
+          en: multilingual.description?.en || '',
+          hi: multilingual.description?.hi || ''
+        },
         parent: category.parent?._id || category.parent || '',
         color: category.color || '#1976d2',
         isActive: category.isActive !== false,
@@ -81,8 +91,8 @@ const CategoriesManager = () => {
     } else {
       setEditingCategory(null);
       setFormData({
-        name: { en: '', hi: '' },
-        description: { en: '', hi: '' },
+        name: { te: '', en: '', hi: '' },
+        description: { te: '', en: '', hi: '' },
         parent: '',
         color: '#1976d2',
         isActive: true,
@@ -101,8 +111,8 @@ const CategoriesManager = () => {
   const handleSubmit = async () => {
     setError(null);
     
-    if (!formData.name.en || !formData.name.hi) {
-      setError('Name is required in both languages');
+    if (!formData.name.te) {
+      setError('Name is required in Telugu');
       return;
     }
 
@@ -166,58 +176,30 @@ const CategoriesManager = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Name (EN)</TableCell>
-                <TableCell>Name (HI)</TableCell>
-                <TableCell>Parent</TableCell>
-                <TableCell>Color</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Featured</TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Description</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">{t('loading')}</TableCell>
+                  <TableCell colSpan={3} align="center">{t('loading')}</TableCell>
                 </TableRow>
               ) : categories.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">{t('noResults')}</TableCell>
+                  <TableCell colSpan={3} align="center">{t('noResults')}</TableCell>
                 </TableRow>
               ) : (
                 categories.map((category) => (
                   <TableRow key={category._id}>
                     <TableCell>
                       <Box sx={{ pl: category.level * 2 }}>
-                        {category.name.en}
+                        {category._multilingual?.name?.te || category.name}
                       </Box>
                     </TableCell>
-                    <TableCell>{category.name.hi}</TableCell>
                     <TableCell>
-                      {category.parent ? 
-                        categories.find(c => c._id === (category.parent?._id || category.parent))?.name?.en || '-'
-                        : '-'
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <Box
-                        sx={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 1,
-                          bgcolor: category.color
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={category.isActive ? 'Active' : 'Inactive'}
-                        size="small"
-                        color={category.isActive ? 'success' : 'default'}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {category.isFeatured && <Chip label="Featured" size="small" color="primary" />}
+                      {category._multilingual?.description?.te || category.description || '-'}
                     </TableCell>
                     <TableCell align="right">
                       <IconButton size="small" onClick={() => handleOpenDialog(category)}>
@@ -245,6 +227,17 @@ const CategoriesManager = () => {
           
           <TextField
             fullWidth
+            label="Name (Telugu) *"
+            value={formData.name.te}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              name: { ...prev.name, te: e.target.value }
+            }))}
+            margin="normal"
+            required
+          />
+          <TextField
+            fullWidth
             label="Name (English)"
             value={formData.name.en}
             onChange={(e) => setFormData(prev => ({
@@ -252,7 +245,6 @@ const CategoriesManager = () => {
               name: { ...prev.name, en: e.target.value }
             }))}
             margin="normal"
-            required
           />
           <TextField
             fullWidth
@@ -263,7 +255,18 @@ const CategoriesManager = () => {
               name: { ...prev.name, hi: e.target.value }
             }))}
             margin="normal"
-            required
+          />
+          <TextField
+            fullWidth
+            label="Description (Telugu)"
+            value={formData.description.te}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              description: { ...prev.description, te: e.target.value }
+            }))}
+            margin="normal"
+            multiline
+            rows={2}
           />
           <TextField
             fullWidth
@@ -301,7 +304,7 @@ const CategoriesManager = () => {
                 .filter(c => c._id !== editingCategory?._id)
                 .map((cat) => (
                   <MenuItem key={cat._id} value={cat._id}>
-                    {cat.name.en}
+                    {cat._multilingual?.name?.te || cat.name}
                   </MenuItem>
                 ))
               }

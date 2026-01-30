@@ -84,29 +84,43 @@ const LocationsManager = () => {
     setEditingItem(item ? { ...item, type } : { type });
     
     if (type === 'city') {
+      const multilingual = item?._multilingual || {};
       setFormData(item ? {
-        name: item.name,
-        state: item.state,
+        name: {
+          te: multilingual.name?.te || '',
+          en: multilingual.name?.en || '',
+          hi: multilingual.name?.hi || ''
+        },
+        state: {
+          te: multilingual.state?.te || '',
+          en: multilingual.state?.en || '',
+          hi: multilingual.state?.hi || ''
+        },
         center: item.center?.coordinates || [0, 0],
         isActive: item.isActive,
         isFeatured: item.isFeatured
       } : {
-        name: { en: '', hi: '' },
-        state: { en: '', hi: '' },
+        name: { te: '', en: '', hi: '' },
+        state: { te: '', en: '', hi: '' },
         center: [0, 0],
         isActive: true,
         isFeatured: false
       });
     } else {
+      const multilingual = item?._multilingual || {};
       setFormData(item ? {
-        name: item.name,
+        name: {
+          te: multilingual.name?.te || '',
+          en: multilingual.name?.en || '',
+          hi: multilingual.name?.hi || ''
+        },
         city: item.city?._id || item.city,
         center: item.center?.coordinates || [0, 0],
         pincode: item.pincode || '',
         isActive: item.isActive,
         isFeatured: item.isFeatured
       } : {
-        name: { en: '', hi: '' },
+        name: { te: '', en: '', hi: '' },
         city: selectedCity,
         center: [0, 0],
         pincode: '',
@@ -128,8 +142,8 @@ const LocationsManager = () => {
     setError(null);
     const isCity = editingItem?.type === 'city';
 
-    if (!formData.name.en || !formData.name.hi) {
-      setError('Name is required in both languages');
+    if (!formData.name.te) {
+      setError('Name is required in Telugu');
       return;
     }
 
@@ -213,29 +227,23 @@ const LocationsManager = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Name (EN)</TableCell>
-                  <TableCell>Name (HI)</TableCell>
+                  <TableCell>Name</TableCell>
                   <TableCell>State</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Featured</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {cities.map((city) => (
                   <TableRow key={city._id}>
-                    <TableCell>{city.name.en}</TableCell>
-                    <TableCell>{city.name.hi}</TableCell>
-                    <TableCell>{city.state.en}</TableCell>
+                    <TableCell>{city._multilingual?.name?.te || city.name}</TableCell>
+                    <TableCell>{city._multilingual?.state?.te || city.state}</TableCell>
                     <TableCell>
                       <Chip
                         label={city.isActive ? 'Active' : 'Inactive'}
                         size="small"
                         color={city.isActive ? 'success' : 'default'}
                       />
-                    </TableCell>
-                    <TableCell>
-                      {city.isFeatured && <Chip label="Featured" size="small" color="primary" />}
                     </TableCell>
                     <TableCell align="right">
                       <IconButton size="small" onClick={() => handleOpenDialog(city, 'city')}>
@@ -266,7 +274,7 @@ const LocationsManager = () => {
               >
                 {cities.map((city) => (
                   <MenuItem key={city._id} value={city._id}>
-                    {city.name.en}
+                    {city._multilingual?.name?.te || city.name}
                   </MenuItem>
                 ))}
               </Select>
@@ -284,8 +292,7 @@ const LocationsManager = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Name (EN)</TableCell>
-                  <TableCell>Name (HI)</TableCell>
+                  <TableCell>Name</TableCell>
                   <TableCell>Pincode</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Actions</TableCell>
@@ -294,8 +301,7 @@ const LocationsManager = () => {
               <TableBody>
                 {areas.map((area) => (
                   <TableRow key={area._id}>
-                    <TableCell>{area.name.en}</TableCell>
-                    <TableCell>{area.name.hi}</TableCell>
+                    <TableCell>{area._multilingual?.name?.te || area.name}</TableCell>
                     <TableCell>{area.pincode || '-'}</TableCell>
                     <TableCell>
                       <Chip
@@ -328,6 +334,20 @@ const LocationsManager = () => {
         <DialogContent>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           
+          <Typography variant="subtitle2" sx={{ mt: 1, mb: 1, color: 'text.secondary' }}>
+            Name
+          </Typography>
+          <TextField
+            fullWidth
+            label="Name (Telugu) *"
+            value={formData.name?.te || ''}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              name: { ...prev.name, te: e.target.value }
+            }))}
+            margin="dense"
+            required
+          />
           <TextField
             fullWidth
             label="Name (English)"
@@ -336,8 +356,7 @@ const LocationsManager = () => {
               ...prev,
               name: { ...prev.name, en: e.target.value }
             }))}
-            margin="normal"
-            required
+            margin="dense"
           />
           <TextField
             fullWidth
@@ -347,12 +366,24 @@ const LocationsManager = () => {
               ...prev,
               name: { ...prev.name, hi: e.target.value }
             }))}
-            margin="normal"
-            required
+            margin="dense"
           />
 
           {editingItem?.type === 'city' && (
             <>
+              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, color: 'text.secondary' }}>
+                State
+              </Typography>
+              <TextField
+                fullWidth
+                label="State (Telugu)"
+                value={formData.state?.te || ''}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  state: { ...prev.state, te: e.target.value }
+                }))}
+                margin="dense"
+              />
               <TextField
                 fullWidth
                 label="State (English)"
@@ -361,8 +392,7 @@ const LocationsManager = () => {
                   ...prev,
                   state: { ...prev.state, en: e.target.value }
                 }))}
-                margin="normal"
-                required
+                margin="dense"
               />
               <TextField
                 fullWidth
@@ -372,8 +402,7 @@ const LocationsManager = () => {
                   ...prev,
                   state: { ...prev.state, hi: e.target.value }
                 }))}
-                margin="normal"
-                required
+                margin="dense"
               />
             </>
           )}
