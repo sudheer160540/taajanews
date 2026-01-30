@@ -11,7 +11,7 @@ const api = axios.create({
   withCredentials: true
 });
 
-
+console.log("demo sample")
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
