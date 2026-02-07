@@ -195,15 +195,9 @@ const ArticleEditor = () => {
     setError(null);
 
     try {
-      // Get SAS token
-      const tokenRes = await uploadApi.getSasToken(file.name, file.type);
-      const { uploadUrl, blobUrl } = tokenRes.data;
-
-      // Upload to Azure
-      const blockBlobClient = new BlockBlobClient(uploadUrl);
-      await blockBlobClient.uploadData(file, {
-        blobHTTPHeaders: { blobContentType: file.type }
-      });
+      // Upload through backend (bypasses CORS)
+      const response = await uploadApi.uploadFile(file);
+      const { blobUrl } = response.data;
 
       // Set featured image
       setArticle(prev => ({
@@ -224,23 +218,16 @@ const ArticleEditor = () => {
     setError(null);
     setSuccess(null);
 
-    // Validation - only default language is required
+    // Validation - only title and content are required
     if (!article.title[defaultLang]) {
       setError(`Title is required in the default language (${defaultLang})`);
-      return;
-    }
-    if (!article.summary[defaultLang]) {
-      setError(`Summary is required in the default language (${defaultLang})`);
       return;
     }
     if (!article.content[defaultLang]) {
       setError(`Content is required in the default language (${defaultLang})`);
       return;
     }
-    if (!article.category) {
-      setError('Category is required');
-      return;
-    }
+    // Summary, category, and featuredImage are optional
 
     setSaving(true);
 
@@ -260,15 +247,17 @@ const ArticleEditor = () => {
         title: cleanMultilingual(article.title),
         summary: cleanMultilingual(article.summary),
         content: cleanMultilingual(article.content),
-        category: article.category,
-        city: article.city || null,
-        area: article.area || null,
         tags: article.tags,
         status: publish ? 'pending' : article.status,
         isFeatured: article.isFeatured,
-        isBreaking: article.isBreaking,
-        featuredImage: article.featuredImage
+        isBreaking: article.isBreaking
       };
+
+      // Only include optional fields if they have values
+      if (article.category) articleData.category = article.category;
+      if (article.city) articleData.city = article.city;
+      if (article.area) articleData.area = article.area;
+      if (article.featuredImage?.url) articleData.featuredImage = article.featuredImage;
 
       if (isEditing) {
         await articlesApi.update(id, articleData);

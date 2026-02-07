@@ -35,11 +35,7 @@ const articleSchema = new mongoose.Schema({
   summary: {
     type: Map,
     of: String,
-    required: [true, 'Summary is required'],
-    validate: {
-      validator: validateDefaultLanguage,
-      message: 'Summary in default language is required'
-    }
+    default: new Map()
   },
   content: {
     type: Map,
@@ -58,7 +54,7 @@ const articleSchema = new mongoose.Schema({
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
-    required: [true, 'Category is required']
+    default: null
   },
   categoryAncestors: [{
     type: mongoose.Schema.Types.ObjectId,

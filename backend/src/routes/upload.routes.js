@@ -1,8 +1,61 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { getUploadUrl, getReadUrl, deleteBlob } = require('../config/azure');
+const multer = require('multer');
+const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../config/azure');
 const { protect, reporterOrAdmin } = require('../middleware/auth');
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'), false);
+    }
+  }
+});
+
+// @route   POST /api/upload/file
+// @desc    Upload file through backend (bypasses CORS)
+// @access  Private/Reporter
+router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const file = req.file;
+    const extension = file.originalname.split('.').pop();
+    const uniqueFilename = `${uuidv4()}.${extension}`;
+    const folder = file.mimetype.startsWith('video') ? 'videos' : 'images';
+    const blobName = `${Date.now()}-${folder}/${uniqueFilename}`;
+
+    // Upload to Azure
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    await blockBlobClient.uploadData(file.buffer, {
+      blobHTTPHeaders: { blobContentType: file.mimetype }
+    });
+
+    const blobUrl = `${process.env.AZURE_STORAGE_URL}/${process.env.AZURE_STORAGE_CONTAINER}/${blobName}`;
+
+    res.json({
+      blobUrl,
+      blobName,
+      originalName: file.originalname,
+      size: file.size,
+      contentType: file.mimetype
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    res.status(500).json({ error: 'Failed to upload file' });
+  }
+});
 
 // @route   POST /api/upload/sas-token
 // @desc    Get SAS token for direct upload to Azure Blob Storage
