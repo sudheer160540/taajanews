@@ -15,6 +15,7 @@ const locationRoutes = require('./routes/location.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const engagementRoutes = require('./routes/engagement.routes');
 const languageRoutes = require('./routes/language.routes');
+const scrapedArticleRoutes = require('./routes/scrapedArticle.routes');
 
 // Import utilities
 const languageCache = require('./utils/languageCache');
@@ -58,6 +59,7 @@ app.use('/api/locations', locationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/engagement', engagementRoutes);
 app.use('/api/languages', languageRoutes);
+app.use('/api/scraped-articles', scrapedArticleRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
