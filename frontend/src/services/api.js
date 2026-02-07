@@ -1,7 +1,7 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL = 'https://taajanews.onrender.com/api';
+const API_BASE_URL =  'https://taajanews.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -11,7 +11,7 @@ const api = axios.create({
   withCredentials: true
 });
 
-console.log("demo sample")
+console.log("demo")
 
 // Request interceptor to add auth token
 api.interceptors.request.use(

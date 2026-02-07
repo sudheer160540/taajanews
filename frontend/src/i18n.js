@@ -1,6 +1,5 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import Cookies from 'js-cookie';
 
 const resources = {
   te: {
@@ -326,8 +325,16 @@ const resources = {
   }
 };
 
-// Get saved language from cookie or default to 'te' (Telugu)
-const savedLanguage = Cookies.get('taaja_lang') || 'te';
+// Get saved language from localStorage or default to 'te' (Telugu)
+const getSavedLanguage = () => {
+  try {
+    return localStorage.getItem('taaja_lang') || 'te';
+  } catch {
+    return 'te';
+  }
+};
+
+const savedLanguage = getSavedLanguage();
 
 i18n
   .use(initReactI18next)
@@ -343,11 +350,18 @@ i18n
     }
   });
 
-// Save language preference to cookie when changed
+// Save language preference to localStorage when changed
 i18n.on('languageChanged', (lng) => {
-  Cookies.set('taaja_lang', lng, { expires: 365 });
+  try {
+    localStorage.setItem('taaja_lang', lng);
+  } catch (e) {
+    console.warn('Failed to save language preference:', e);
+  }
   document.documentElement.lang = lng;
   document.documentElement.dir = lng === 'ar' || lng === 'ur' ? 'rtl' : 'ltr';
 });
+
+// Set initial document language
+document.documentElement.lang = savedLanguage;
 
 export default i18n;

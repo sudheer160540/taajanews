@@ -182,12 +182,14 @@ const ArticlesList = () => {
                           whiteSpace: 'nowrap'
                         }}
                       >
-                        {article.title?.en || article.title}
+                        {typeof article.title === 'string' ? article.title : (article.title?.te || article.title?.en || article.title)}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={article.category?.name?.en || '-'}
+                        label={typeof article.category?.name === 'string' 
+                          ? article.category.name 
+                          : (article.category?.name?.te || article.category?.name?.en || '-')}
                         size="small"
                         variant="outlined"
                       />
