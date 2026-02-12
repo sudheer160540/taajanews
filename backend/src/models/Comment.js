@@ -25,7 +25,7 @@ const commentSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['pending', 'approved', 'flagged', 'deleted'],
-    default: 'pending'
+    default: 'approved'
   },
   likes: {
     type: Number,
@@ -106,11 +106,11 @@ commentSchema.statics.toggleLike = async function(commentId, userId, increment =
 
 // Static method to get threaded comments
 commentSchema.statics.getThreadedComments = async function(articleId, limit = 50) {
-  // Get top-level approved comments
+  // Get top-level comments (approved and pending)
   const topLevelComments = await this.find({
     article: articleId,
     parent: null,
-    status: 'approved'
+    status: { $in: ['approved', 'pending'] }
   })
     .populate('user', 'name avatar')
     .sort({ createdAt: -1 })
@@ -121,7 +121,7 @@ commentSchema.statics.getThreadedComments = async function(articleId, limit = 50
   const commentIds = topLevelComments.map(c => c._id);
   const replies = await this.find({
     parent: { $in: commentIds },
-    status: 'approved'
+    status: { $in: ['approved', 'pending'] }
   })
     .populate('user', 'name avatar')
     .sort({ createdAt: 1 })

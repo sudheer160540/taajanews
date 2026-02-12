@@ -168,6 +168,26 @@ router.get('/trending', async (req, res) => {
   }
 });
 
+// @route   GET /api/articles/ref/:articleId
+// @desc    Get article by articleId reference
+// @access  Public
+router.get('/ref/:articleId', optionalAuth, async (req, res) => {
+  try {
+    const article = await Article.findOne({ articleId: req.params.articleId })
+      .populate('author', 'name avatar')
+      .populate('category', 'name slug color');
+
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    res.json({ article });
+  } catch (error) {
+    console.error('Get article by articleId error:', error);
+    res.status(500).json({ error: 'Failed to fetch article' });
+  }
+});
+
 // @route   GET /api/articles/:slug
 // @desc    Get single article by slug
 // @access  Public

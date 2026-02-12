@@ -27,9 +27,10 @@ import {
   CloudUpload as UploadIcon,
   Delete as DeleteIcon,
   ArrowBack as BackIcon,
-  Star as StarIcon
+  Star as StarIcon,
+  Translate as TranslateIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, locationsApi, uploadApi } from '../../services/api';
+import { articlesApi, categoriesApi, locationsApi, uploadApi, translateApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { BlockBlobClient } from '@azure/storage-blob';
 
@@ -67,6 +68,7 @@ const ArticleEditor = () => {
   const [langTab, setLangTab] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [translating, setTranslating] = useState(false);
 
   useEffect(() => {
     initializeEditor();
@@ -211,6 +213,82 @@ const ArticleEditor = () => {
       console.error(err);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleTranslate = async () => {
+    setError(null);
+    setSuccess(null);
+
+    // Collect non-empty fields
+    const getNonEmpty = (obj) => {
+      const result = {};
+      Object.entries(obj || {}).forEach(([lang, text]) => {
+        if (text && text.trim()) result[lang] = text;
+      });
+      return result;
+    };
+
+    const titleInput = getNonEmpty(article.title);
+    const summaryInput = getNonEmpty(article.summary);
+    const contentInput = getNonEmpty(article.content);
+
+    if (Object.keys(titleInput).length === 0 && Object.keys(summaryInput).length === 0 && Object.keys(contentInput).length === 0) {
+      setError('Please enter content in at least one language before translating');
+      return;
+    }
+
+    setTranslating(true);
+
+    try {
+      const payload = {};
+      if (Object.keys(titleInput).length > 0) payload.title = titleInput;
+      if (Object.keys(summaryInput).length > 0) payload.summary = summaryInput;
+      if (Object.keys(contentInput).length > 0) payload.content = contentInput;
+
+      const response = await translateApi.translate(payload);
+      const translated = response.data;
+
+      // Merge translations into article (only fill empty fields)
+      setArticle(prev => {
+        const updated = { ...prev };
+
+        if (translated.title) {
+          updated.title = { ...prev.title };
+          Object.entries(translated.title).forEach(([lang, text]) => {
+            if (!prev.title[lang] || !prev.title[lang].trim()) {
+              updated.title[lang] = text;
+            }
+          });
+        }
+
+        if (translated.summary) {
+          updated.summary = { ...prev.summary };
+          Object.entries(translated.summary).forEach(([lang, text]) => {
+            if (!prev.summary[lang] || !prev.summary[lang].trim()) {
+              updated.summary[lang] = text;
+            }
+          });
+        }
+
+        if (translated.content) {
+          updated.content = { ...prev.content };
+          Object.entries(translated.content).forEach(([lang, text]) => {
+            if (!prev.content[lang] || !prev.content[lang].trim()) {
+              updated.content[lang] = text;
+            }
+          });
+        }
+
+        return updated;
+      });
+
+      setSuccess('Translation completed successfully');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Translation failed. Please try again.');
+      console.error(err);
+    } finally {
+      setTranslating(false);
     }
   };
 
@@ -386,6 +464,19 @@ const ArticleEditor = () => {
                   required={languages[langTab]?.isDefault}
                   placeholder={languages[langTab]?.isDefault ? '' : `Optional - will fallback to ${defaultLang}`}
                 />
+              </Box>
+
+              {/* Translate Button */}
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
+                  onClick={handleTranslate}
+                  disabled={translating || saving}
+                >
+                  {translating ? 'Translating...' : 'Translate to All Languages'}
+                </Button>
               </Box>
             </CardContent>
           </Card>

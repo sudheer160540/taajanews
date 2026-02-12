@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const slugify = require('../utils/slugify');
 const languageCache = require('../utils/languageCache');
+
+// Generate a short unique article ID (e.g., "TJ-a3f8b2c1")
+const generateArticleId = () => {
+  const randomPart = crypto.randomBytes(4).toString('hex');
+  return `TJ-${randomPart}`;
+};
 
 // Helper to create multilingual Map field
 const createMultilingualField = (required = false) => ({
@@ -31,6 +38,11 @@ const articleSchema = new mongoose.Schema({
     type: String,
     unique: true,
     lowercase: true
+  },
+  articleId: {
+    type: String,
+    unique: true,
+    index: true
   },
   summary: {
     type: Map,
@@ -187,6 +199,18 @@ articleSchema.index({ location: '2dsphere' });
 
 // Generate slug before saving - use English if available, otherwise generate from timestamp
 articleSchema.pre('save', async function(next) {
+  // Generate articleId for new documents
+  if (this.isNew && !this.articleId) {
+    let id = generateArticleId();
+    // Ensure uniqueness
+    let existing = await this.constructor.findOne({ articleId: id });
+    while (existing) {
+      id = generateArticleId();
+      existing = await this.constructor.findOne({ articleId: id });
+    }
+    this.articleId = id;
+  }
+
   // Only generate slug if it's a new document or title is modified and slug is not set
   if (this.isNew || (this.isModified('title') && !this.slug)) {
     // Prefer English for slug generation since URLs should be ASCII

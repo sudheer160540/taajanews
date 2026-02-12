@@ -312,7 +312,7 @@ router.post('/comments/:articleId', protect, validate(schemas.createComment), as
       user: req.user._id,
       content,
       parent: parent || null,
-      status: 'pending' // Requires moderation
+      status: 'approved' // Auto-approve comments
     });
 
     await comment.populate('user', 'name avatar');

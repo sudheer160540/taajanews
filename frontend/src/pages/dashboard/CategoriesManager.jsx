@@ -4,7 +4,6 @@ import {
   Box,
   Typography,
   Card,
-  CardContent,
   Button,
   Table,
   TableBody,
@@ -18,13 +17,8 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Switch,
   FormControlLabel,
-  Chip,
   Alert
 } from '@mui/material';
 import {
@@ -44,7 +38,6 @@ const CategoriesManager = () => {
   const [formData, setFormData] = useState({
     name: { te: '', en: '', hi: '' },
     description: { te: '', en: '', hi: '' },
-    parent: '',
     color: '#1976d2',
     isActive: true,
     isFeatured: false
@@ -83,7 +76,6 @@ const CategoriesManager = () => {
           en: multilingual.description?.en || '',
           hi: multilingual.description?.hi || ''
         },
-        parent: category.parent?._id || category.parent || '',
         color: category.color || '#1976d2',
         isActive: category.isActive !== false,
         isFeatured: category.isFeatured || false
@@ -93,7 +85,6 @@ const CategoriesManager = () => {
       setFormData({
         name: { te: '', en: '', hi: '' },
         description: { te: '', en: '', hi: '' },
-        parent: '',
         color: '#1976d2',
         isActive: true,
         isFeatured: false
@@ -118,8 +109,7 @@ const CategoriesManager = () => {
 
     try {
       const data = {
-        ...formData,
-        parent: formData.parent || null
+        ...formData
       };
 
       if (editingCategory) {
@@ -148,8 +138,6 @@ const CategoriesManager = () => {
       setError(err.response?.data?.error || 'Failed to delete category');
     }
   };
-
-  const rootCategories = categories.filter(c => !c.parent);
 
   return (
     <Box>
@@ -194,9 +182,7 @@ const CategoriesManager = () => {
                 categories.map((category) => (
                   <TableRow key={category._id}>
                     <TableCell>
-                      <Box sx={{ pl: category.level * 2 }}>
-                        {category._multilingual?.name?.te || category.name}
-                      </Box>
+                      {category._multilingual?.name?.te || category.name}
                     </TableCell>
                     <TableCell>
                       {category._multilingual?.description?.te || category.description || '-'}
@@ -292,24 +278,6 @@ const CategoriesManager = () => {
             multiline
             rows={2}
           />
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Parent Category</InputLabel>
-            <Select
-              value={formData.parent}
-              label="Parent Category"
-              onChange={(e) => setFormData(prev => ({ ...prev, parent: e.target.value }))}
-            >
-              <MenuItem value="">None (Root)</MenuItem>
-              {rootCategories
-                .filter(c => c._id !== editingCategory?._id)
-                .map((cat) => (
-                  <MenuItem key={cat._id} value={cat._id}>
-                    {cat._multilingual?.name?.te || cat.name}
-                  </MenuItem>
-                ))
-              }
-            </Select>
-          </FormControl>
           <TextField
             fullWidth
             label="Color"
