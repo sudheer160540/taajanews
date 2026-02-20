@@ -26,17 +26,26 @@ const app = express();
 // Connect to MongoDB
 connectDB();
 
-// Security middleware
-app.use(helmet());
+// CORS must be first — before helmet and everything else
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+app.options('*', cors());
+
+// Security middleware — disable headers that conflict with CORS
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginEmbedderPolicy: false
 }));
 
 // Rate limiting (more permissive in development)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Higher limit for development
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000,
   message: { error: 'Too many requests, please try again later.' }
 });
 app.use('/api/', limiter);
