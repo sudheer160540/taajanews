@@ -1,7 +1,7 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL =  'https://taajanews.onrender.com/api';
+const API_BASE_URL =  'http://localhost:5001/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -101,7 +101,15 @@ export const uploadApi = {
   getSasTokens: (files) => api.post('/upload/sas-tokens', { files }),
   getReadUrl: (blobName, expiresInMinutes) => api.post('/upload/read-url', { blobName, expiresInMinutes }),
   confirmUpload: (blobUrl, blobName, type) => api.post('/upload/confirm', { blobUrl, blobName, type }),
-  delete: (blobName) => api.delete(`/upload/${blobName}`)
+  delete: (blobName) => api.delete(`/upload/${blobName}`),
+  // Upload file through backend (bypasses CORS)
+  uploadFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  }
 };
 
 export const authApi = {
@@ -120,6 +128,10 @@ export const usersApi = {
   updateStatus: (id, isActive) => api.put(`/users/${id}/status`, { isActive }),
   getReporters: () => api.get('/users/reporters'),
   assignCategories: (id, categories) => api.put(`/users/reporters/${id}/categories`, { categories })
+};
+
+export const translateApi = {
+  translate: (data) => api.post('/translate', data)
 };
 
 export const languagesApi = {

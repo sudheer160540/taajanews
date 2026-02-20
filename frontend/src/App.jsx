@@ -57,11 +57,11 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
   }
 
   if (requireReporter && !isReporter) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/auth/login" replace />;
   }
 
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -100,9 +100,12 @@ function App() {
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/register" element={<Register />} />
 
+      {/* Default route - redirect to login */}
+      <Route path="/" element={<Navigate to="/auth/login" replace />} />
+
       {/* Public routes with main layout */}
       <Route
-        path="/"
+        path="/site"
         element={
           <OnboardingGate>
             <MainLayout />
@@ -178,7 +181,7 @@ function App() {
       </Route>
 
       {/* Catch all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/auth/login" replace />} />
     </Routes>
   );
 }

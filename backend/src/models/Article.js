@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const slugify = require('../utils/slugify');
 const languageCache = require('../utils/languageCache');
+
+// Generate a short unique article ID (e.g., "TJ-a3f8b2c1")
+const generateArticleId = () => {
+  const randomPart = crypto.randomBytes(4).toString('hex');
+  return `TJ-${randomPart}`;
+};
 
 // Helper to create multilingual Map field
 const createMultilingualField = (required = false) => ({
@@ -32,14 +39,15 @@ const articleSchema = new mongoose.Schema({
     unique: true,
     lowercase: true
   },
+  articleId: {
+    type: String,
+    unique: true,
+    index: true
+  },
   summary: {
     type: Map,
     of: String,
-    required: [true, 'Summary is required'],
-    validate: {
-      validator: validateDefaultLanguage,
-      message: 'Summary in default language is required'
-    }
+    default: new Map()
   },
   content: {
     type: Map,
@@ -58,7 +66,7 @@ const articleSchema = new mongoose.Schema({
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
-    required: [true, 'Category is required']
+    default: null
   },
   categoryAncestors: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -72,6 +80,11 @@ const articleSchema = new mongoose.Schema({
       default: new Map()
     },
     alt: String
+  },
+  audio: {
+    type: Map,
+    of: String,
+    default: new Map()
   },
   images: [{
     url: String,
@@ -93,7 +106,7 @@ const articleSchema = new mongoose.Schema({
     },
     duration: Number
   }],
-  // Geospatial location for localized news
+  // Geospatial location for localized news (Google Maps Places data)
   location: {
     type: {
       type: String,
@@ -103,15 +116,14 @@ const articleSchema = new mongoose.Schema({
     coordinates: {
       type: [Number], // [longitude, latitude]
       default: [0, 0]
-    }
-  },
-  city: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'City'
-  },
-  area: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Area'
+    },
+    formattedAddress: String,
+    city: String,
+    area: String,
+    state: String,
+    country: String,
+    pincode: String,
+    placeId: String
   },
   tags: [{
     type: String,
@@ -182,7 +194,7 @@ articleSchema.index({ status: 1, publishedAt: -1 });
 articleSchema.index({ category: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ categoryAncestors: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ author: 1, status: 1 });
-articleSchema.index({ city: 1, area: 1, status: 1, publishedAt: -1 });
+articleSchema.index({ 'location.city': 1, status: 1, publishedAt: -1 });
 articleSchema.index({ tags: 1 });
 articleSchema.index({ isFeatured: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ isBreaking: 1, status: 1 });
@@ -191,6 +203,18 @@ articleSchema.index({ location: '2dsphere' });
 
 // Generate slug before saving - use English if available, otherwise generate from timestamp
 articleSchema.pre('save', async function(next) {
+  // Generate articleId for new documents
+  if (this.isNew && !this.articleId) {
+    let id = generateArticleId();
+    // Ensure uniqueness
+    let existing = await this.constructor.findOne({ articleId: id });
+    while (existing) {
+      id = generateArticleId();
+      existing = await this.constructor.findOne({ articleId: id });
+    }
+    this.articleId = id;
+  }
+
   // Only generate slug if it's a new document or title is modified and slug is not set
   if (this.isNew || (this.isModified('title') && !this.slug)) {
     // Prefer English for slug generation since URLs should be ASCII

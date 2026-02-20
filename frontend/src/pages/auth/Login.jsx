@@ -41,7 +41,7 @@ const Login = () => {
     const result = await login(email, password);
     
     if (result.success) {
-      navigate('/');
+      navigate('/dashboard');
     } else {
       setError(result.error);
     }
@@ -147,11 +147,6 @@ const Login = () => {
               </Link>
             </Typography>
 
-            <Box sx={{ mt: 2, textAlign: 'center' }}>
-              <Link to="/" style={{ color: '#666', textDecoration: 'none' }}>
-                ← {t('home')}
-              </Link>
-            </Box>
           </CardContent>
         </Card>
       </Container>

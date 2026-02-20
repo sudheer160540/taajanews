@@ -157,13 +157,13 @@ const schemas = {
     ).required(),
     summary: Joi.object().pattern(
       Joi.string(),
-      Joi.string().min(10).max(500)
-    ).required(),
+      Joi.string().max(500).allow('')
+    ).allow(null),
     content: Joi.object().pattern(
       Joi.string(),
-      Joi.string().min(50)
+      Joi.string().max(10000)
     ).required(),
-    category: Joi.string().hex().length(24).required(),
+    category: Joi.string().hex().length(24).allow(null, ''),
     featuredImage: Joi.object({
       url: Joi.string().uri(),
       caption: Joi.object().pattern(
@@ -181,12 +181,21 @@ const schemas = {
       alt: Joi.string(),
       order: Joi.number()
     })),
-    city: Joi.string().hex().length(24).allow(null),
-    area: Joi.string().hex().length(24).allow(null),
     location: Joi.object({
       type: Joi.string().valid('Point'),
-      coordinates: Joi.array().items(Joi.number()).length(2)
-    }),
+      coordinates: Joi.array().items(Joi.number()).length(2),
+      formattedAddress: Joi.string().allow('', null),
+      city: Joi.string().allow('', null),
+      area: Joi.string().allow('', null),
+      state: Joi.string().allow('', null),
+      country: Joi.string().allow('', null),
+      pincode: Joi.string().allow('', null),
+      placeId: Joi.string().allow('', null)
+    }).allow(null),
+    audio: Joi.object().pattern(
+      Joi.string(),
+      Joi.string().uri().allow('')
+    ).allow(null),
     tags: Joi.array().items(Joi.string().max(50)),
     status: Joi.string().valid('draft', 'pending', 'published', 'archived'),
     isFeatured: Joi.boolean(),
