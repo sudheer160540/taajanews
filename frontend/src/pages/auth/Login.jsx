@@ -61,6 +61,12 @@ const Login = () => {
     >
       <Container maxWidth="sm">
         <Box sx={{ textAlign: 'center', mb: 4, color: 'white' }}>
+          <Box
+            component="img"
+            src="/logo.jpeg"
+            alt="Taaja News"
+            sx={{ width: 90, height: 90, borderRadius: '50%', mb: 2, objectFit: 'cover', boxShadow: 3 }}
+          />
           <Typography variant="h4" fontWeight={700} gutterBottom>
             {t('appName')}
           </Typography>

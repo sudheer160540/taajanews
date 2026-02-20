@@ -57,6 +57,20 @@ const DashboardLayout = () => {
 
   const drawer = (
     <Box>
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Box
+          component="img"
+          src="/logo.jpeg"
+          alt="Taaja News"
+          sx={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', mb: 1 }}
+        />
+        <Typography variant="subtitle2" fontWeight={700} color="primary">
+          Local Taaja News
+        </Typography>
+      </Box>
+
+      <Divider />
+
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
         <Avatar src={user?.avatar} sx={{ bgcolor: 'primary.main' }}>
           {user?.name?.[0]}
