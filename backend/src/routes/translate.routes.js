@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const OpenAI = require('openai');
+const { v4: uuidv4 } = require('uuid');
 const { protect } = require('../middleware/auth');
+const { containerClient } = require('../config/azure');
 
 const openai = new OpenAI({
   apiKey: process.env.OPEN_API_KEY
@@ -13,12 +16,156 @@ const SUPPORTED_LANGUAGES = {
   hi: 'Hindi'
 };
 
-// @route   POST /api/translate
-// @desc    Translate article fields into missing languages using OpenAI
-// @access  Private
+const SARVAM_LANG_CODES = {
+  te: 'te-IN',
+  en: 'en-IN',
+  hi: 'hi-IN'
+};
+
+const SARVAM_API_URL = 'https://api.sarvam.ai';
+const SARVAM_TRANSLATE_LIMIT = 1000;
+const SARVAM_TTS_LIMIT = 2500;
+
+function chunkText(text, maxLen) {
+  if (!text || text.length <= maxLen) return [text];
+
+  const chunks = [];
+  const sentences = text.split(/(?<=[.!?।\n])\s*/);
+  let current = '';
+
+  for (const sentence of sentences) {
+    if (sentence.length > maxLen) {
+      if (current) { chunks.push(current); current = ''; }
+      for (let i = 0; i < sentence.length; i += maxLen) {
+        chunks.push(sentence.slice(i, i + maxLen));
+      }
+    } else if ((current + ' ' + sentence).trim().length > maxLen) {
+      if (current) chunks.push(current);
+      current = sentence;
+    } else {
+      current = current ? current + ' ' + sentence : sentence;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+async function sarvamTranslate(text, sourceLang, targetLang) {
+  if (!text || !text.trim()) return '';
+
+  const chunks = chunkText(text, SARVAM_TRANSLATE_LIMIT);
+  const translated = [];
+
+  for (const chunk of chunks) {
+    if (!chunk || !chunk.trim()) { translated.push(''); continue; }
+
+    const { data } = await axios.post(`${SARVAM_API_URL}/translate`, {
+      input: chunk,
+      source_language_code: SARVAM_LANG_CODES[sourceLang],
+      target_language_code: SARVAM_LANG_CODES[targetLang],
+      model: 'mayura:v1'
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY }
+    });
+
+    translated.push(data.translated_text || '');
+  }
+
+  return translated.join(' ');
+}
+
+async function openaiTranslate(text, targetLangName) {
+  if (!text || !text.trim()) return '';
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.'
+      },
+      {
+        role: 'user',
+        content: `Translate the following text to ${targetLangName}:\n\n${text}`
+      }
+    ],
+    temperature: 0.3
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || '';
+}
+
+async function translateField(text, sourceLang, targetLang) {
+  const useSarvam = process.env.TRANSLATE_TYPE === 'sarvam';
+
+  if (useSarvam) {
+    return sarvamTranslate(text, sourceLang, targetLang);
+  }
+  return openaiTranslate(text, SUPPORTED_LANGUAGES[targetLang]);
+}
+
+async function twoStepTranslateField(text, sourceLang, allLangs) {
+  const result = {};
+  result[sourceLang] = text;
+
+  const targetLangs = allLangs.filter(l => l !== sourceLang);
+
+  if (sourceLang !== 'en') {
+    const englishText = await translateField(text, sourceLang, 'en');
+    result['en'] = englishText;
+
+    const otherLangs = targetLangs.filter(l => l !== 'en');
+    for (const lang of otherLangs) {
+      result[lang] = await translateField(englishText, 'en', lang);
+    }
+  } else {
+    for (const lang of targetLangs) {
+      result[lang] = await translateField(text, 'en', lang);
+    }
+  }
+
+  return result;
+}
+
+async function generateTTSForLanguage(text, langCode) {
+  if (!text || !text.trim()) return null;
+
+  const chunks = chunkText(text, SARVAM_TTS_LIMIT);
+  const audioBuffers = [];
+
+  for (const chunk of chunks) {
+    if (!chunk || !chunk.trim()) continue;
+
+    const { data } = await axios.post(`${SARVAM_API_URL}/text-to-speech`, {
+      text: chunk,
+      target_language_code: SARVAM_LANG_CODES[langCode],
+      speaker: 'priya',
+      model: 'bulbul:v3'
+    }, {
+      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY }
+    });
+
+    if (data.audios && data.audios[0]) {
+      audioBuffers.push(Buffer.from(data.audios[0], 'base64'));
+    }
+  }
+
+  if (audioBuffers.length === 0) return null;
+
+  const combined = Buffer.concat(audioBuffers);
+
+  const blobName = `audio/${Date.now()}-${uuidv4()}-${langCode}.wav`;
+  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+  await blockBlobClient.uploadData(combined, {
+    blobHTTPHeaders: { blobContentType: 'audio/wav' }
+  });
+
+  return `${process.env.AZURE_STORAGE_URL}/${process.env.AZURE_STORAGE_CONTAINER}/${blobName}`;
+}
+
 router.post('/', protect, async (req, res) => {
   try {
-    const { title, summary, content } = req.body;
+    const { title, summary, content, generateAudio } = req.body;
 
     if (!title && !summary && !content) {
       return res.status(400).json({ error: 'At least one field (title, summary, or content) is required' });
@@ -26,14 +173,11 @@ router.post('/', protect, async (req, res) => {
 
     const allLangs = Object.keys(SUPPORTED_LANGUAGES);
 
-    // Helper: get non-empty entries from a multilingual object
     const getFilledLangs = (obj) => {
       if (!obj) return {};
       const filled = {};
       for (const [lang, text] of Object.entries(obj)) {
-        if (text && text.trim()) {
-          filled[lang] = text.trim();
-        }
+        if (text && text.trim()) filled[lang] = text.trim();
       }
       return filled;
     };
@@ -42,134 +186,59 @@ router.post('/', protect, async (req, res) => {
     const filledSummary = getFilledLangs(summary);
     const filledContent = getFilledLangs(content);
 
-    // Check there is at least something to translate
-    if (Object.keys(filledTitle).length === 0 && Object.keys(filledSummary).length === 0 && Object.keys(filledContent).length === 0) {
+    if (!Object.keys(filledTitle).length && !Object.keys(filledSummary).length && !Object.keys(filledContent).length) {
       return res.status(400).json({ error: 'Please provide content in at least one language to translate' });
     }
 
-    // Determine which languages need translation for each field
-    const missingTitle = allLangs.filter(l => !filledTitle[l]);
-    const missingSummary = allLangs.filter(l => !filledSummary[l]);
-    const missingContent = allLangs.filter(l => !filledContent[l]);
-
-    // If nothing needs translating
-    if (missingTitle.length === 0 && missingSummary.length === 0 && missingContent.length === 0) {
-      return res.json({ title: filledTitle, summary: filledSummary, content: filledContent });
-    }
-
-    // Build the prompt
-    const inputParts = [];
-    const translationInstructions = [];
-
-    if (Object.keys(filledTitle).length > 0) {
-      const sourceLang = Object.keys(filledTitle)[0];
-      inputParts.push(`TITLE (provided in ${SUPPORTED_LANGUAGES[sourceLang]}):\n${filledTitle[sourceLang]}`);
-      if (missingTitle.length > 0) {
-        translationInstructions.push(`Translate the TITLE into: ${missingTitle.map(l => SUPPORTED_LANGUAGES[l]).join(', ')}`);
-      }
-    }
-
-    if (Object.keys(filledSummary).length > 0) {
-      const sourceLang = Object.keys(filledSummary)[0];
-      inputParts.push(`SUMMARY (provided in ${SUPPORTED_LANGUAGES[sourceLang]}):\n${filledSummary[sourceLang]}`);
-      if (missingSummary.length > 0) {
-        translationInstructions.push(`Translate the SUMMARY into: ${missingSummary.map(l => SUPPORTED_LANGUAGES[l]).join(', ')}`);
-      }
-    }
-
-    if (Object.keys(filledContent).length > 0) {
-      const sourceLang = Object.keys(filledContent)[0];
-      inputParts.push(`CONTENT (provided in ${SUPPORTED_LANGUAGES[sourceLang]}):\n${filledContent[sourceLang]}`);
-      if (missingContent.length > 0) {
-        translationInstructions.push(`Translate the CONTENT into: ${missingContent.map(l => SUPPORTED_LANGUAGES[l]).join(', ')}`);
-      }
-    }
-
-    const prompt = `You are a professional news article translator. Translate the following news article fields accurately while preserving the original meaning, tone, and formatting (paragraphs, line breaks).
-
-${inputParts.join('\n\n')}
-
-Instructions:
-${translationInstructions.join('\n')}
-
-IMPORTANT:
-- Do NOT re-translate content that is already provided. Keep the original text exactly as-is.
-- Translate naturally as a native speaker would write a news article in each target language.
-- Preserve all formatting including paragraphs and line breaks.
-- Return ONLY valid JSON, no markdown, no code fences, no extra text.
-
-Return the result as JSON in this exact format (include ALL three languages for each field that has content, using the original text for the source language and translations for the others):
-{
-  ${Object.keys(filledTitle).length > 0 ? '"title": { "te": "...", "en": "...", "hi": "..." },' : ''}
-  ${Object.keys(filledSummary).length > 0 ? '"summary": { "te": "...", "en": "...", "hi": "..." },' : ''}
-  ${Object.keys(filledContent).length > 0 ? '"content": { "te": "...", "en": "...", "hi": "..." }' : ''}
-}`;
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a professional multilingual news translator. You output only valid JSON. No markdown formatting, no code blocks, just raw JSON.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000
-    });
-
-    const responseText = completion.choices[0]?.message?.content?.trim();
-
-    if (!responseText) {
-      return res.status(500).json({ error: 'Empty response from translation service' });
-    }
-
-    // Parse the JSON response (strip any accidental markdown fences)
-    let translated;
-    try {
-      const cleanJson = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      translated = JSON.parse(cleanJson);
-    } catch (parseError) {
-      console.error('Failed to parse OpenAI response:', responseText);
-      return res.status(500).json({ error: 'Failed to parse translation response' });
-    }
-
-    // Build final result: merge original input with translations
     const result = {};
 
-    if (Object.keys(filledTitle).length > 0) {
-      result.title = {};
-      for (const lang of allLangs) {
-        result.title[lang] = filledTitle[lang] || translated.title?.[lang] || '';
-      }
-    }
+    const translateMultilingual = async (filled, fieldName) => {
+      if (!Object.keys(filled).length) return;
 
-    if (Object.keys(filledSummary).length > 0) {
-      result.summary = {};
-      for (const lang of allLangs) {
-        result.summary[lang] = filledSummary[lang] || translated.summary?.[lang] || '';
-      }
-    }
+      const sourceLang = Object.keys(filled)[0];
+      const sourceText = filled[sourceLang];
 
-    if (Object.keys(filledContent).length > 0) {
-      result.content = {};
+      const translated = await twoStepTranslateField(sourceText, sourceLang, allLangs);
+
+      result[fieldName] = {};
       for (const lang of allLangs) {
-        result.content[lang] = filledContent[lang] || translated.content?.[lang] || '';
+        result[fieldName][lang] = filled[lang] || translated[lang] || '';
+      }
+    };
+
+    await translateMultilingual(filledTitle, 'title');
+    await translateMultilingual(filledSummary, 'summary');
+    await translateMultilingual(filledContent, 'content');
+
+    if (generateAudio && result.content) {
+      const audio = {};
+
+      for (const lang of allLangs) {
+        const text = result.content[lang];
+        if (!text) continue;
+
+        try {
+          const url = await generateTTSForLanguage(text, lang);
+          if (url) audio[lang] = url;
+        } catch (ttsErr) {
+          console.error(`TTS failed for ${lang}:`, ttsErr.message, ttsErr.response?.data || '');
+        }
+      }
+
+      if (Object.keys(audio).length > 0) {
+        result.audio = audio;
       }
     }
 
     res.json(result);
   } catch (error) {
-    console.error('Translation error:', error);
+    console.error('Translation error:', error?.response?.data || error.message || error);
 
     if (error?.status === 401 || error?.code === 'invalid_api_key') {
-      return res.status(500).json({ error: 'Invalid OpenAI API key configuration' });
+      return res.status(500).json({ error: 'Invalid API key configuration' });
     }
-    if (error?.status === 429) {
-      return res.status(429).json({ error: 'Translation rate limit exceeded. Please try again later.' });
+    if (error?.status === 429 || error?.response?.status === 429) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
     }
 
     res.status(500).json({ error: 'Translation failed. Please try again.' });

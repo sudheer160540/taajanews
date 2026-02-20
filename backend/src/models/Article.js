@@ -81,6 +81,11 @@ const articleSchema = new mongoose.Schema({
     },
     alt: String
   },
+  audio: {
+    type: Map,
+    of: String,
+    default: new Map()
+  },
   images: [{
     url: String,
     caption: {
@@ -101,7 +106,7 @@ const articleSchema = new mongoose.Schema({
     },
     duration: Number
   }],
-  // Geospatial location for localized news
+  // Geospatial location for localized news (Google Maps Places data)
   location: {
     type: {
       type: String,
@@ -111,15 +116,14 @@ const articleSchema = new mongoose.Schema({
     coordinates: {
       type: [Number], // [longitude, latitude]
       default: [0, 0]
-    }
-  },
-  city: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'City'
-  },
-  area: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Area'
+    },
+    formattedAddress: String,
+    city: String,
+    area: String,
+    state: String,
+    country: String,
+    pincode: String,
+    placeId: String
   },
   tags: [{
     type: String,
@@ -190,7 +194,7 @@ articleSchema.index({ status: 1, publishedAt: -1 });
 articleSchema.index({ category: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ categoryAncestors: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ author: 1, status: 1 });
-articleSchema.index({ city: 1, area: 1, status: 1, publishedAt: -1 });
+articleSchema.index({ 'location.city': 1, status: 1, publishedAt: -1 });
 articleSchema.index({ tags: 1 });
 articleSchema.index({ isFeatured: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ isBreaking: 1, status: 1 });

@@ -27,7 +27,6 @@ router.get('/', optionalAuth, async (req, res) => {
       limit = 20, 
       category, 
       city, 
-      area, 
       featured,
       breaking,
       search,
@@ -43,8 +42,7 @@ router.get('/', optionalAuth, async (req, res) => {
         { categoryAncestors: category }
       ];
     }
-    if (city) query.city = city;
-    if (area) query.area = area;
+    if (city) query['location.city'] = city;
     if (featured === 'true') query.isFeatured = true;
     if (breaking === 'true') query.isBreaking = true;
     if (search) {
@@ -54,8 +52,6 @@ router.get('/', optionalAuth, async (req, res) => {
     const articles = await Article.find(query)
       .populate('author', 'name avatar')
       .populate('category', 'name slug')
-      .populate('city', 'name')
-      .populate('area', 'name')
       .sort({ publishedAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
@@ -72,14 +68,6 @@ router.get('/', optionalAuth, async (req, res) => {
       category: article.category ? {
         ...article.category,
         name: getLocalizedValue(article.category.name, lang, defaultLang)
-      } : null,
-      city: article.city ? {
-        ...article.city,
-        name: getLocalizedValue(article.city.name, lang, defaultLang)
-      } : null,
-      area: article.area ? {
-        ...article.area,
-        name: getLocalizedValue(article.area.name, lang, defaultLang)
       } : null
     }));
 
@@ -202,8 +190,6 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
     })
       .populate('author', 'name avatar bio')
       .populate('category', 'name slug')
-      .populate('city', 'name')
-      .populate('area', 'name')
       .lean();
 
     if (!article) {
@@ -235,14 +221,6 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
         category: article.category ? {
           ...article.category,
           name: getLocalizedValue(article.category.name, lang, defaultLang)
-        } : null,
-        city: article.city ? {
-          ...article.city,
-          name: getLocalizedValue(article.city.name, lang, defaultLang)
-        } : null,
-        area: article.area ? {
-          ...article.area,
-          name: getLocalizedValue(article.area.name, lang, defaultLang)
         } : null
       },
       breadcrumb: breadcrumb.map(b => ({
@@ -292,33 +270,38 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
 // @access  Private/Reporter
 router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), async (req, res) => {
   try {
-    // Get category ancestors
-    const category = await Category.findById(req.body.category);
-    if (!category) {
-      return res.status(400).json({ error: 'Invalid category' });
-    }
-
     // Convert plain objects to Maps for multilingual fields
     const articleData = {
       ...req.body,
       title: new Map(Object.entries(req.body.title || {})),
       summary: new Map(Object.entries(req.body.summary || {})),
       content: new Map(Object.entries(req.body.content || {})),
-      author: req.user._id,
-      categoryAncestors: category.ancestors.map(a => a._id)
+      author: req.user._id
     };
 
-    // Handle featured image caption
+    // Get category ancestors if category provided
+    if (req.body.category) {
+      const category = await Category.findById(req.body.category);
+      if (category) {
+        articleData.categoryAncestors = category.ancestors.map(a => a._id);
+      }
+    }
+
     if (articleData.featuredImage?.caption) {
       articleData.featuredImage.caption = new Map(Object.entries(articleData.featuredImage.caption));
+    }
+    if (req.body.audio) {
+      articleData.audio = new Map(Object.entries(req.body.audio));
     }
 
     const article = await Article.create(articleData);
 
     // Update category article count
-    await Category.findByIdAndUpdate(req.body.category, {
-      $inc: { articleCount: 1 }
-    });
+    if (req.body.category) {
+      await Category.findByIdAndUpdate(req.body.category, {
+        $inc: { articleCount: 1 }
+      });
+    }
 
     // Update reporter article count
     await require('../models/User').findByIdAndUpdate(req.user._id, {
@@ -373,6 +356,9 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     }
     if (updateData.featuredImage?.caption) {
       updateData.featuredImage.caption = new Map(Object.entries(updateData.featuredImage.caption));
+    }
+    if (updateData.audio) {
+      updateData.audio = new Map(Object.entries(updateData.audio));
     }
 
     const updatedArticle = await Article.findByIdAndUpdate(
@@ -453,7 +439,7 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
 router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { page = 1, limit = 20, status, category, lang = defaultLang } = req.query;
+    const { page = 1, limit = 20, status, category, fromDate, toDate, lang = defaultLang } = req.query;
 
     const query = {};
     
@@ -464,6 +450,17 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     
     if (status) query.status = status;
     if (category) query.category = category;
+
+    // Date range filter on createdAt
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) {
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
 
     const articles = await Article.find(query)
       .select('title slug status publishedAt createdAt engagement author category')

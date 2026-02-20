@@ -46,18 +46,22 @@ const ArticlesList = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
 
   useEffect(() => {
     fetchArticles();
-  }, [page, rowsPerPage, statusFilter]);
+  }, [page, rowsPerPage, statusFilter, fromDate, toDate]);
 
   const fetchArticles = async () => {
     setLoading(true);
     try {
       const params = { page: page + 1, limit: rowsPerPage };
       if (statusFilter) params.status = statusFilter;
+      if (fromDate) params.fromDate = fromDate;
+      if (toDate) params.toDate = toDate;
 
       const response = await articlesApi.getManaged(params);
       setArticles(response.data.articles);
@@ -124,13 +128,13 @@ const ArticlesList = () => {
       </Box>
 
       {/* Filters */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Status</InputLabel>
           <Select
             value={statusFilter}
             label="Status"
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
           >
             <MenuItem value="">All</MenuItem>
             <MenuItem value="draft">{t('draft')}</MenuItem>
@@ -139,6 +143,36 @@ const ArticlesList = () => {
             <MenuItem value="archived">{t('archived')}</MenuItem>
           </Select>
         </FormControl>
+
+        <TextField
+          size="small"
+          label="From Date"
+          type="date"
+          value={fromDate}
+          onChange={(e) => { setFromDate(e.target.value); setPage(0); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 160 }}
+        />
+
+        <TextField
+          size="small"
+          label="To Date"
+          type="date"
+          value={toDate}
+          onChange={(e) => { setToDate(e.target.value); setPage(0); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 160 }}
+        />
+
+        {(fromDate || toDate || statusFilter) && (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => { setFromDate(''); setToDate(''); setStatusFilter(''); setPage(0); }}
+          >
+            Clear Filters
+          </Button>
+        )}
       </Box>
 
       {/* Table */}

@@ -328,7 +328,7 @@ const resources = {
 // Get saved language from localStorage or default to 'te' (Telugu)
 const getSavedLanguage = () => {
   try {
-    return localStorage.getItem('taaja_lang') || 'te';
+    return localStorage.getItem('taaja_lang') || 'en';
   } catch {
     return 'te';
   }
@@ -341,7 +341,7 @@ i18n
   .init({
     resources,
     lng: savedLanguage,
-    fallbackLng: 'te', // Telugu as fallback
+    fallbackLng: 'en', // English as fallback
     interpolation: {
       escapeValue: false
     },

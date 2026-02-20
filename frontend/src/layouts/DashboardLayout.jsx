@@ -26,7 +26,7 @@ import {
   People as PeopleIcon,
   LocationOn as LocationIcon,
   Language as LanguageIcon,
-  ArrowBack as ArrowBackIcon,
+  Logout as LogoutIcon,
   Add as AddIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,7 +40,7 @@ const DashboardLayout = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const menuItems = [
@@ -52,7 +52,6 @@ const DashboardLayout = () => {
   const adminMenuItems = [
     { path: '/dashboard/categories', label: t('manageCategories'), icon: <CategoryIcon /> },
     { path: '/dashboard/users', label: t('manageUsers'), icon: <PeopleIcon /> },
-    { path: '/dashboard/locations', label: 'Manage Locations', icon: <LocationIcon /> },
     { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
   ];
 
@@ -120,9 +119,12 @@ const DashboardLayout = () => {
 
       <List>
         <ListItem disablePadding>
-          <ListItemButton onClick={() => navigate('/')}>
-            <ListItemIcon><ArrowBackIcon /></ListItemIcon>
-            <ListItemText primary="Back to Site" />
+          <ListItemButton onClick={async () => {
+            await logout();
+            navigate('/auth/login');
+          }}>
+            <ListItemIcon><LogoutIcon /></ListItemIcon>
+            <ListItemText primary={t('logout')} />
           </ListItemButton>
         </ListItem>
       </List>
