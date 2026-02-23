@@ -4,7 +4,7 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { protect } = require('../middleware/auth');
-const { containerClient } = require('../config/azure');
+const { audioContainerClient } = require('../config/azure');
 
 const openai = new OpenAI({
   apiKey: process.env.OPEN_API_KEY
@@ -154,13 +154,14 @@ async function generateTTSForLanguage(text, langCode) {
 
   const combined = Buffer.concat(audioBuffers);
 
-  const blobName = `audio/${Date.now()}-${uuidv4()}-${langCode}.wav`;
-  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+  const blobName = `${Date.now()}-${uuidv4()}-${langCode}.wav`;
+  const blockBlobClient = audioContainerClient.getBlockBlobClient(blobName);
   await blockBlobClient.uploadData(combined, {
     blobHTTPHeaders: { blobContentType: 'audio/wav' }
   });
 
-  return `${process.env.AZURE_STORAGE_URL}/${process.env.AZURE_STORAGE_CONTAINER}/${blobName}`;
+  const audioContainer = process.env.AZURE_STORAGE_AUDIO_CONTAINER || 'audio';
+  return `${process.env.AZURE_STORAGE_URL}/${audioContainer}/${blobName}`;
 }
 
 router.post('/', protect, async (req, res) => {
