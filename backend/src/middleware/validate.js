@@ -300,6 +300,28 @@ const schemas = {
   // Object ID param
   objectId: Joi.object({
     id: Joi.string().hex().length(24).required()
+  }),
+
+  // Google Auth schema (Flutter)
+  googleAuth: Joi.object({
+    idToken: Joi.string().required(),
+    role: Joi.string().valid('user', 'reporter').default('user')
+  }),
+
+  // App registration schema (email mandatory, phone optional)
+  registerApp: Joi.object({
+    name: Joi.string().min(2).max(100).required(),
+    email: Joi.string().email().required(),
+    phone: Joi.string().pattern(/^\+?[1-9]\d{6,14}$/).allow(null, '').messages({
+      'string.pattern.base': 'Phone number must be a valid international format (e.g. +919876543210)'
+    }),
+    password: Joi.string().min(6).max(100).required(),
+    role: Joi.string().valid('user', 'reporter').default('user')
+  }),
+
+  // Check email existence schema
+  checkEmail: Joi.object({
+    email: Joi.string().email().required()
   })
 };
 

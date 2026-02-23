@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const { protect, generateToken, setTokenCookie } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // @route   POST /api/auth/register
 // @desc    Register a new user
@@ -148,6 +151,133 @@ router.post('/admin/create', validate(schemas.register), async (req, res) => {
   } catch (error) {
     console.error('Admin creation error:', error);
     res.status(500).json({ error: 'Failed to create admin account' });
+  }
+});
+
+// @route   POST /api/auth/google
+// @desc    Google Sign-In (Flutter / Web)
+// @access  Public
+router.post('/google', validate(schemas.googleAuth), async (req, res) => {
+  try {
+    const { idToken, role } = req.body;
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Google account has no email address' });
+    }
+
+    let user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+    if (user) {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = user.authProvider === 'local' ? 'local' : 'google';
+      }
+      if (picture && !user.avatar) {
+        user.avatar = picture;
+      }
+      user.lastLogin = new Date();
+      await user.save();
+    } else {
+      user = await User.create({
+        email,
+        name: name || email.split('@')[0],
+        googleId,
+        avatar: picture || null,
+        authProvider: 'google',
+        role: role || 'user',
+        lastLogin: new Date()
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ error: 'Account is deactivated' });
+    }
+
+    const token = generateToken(user._id);
+    setTokenCookie(res, token);
+
+    res.json({
+      message: 'Google sign-in successful',
+      token,
+      user: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    if (error.message && error.message.includes('Token used too late')) {
+      return res.status(401).json({ error: 'Google token expired, please try again' });
+    }
+    res.status(401).json({ error: 'Invalid Google token' });
+  }
+});
+
+// @route   POST /api/auth/register/app
+// @desc    Manual registration from Flutter app (email mandatory, phone optional)
+// @access  Public
+router.post('/register/app', validate(schemas.registerApp), async (req, res) => {
+  try {
+    const { name, email, phone, password, role } = req.body;
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+
+    if (phone) {
+      const phoneExists = await User.findOne({ phone });
+      if (phoneExists) {
+        return res.status(400).json({ error: 'Phone number already registered' });
+      }
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      phone: phone || null,
+      password,
+      authProvider: 'local',
+      role: role || 'user'
+    });
+
+    const token = generateToken(user._id);
+    setTokenCookie(res, token);
+
+    res.status(201).json({
+      message: 'Registration successful',
+      token,
+      user: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('App registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+// @route   POST /api/auth/check-email
+// @desc    Check if an email already exists (for Flutter UX flow)
+// @access  Public
+router.post('/check-email', validate(schemas.checkEmail), async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email }).select('authProvider');
+
+    if (user) {
+      return res.json({
+        exists: true,
+        authProvider: user.authProvider || 'local'
+      });
+    }
+
+    res.json({ exists: false, authProvider: null });
+  } catch (error) {
+    console.error('Check email error:', error);
+    res.status(500).json({ error: 'Failed to check email' });
   }
 });
 

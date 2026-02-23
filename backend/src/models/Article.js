@@ -173,8 +173,13 @@ const articleSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  trendingScore: {
+    type: Number,
+    default: 0,
+    index: true
+  },
   readingTime: {
-    type: Number, // in minutes
+    type: Number,
     default: 1
   },
   seo: {
@@ -200,6 +205,8 @@ articleSchema.index({ isFeatured: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ isBreaking: 1, status: 1 });
 articleSchema.index({ 'engagement.views': -1 });
 articleSchema.index({ location: '2dsphere' });
+articleSchema.index({ category: 1, trendingScore: -1, createdAt: -1 });
+articleSchema.index({ status: 1, trendingScore: -1, createdAt: -1 });
 
 // Generate slug before saving - use English if available, otherwise generate from timestamp
 articleSchema.pre('save', async function(next) {
