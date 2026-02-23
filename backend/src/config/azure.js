@@ -24,6 +24,10 @@ const containerClient = blobServiceClient.getContainerClient(
   process.env.AZURE_STORAGE_CONTAINER || 'patientprescription'
 );
 
+const audioContainerClient = blobServiceClient.getContainerClient(
+  process.env.AZURE_STORAGE_AUDIO_CONTAINER || 'audio'
+);
+
 // Generate SAS token for blob operations
 const generateSASToken = (blobName, permissions = 'rcw', expiresInMinutes = 30) => {
   const accountName = connectionConfig.AccountName;
@@ -83,6 +87,7 @@ const deleteBlob = async (blobName) => {
 module.exports = {
   blobServiceClient,
   containerClient,
+  audioContainerClient,
   generateSASToken,
   getUploadUrl,
   getReadUrl,
