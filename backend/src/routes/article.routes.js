@@ -1,10 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Article = require('../models/Article');
 const Category = require('../models/Category');
+const User = require('../models/User');
 const { protect, optionalAuth, reporterOrAdmin, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
+
+const toObjectId = (id) => {
+  try { return new mongoose.Types.ObjectId(id); } catch { return null; }
+};
 
 // Helper to get value from Map or plain object
 const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
@@ -12,9 +18,216 @@ const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
   if (field instanceof Map) {
     return field.get(lang) || field.get(fallbackLang) || [...field.values()][0] || '';
   }
-  // Plain object (from lean query)
   return field[lang] || field[fallbackLang] || Object.values(field)[0] || '';
 };
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/articles/feed
+// Geospatial + Personalized News Feed
+//
+// Query: lat, lng, radiusKM, category, lang, userId, limit, page
+//
+// Pipeline: $geoNear → $match (category + $nin seenArticles) →
+//           $sort (trendingScore desc, createdAt desc) →
+//           $project (localized lang with English fallback)
+// ─────────────────────────────────────────────────────────────
+router.get('/feed', optionalAuth, async (req, res) => {
+  try {
+    const defaultLang = await languageCache.getDefaultLanguageCode();
+    const {
+      lat,
+      lng,
+      radiusKM = 50,
+      category,
+      lang = defaultLang,
+      userId,
+      limit = 20,
+      page = 1
+    } = req.query;
+
+    const pageLimit = Math.min(Number(limit) || 20, 100);
+    const skip = (Math.max(Number(page) || 1, 1) - 1) * pageLimit;
+
+    // ── Resolve seen articles for exclusion ──
+    let seenIds = [];
+    const resolvedUserId = userId || req.user?._id;
+    if (resolvedUserId) {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const user = await User.findById(resolvedUserId)
+        .select('seenArticles')
+        .lean();
+
+      if (user?.seenArticles?.length) {
+        seenIds = user.seenArticles
+          .filter(s => new Date(s.seenAt) >= thirtyDaysAgo)
+          .map(s => s.articleId);
+      }
+    }
+
+    const pipeline = [];
+
+    // ── Stage 1: $geoNear (must be first) ──
+    if (lat && lng) {
+      const geoQuery = { status: 'published' };
+      if (seenIds.length) geoQuery._id = { $nin: seenIds };
+
+      pipeline.push({
+        $geoNear: {
+          near: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
+          distanceField: 'distance',
+          maxDistance: Number(radiusKM) * 1000,
+          spherical: true,
+          query: geoQuery
+        }
+      });
+    } else {
+      const matchBase = { status: 'published' };
+      if (seenIds.length) matchBase._id = { $nin: seenIds };
+      pipeline.push({ $match: matchBase });
+    }
+
+    // ── Stage 2: $match — category + exclusion ──
+    const filterMatch = {};
+    if (category) {
+      const catId = toObjectId(category);
+      if (catId) {
+        filterMatch.$or = [{ category: catId }, { categoryAncestors: catId }];
+      }
+    }
+    if (Object.keys(filterMatch).length) {
+      pipeline.push({ $match: filterMatch });
+    }
+
+    // ── Stage 3: $sort — trending first, then chronological ──
+    pipeline.push({ $sort: { trendingScore: -1, createdAt: -1 } });
+
+    // ── Pagination ──
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: pageLimit });
+
+    // ── Lookups ──
+    pipeline.push(
+      { $lookup: { from: 'users', localField: 'author', foreignField: '_id', as: 'author' } },
+      { $unwind: { path: '$author', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'categories', localField: 'category', foreignField: '_id', as: 'category' } },
+      { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } }
+    );
+
+    // ── Stage 4: $project — localized fields with English fallback ──
+    pipeline.push({
+      $project: {
+        _id: 1,
+        articleId: 1,
+        slug: 1,
+        title: {
+          $ifNull: [`$title.${lang}`, { $ifNull: ['$title.en', ''] }]
+        },
+        summary: {
+          $ifNull: [`$summary.${lang}`, { $ifNull: ['$summary.en', ''] }]
+        },
+        content: {
+          $ifNull: [`$content.${lang}`, { $ifNull: ['$content.en', ''] }]
+        },
+        audioUrl: {
+          $ifNull: [`$audio.${lang}`, { $ifNull: ['$audio.en', null] }]
+        },
+        featuredImage: 1,
+        tags: 1,
+        location: 1,
+        engagement: 1,
+        trendingScore: 1,
+        readingTime: 1,
+        isFeatured: 1,
+        isBreaking: 1,
+        publishedAt: 1,
+        createdAt: 1,
+        distance: 1,
+        author: {
+          _id: '$author._id',
+          name: '$author.name',
+          avatar: '$author.avatar'
+        },
+        category: {
+          _id: '$category._id',
+          name: { $ifNull: [`$category.name.${lang}`, { $ifNull: ['$category.name.en', ''] }] },
+          slug: '$category.slug'
+        }
+      }
+    });
+
+    const articles = await Article.aggregate(pipeline);
+
+    // Count total (without skip/limit) for pagination info
+    const countPipeline = pipeline.filter(
+      s => !s.$skip && !s.$limit && !s.$lookup && !s.$unwind && !s.$project
+    );
+    countPipeline.push({ $count: 'total' });
+    const countResult = await Article.aggregate(countPipeline);
+    const total = countResult[0]?.total || 0;
+
+    res.json({
+      articles,
+      pagination: {
+        page: Number(page),
+        limit: pageLimit,
+        total,
+        pages: Math.ceil(total / pageLimit),
+        hasMore: skip + articles.length < total
+      },
+      meta: {
+        lang,
+        radiusKM: lat && lng ? Number(radiusKM) : null,
+        seenExcluded: seenIds.length
+      }
+    });
+  } catch (error) {
+    console.error('Feed error:', error);
+    res.status(500).json({ error: 'Failed to fetch feed' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/articles/feed/seen
+// Mark articles as seen by the authenticated user
+// Body: { articleIds: ["id1", "id2", ...] }
+// ─────────────────────────────────────────────────────────────
+router.post('/feed/seen', protect, async (req, res) => {
+  try {
+    const { articleIds } = req.body;
+    if (!articleIds || !Array.isArray(articleIds) || !articleIds.length) {
+      return res.status(400).json({ error: 'articleIds array is required' });
+    }
+
+    const validIds = articleIds.map(toObjectId).filter(Boolean);
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'No valid article IDs provided' });
+    }
+
+    const now = new Date();
+    const seenEntries = validIds.map(id => ({ articleId: id, seenAt: now }));
+
+    // Add to seenArticles, avoid duplicates using $addToSet-like logic
+    const user = await User.findById(req.user._id).select('seenArticles');
+    const existingIds = new Set((user.seenArticles || []).map(s => s.articleId.toString()));
+    const newEntries = seenEntries.filter(e => !existingIds.has(e.articleId.toString()));
+
+    if (newEntries.length) {
+      // Rolling window: remove entries older than 30 days, then push new ones
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      await User.findByIdAndUpdate(req.user._id, {
+        $pull: { seenArticles: { seenAt: { $lt: thirtyDaysAgo } } }
+      });
+      await User.findByIdAndUpdate(req.user._id, {
+        $push: { seenArticles: { $each: newEntries } }
+      });
+    }
+
+    res.json({ message: 'Articles marked as seen', added: newEntries.length });
+  } catch (error) {
+    console.error('Mark seen error:', error);
+    res.status(500).json({ error: 'Failed to mark articles as seen' });
+  }
+});
 
 // @route   GET /api/articles
 // @desc    Get published articles (public feed)

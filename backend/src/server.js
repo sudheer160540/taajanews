@@ -20,6 +20,7 @@ const translateRoutes = require('./routes/translate.routes');
 
 // Import utilities
 const languageCache = require('./utils/languageCache');
+const { startTrendingCron } = require('./jobs/trendingCron');
 
 const app = express();
 
@@ -113,6 +114,9 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.warn('Language cache initialization failed, will retry on first request');
   }
+
+  // Start trending score cron (every 15 minutes)
+  startTrendingCron();
 });
 
 module.exports = app;
