@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 
 /**
@@ -120,7 +121,34 @@ const reporterOrAdmin = (req, res, next) => {
 };
 
 /**
- * Generate JWT token
+ * Generate short-lived access token (default 15 minutes)
+ */
+const generateAccessToken = (userId) => {
+  return jwt.sign(
+    { id: userId },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m' }
+  );
+};
+
+/**
+ * Generate long-lived refresh token (random hex string, stored in DB)
+ */
+const generateRefreshToken = () => {
+  return crypto.randomBytes(40).toString('hex');
+};
+
+/**
+ * Save refresh token to user record and return it
+ */
+const createRefreshToken = async (userId) => {
+  const refreshToken = generateRefreshToken();
+  await User.findByIdAndUpdate(userId, { refreshToken });
+  return refreshToken;
+};
+
+/**
+ * Legacy generateToken — kept for backward compatibility (web dashboard uses 7d token)
  */
 const generateToken = (userId) => {
   return jwt.sign(
@@ -131,7 +159,7 @@ const generateToken = (userId) => {
 };
 
 /**
- * Set token cookie
+ * Set token cookie (for web dashboard)
  */
 const setTokenCookie = (res, token) => {
   const cookieOptions = {
@@ -151,5 +179,7 @@ module.exports = {
   adminOnly,
   reporterOrAdmin,
   generateToken,
+  generateAccessToken,
+  createRefreshToken,
   setTokenCookie
 };

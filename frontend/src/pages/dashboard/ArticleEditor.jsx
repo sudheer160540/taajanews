@@ -20,7 +20,8 @@ import {
   IconButton,
   CircularProgress,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  Autocomplete as MuiAutocomplete
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -33,11 +34,8 @@ import {
   LocationOn as LocationIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
-import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { articlesApi, categoriesApi, uploadApi, translateApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
-
-const LIBRARIES = ['places'];
 
 const ArticleEditor = () => {
   const { id } = useParams();
@@ -49,13 +47,12 @@ const ArticleEditor = () => {
   const [languages, setLanguages] = useState([]);
   const [defaultLang, setDefaultLang] = useState('en');
 
-  // Google Maps
-  const { isLoaded: mapsLoaded } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-    libraries: LIBRARIES
-  });
-  const autocompleteRef = useRef(null);
+  // Google Maps (New Places API)
+  const [mapsLoaded, setMapsLoaded] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [locationInput, setLocationInput] = useState('');
+  const sessionTokenRef = useRef(null);
+  const debounceRef = useRef(null);
 
   const [article, setArticle] = useState({
     title: {},
@@ -166,43 +163,85 @@ const ArticleEditor = () => {
     }
   };
 
-  // Google Maps Autocomplete handlers
-  const onAutocompleteLoad = useCallback((autocomplete) => {
-    autocompleteRef.current = autocomplete;
+  // Load Google Maps + new Places library
+  useEffect(() => {
+    let cancelled = false;
+    const init = async () => {
+      if (!window.google?.maps) {
+        if (!document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`;
+          script.async = true;
+          document.head.appendChild(script);
+        }
+        await new Promise(resolve => {
+          const check = setInterval(() => {
+            if (window.google?.maps) { clearInterval(check); resolve(); }
+          }, 100);
+        });
+      }
+      await google.maps.importLibrary('places');
+      if (!cancelled) setMapsLoaded(true);
+    };
+    init();
+    return () => { cancelled = true; };
   }, []);
 
-  const onPlaceChanged = useCallback(() => {
-    const autocomplete = autocompleteRef.current;
-    if (!autocomplete) return;
+  const fetchLocationSuggestions = useCallback(async (input) => {
+    if (!input || input.length < 3 || !mapsLoaded) {
+      setLocationSuggestions([]);
+      return;
+    }
+    try {
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+      }
+      const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input,
+        sessionToken: sessionTokenRef.current,
+      });
+      setLocationSuggestions(suggestions || []);
+    } catch (err) {
+      console.error('Autocomplete error:', err);
+      setLocationSuggestions([]);
+    }
+  }, [mapsLoaded]);
 
-    const place = autocomplete.getPlace();
-    if (!place.geometry) return;
+  const handlePlaceSelect = useCallback(async (suggestion) => {
+    if (!suggestion?.placePrediction) return;
+    try {
+      const place = suggestion.placePrediction.toPlace();
+      await place.fetchFields({
+        fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'],
+      });
+      const lat = place.location.lat();
+      const lng = place.location.lng();
 
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
+      let city = '', area = '', state = '', country = '', pincode = '';
+      for (const comp of (place.addressComponents || [])) {
+        const types = comp.types;
+        if (types.includes('locality') || types.includes('administrative_area_level_2')) city = city || comp.longText;
+        if (types.includes('sublocality_level_1') || types.includes('sublocality') || types.includes('neighborhood')) area = area || comp.longText;
+        if (types.includes('administrative_area_level_1')) state = comp.longText;
+        if (types.includes('country')) country = comp.longText;
+        if (types.includes('postal_code')) pincode = comp.longText;
+      }
 
-    // Extract address components
-    const getComponent = (types) => {
-      const component = place.address_components?.find(c =>
-        types.some(t => c.types.includes(t))
-      );
-      return component?.long_name || '';
-    };
+      const locationData = {
+        type: 'Point',
+        coordinates: [lng, lat],
+        formattedAddress: place.formattedAddress || '',
+        city, area, state, country, pincode,
+        placeId: place.id || ''
+      };
 
-    const locationData = {
-      type: 'Point',
-      coordinates: [lng, lat],
-      formattedAddress: place.formatted_address || '',
-      city: getComponent(['locality', 'administrative_area_level_2']),
-      area: getComponent(['sublocality_level_1', 'sublocality', 'neighborhood']),
-      state: getComponent(['administrative_area_level_1']),
-      country: getComponent(['country']),
-      pincode: getComponent(['postal_code']),
-      placeId: place.place_id || ''
-    };
-
-    setArticle(prev => ({ ...prev, location: locationData }));
-    setLocationInput(place.formatted_address || '');
+      setArticle(prev => ({ ...prev, location: locationData }));
+      setLocationInput(place.formattedAddress || '');
+      setLocationSuggestions([]);
+      sessionTokenRef.current = null;
+    } catch (err) {
+      console.error('Place details error:', err);
+    }
   }, []);
 
   const handleClearLocation = () => {
@@ -643,35 +682,55 @@ const ArticleEditor = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                   Location
                 </Typography>
-                {mapsLoaded ? (
-                  <Autocomplete
-                    onLoad={onAutocompleteLoad}
-                    onPlaceChanged={onPlaceChanged}
-                  >
+                <MuiAutocomplete
+                  freeSolo
+                  options={locationSuggestions}
+                  getOptionLabel={(option) => {
+                    if (typeof option === 'string') return option;
+                    return option?.placePrediction?.text?.text || '';
+                  }}
+                  filterOptions={(x) => x}
+                  inputValue={locationInput}
+                  onInputChange={(event, value, reason) => {
+                    setLocationInput(value);
+                    if (reason === 'input') {
+                      if (debounceRef.current) clearTimeout(debounceRef.current);
+                      debounceRef.current = setTimeout(() => fetchLocationSuggestions(value), 300);
+                    }
+                  }}
+                  onChange={(event, value) => {
+                    if (value && typeof value !== 'string') handlePlaceSelect(value);
+                  }}
+                  loading={!mapsLoaded}
+                  noOptionsText="Type to search locations..."
+                  renderInput={(params) => (
                     <TextField
+                      {...params}
                       fullWidth
                       size="small"
                       placeholder="Search for a location..."
-                      value={locationInput}
-                      onChange={(e) => setLocationInput(e.target.value)}
                       InputProps={{
-                        startAdornment: <LocationIcon fontSize="small" color="action" sx={{ mr: 1 }} />,
-                        endAdornment: article.location ? (
-                          <IconButton size="small" onClick={handleClearLocation}>
-                            <CloseIcon fontSize="small" />
-                          </IconButton>
-                        ) : null
+                        ...params.InputProps,
+                        startAdornment: (
+                          <>
+                            <LocationIcon fontSize="small" color="action" sx={{ mr: 1 }} />
+                            {params.InputProps.startAdornment}
+                          </>
+                        ),
+                        endAdornment: (
+                          <>
+                            {article.location && (
+                              <IconButton size="small" onClick={handleClearLocation}>
+                                <CloseIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                            {params.InputProps.endAdornment}
+                          </>
+                        )
                       }}
                     />
-                  </Autocomplete>
-                ) : (
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Loading maps..."
-                    disabled
-                  />
-                )}
+                  )}
+                />
 
                 {/* Show selected location details */}
                 {article.location && (

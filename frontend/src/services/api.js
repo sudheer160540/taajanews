@@ -1,8 +1,7 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-//const API_BASE_URL =  'http://localhost:5001/api';
-const API_BASE_URL = "https://taajanews-api.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -133,6 +132,14 @@ export const usersApi = {
 
 export const translateApi = {
   translate: (data) => api.post('/translate', data)
+};
+
+export const promotionsApi = {
+  getAll: (params) => api.get('/promotions/manage/list', { params }),
+  getById: (id) => api.get(`/promotions/${id}`),
+  create: (data) => api.post('/promotions', data),
+  update: (id, data) => api.put(`/promotions/${id}`, data),
+  delete: (id) => api.delete(`/promotions/${id}`)
 };
 
 export const languagesApi = {

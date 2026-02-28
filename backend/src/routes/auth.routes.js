@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
-const { protect, generateToken, setTokenCookie } = require('../middleware/auth');
+const { protect, generateToken, generateAccessToken, createRefreshToken, setTokenCookie } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -28,13 +28,16 @@ router.post('/register', validate(schemas.register), async (req, res) => {
       role: 'user'
     });
 
-    // Generate token
     const token = generateToken(user._id);
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = await createRefreshToken(user._id);
     setTokenCookie(res, token);
 
     res.status(201).json({
       message: 'Registration successful',
       token,
+      accessToken,
+      refreshToken,
       user: user.toPublicJSON()
     });
   } catch (error) {
@@ -71,13 +74,16 @@ router.post('/login', validate(schemas.login), async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate token
     const token = generateToken(user._id);
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = await createRefreshToken(user._id);
     setTokenCookie(res, token);
 
     res.json({
       message: 'Login successful',
       token,
+      accessToken,
+      refreshToken,
       user: user.toPublicJSON()
     });
   } catch (error) {
@@ -89,7 +95,8 @@ router.post('/login', validate(schemas.login), async (req, res) => {
 // @route   POST /api/auth/logout
 // @desc    Logout user
 // @access  Private
-router.post('/logout', protect, (req, res) => {
+router.post('/logout', protect, async (req, res) => {
+  await User.findByIdAndUpdate(req.user._id, { refreshToken: null });
   res.cookie('token', '', {
     httpOnly: true,
     expires: new Date(0)
@@ -141,11 +148,15 @@ router.post('/admin/create', validate(schemas.register), async (req, res) => {
     });
 
     const token = generateToken(admin._id);
+    const accessToken = generateAccessToken(admin._id);
+    const refreshToken = await createRefreshToken(admin._id);
     setTokenCookie(res, token);
 
     res.status(201).json({
       message: 'Admin account created successfully',
       token,
+      accessToken,
+      refreshToken,
       user: admin.toPublicJSON()
     });
   } catch (error) {
@@ -201,11 +212,15 @@ router.post('/google', validate(schemas.googleAuth), async (req, res) => {
     }
 
     const token = generateToken(user._id);
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = await createRefreshToken(user._id);
     setTokenCookie(res, token);
 
     res.json({
       message: 'Google sign-in successful',
       token,
+      accessToken,
+      refreshToken,
       user: user.toPublicJSON()
     });
   } catch (error) {
@@ -246,11 +261,15 @@ router.post('/register/app', validate(schemas.registerApp), async (req, res) => 
     });
 
     const token = generateToken(user._id);
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = await createRefreshToken(user._id);
     setTokenCookie(res, token);
 
     res.status(201).json({
       message: 'Registration successful',
       token,
+      accessToken,
+      refreshToken,
       user: user.toPublicJSON()
     });
   } catch (error) {
@@ -278,6 +297,35 @@ router.post('/check-email', validate(schemas.checkEmail), async (req, res) => {
   } catch (error) {
     console.error('Check email error:', error);
     res.status(500).json({ error: 'Failed to check email' });
+  }
+});
+
+// @route   POST /api/auth/refresh-token
+// @desc    Exchange refresh token for a new access token + refresh token pair
+// @access  Public
+router.post('/refresh-token', validate(schemas.refreshToken), async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    const user = await User.findOne({ refreshToken }).select('+refreshToken');
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ error: 'Account is deactivated' });
+    }
+
+    const newAccessToken = generateAccessToken(user._id);
+    const newRefreshToken = await createRefreshToken(user._id);
+
+    res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ error: 'Failed to refresh token' });
   }
 });
 
