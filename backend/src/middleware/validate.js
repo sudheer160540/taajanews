@@ -322,6 +322,11 @@ const schemas = {
   // Check email existence schema
   checkEmail: Joi.object({
     email: Joi.string().email().required()
+  }),
+
+  // Refresh token schema
+  refreshToken: Joi.object({
+    refreshToken: Joi.string().required()
   })
 };
 
