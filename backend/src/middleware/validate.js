@@ -275,6 +275,25 @@ const schemas = {
     order: Joi.number().integer().min(0)
   }),
 
+  // Yellow Page schemas
+  updateYelloPage: Joi.object({
+    isEnableYelloPage: Joi.boolean(),
+    workingProfessional: Joi.string().max(200).allow(null, ''),
+    location: Joi.object({
+      latitude: Joi.number().min(-90).max(90).required(),
+      longitude: Joi.number().min(-180).max(180).required(),
+      formattedAddress: Joi.string().max(300).allow(null, '')
+    }).allow(null)
+  }),
+
+  nearbyYelloPage: Joi.object({
+    latitude: Joi.number().min(-90).max(90).optional(),
+    longitude: Joi.number().min(-180).max(180).optional(),
+    radius: Joi.number().min(1).max(200).default(50), // km, optional
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(20)
+  }),
+
   // Query params
   pagination: Joi.object({
     page: Joi.number().integer().min(1).default(1),

@@ -92,6 +92,37 @@ const userSchema = new mongoose.Schema({
   refreshToken: {
     type: String,
     select: false
+  },
+
+  // Yellow Page fields
+  isEnableYelloPage: {
+    type: Boolean,
+    default: false
+  },
+  workingProfessional: {
+    type: String,
+    trim: true,
+    maxlength: [200, 'Working professional cannot exceed 200 characters'],
+    default: null
+  },
+  // Location is fully optional — NO defaults on any subfield.
+  // Mongoose must never auto-create a partial { coordinates:[0,0] } or { type:"Point" }
+  // because both cause the 2dsphere index to throw "unknown GeoJSON type".
+  // The sparse index means documents without location are simply not indexed.
+  location: {
+    type: {
+      type: String,
+      enum: ['Point']
+      // intentionally no default
+    },
+    coordinates: {
+      type: [Number]
+      // intentionally no default
+    },
+    formattedAddress: {
+      type: String,
+      default: null
+    }
   }
 }, {
   timestamps: true,
@@ -105,6 +136,8 @@ userSchema.index({ phone: 1 }, { sparse: true });
 userSchema.index({ googleId: 1 }, { sparse: true });
 userSchema.index({ role: 1, isActive: 1 });
 userSchema.index({ 'preferences.city': 1, 'preferences.area': 1 });
+userSchema.index({ isEnableYelloPage: 1 });
+userSchema.index({ location: '2dsphere' }, { sparse: true });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
@@ -130,7 +163,11 @@ userSchema.methods.toPublicJSON = function() {
     authProvider: this.authProvider || 'local',
     role: this.role,
     avatar: this.avatar,
+    bio: this.bio || null,
     preferences: this.preferences,
+    isEnableYelloPage: this.isEnableYelloPage,
+    workingProfessional: this.workingProfessional || null,
+    location: this.location || null,
     createdAt: this.createdAt
   };
 };
