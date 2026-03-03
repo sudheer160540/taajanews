@@ -470,10 +470,15 @@ GET /api/articles/feed?lang=te&page=2&limit=10
     {
       "_id": "6998535383b67e00f92fa64a",
       "articleId": "TJ-2af6472e",
+      "shortId": "V1StGXR8_Z",
+      "shortLinks": {
+        "en": "abc123XyZ0",
+        "te": "def456WvU1",
+        "hi": "ghi789QrS2"
+      },
       "slug": "leaving-governance-to-the-wind",
       "title": "పరిపాలన గాలికి వదిలేసి హెలికాప్టర్...",
       "summary": "కూటమి సర్కారు వల్ల ప్రజలకు...",
-      "content": "కూటమి సర్కారు వల్ల ప్రజలకు ఎటువంటి...",
       "audioUrl": "https://taajanews.blob.core.windows.net/audio/...-te.wav",
       "featuredImage": {
         "url": "https://taajanews.blob.core.windows.net/images/...",
@@ -570,6 +575,59 @@ Call this when the user scrolls past articles in the feed. Seen articles are exc
 **Notes:**
 - Duplicates are ignored
 - Seen entries auto-expire after 30 days
+
+---
+
+## 4.3 Get Article by Short Link
+
+### `GET /api/articles/s/:shortId?lang=te`
+
+Fetch a single article using its `shortId` or a language-specific short link from `shortLinks`. Useful for deep linking and sharing.
+
+**Auth:** None
+
+| Parameter | Type   | Default | Description                           |
+|-----------|--------|---------|---------------------------------------|
+| `lang`    | string | `en`    | Language code for localized response  |
+
+**Examples:**
+
+```
+GET /api/articles/s/V1StGXR8_Z
+GET /api/articles/s/V1StGXR8_Z?lang=te
+GET /api/articles/s/def456WvU1?lang=te
+```
+
+**Response:**
+
+```json
+{
+  "article": {
+    "_id": "6998535383b67e00f92fa64a",
+    "articleId": "TJ-2af6472e",
+    "shortId": "V1StGXR8_Z",
+    "shortLinks": {
+      "en": "abc123XyZ0",
+      "te": "def456WvU1",
+      "hi": "ghi789QrS2"
+    },
+    "slug": "leaving-governance-to-the-wind",
+    "title": "పరిపాలన గాలికి వదిలేసి హెలికాప్టర్...",
+    "summary": "కూటమి సర్కారు వల్ల ప్రజలకు...",
+    "content": "కూటమి సర్కారు వల్ల ప్రజలకు ఎటువంటి...",
+    "audioUrl": "https://taajanews.blob.core.windows.net/audio/...-te.wav",
+    "featuredImage": { "url": "...", "caption": {} },
+    "category": { "_id": "...", "name": "రాజకీయాలు", "slug": "politics" },
+    "author": { "_id": "...", "name": "Reporter Name", "avatar": null }
+  }
+}
+```
+
+**Flutter integration notes:**
+- Use `shortId` as the primary shareable ID — e.g. `https://yourdomain.com/s/V1StGXR8_Z`
+- Use language-specific `shortLinks[lang]` to deep link to a specific language version
+- Each language that has content gets its own unique 10-char nanoid
+- `shortLinks` are auto-generated when an article is created or translated
 
 ---
 
@@ -1066,27 +1124,28 @@ GET /api/promotions?type=advertisement&category=697ba9f11b749e103d435727
 | 7 | POST   | `/api/auth/check-email`               | Check email existence   |
 | 8 | POST   | `/api/auth/refresh-token`             | Refresh access token    |
 | 9 | GET    | `/api/articles/feed`                  | News feed               |
-| 10| GET    | `/api/promotions?type=advertisement`  | Get advertisements      |
-| 11| POST   | `/api/engagement/view/:articleId`     | Record view             |
-| 12| GET    | `/api/engagement/comments/:articleId` | Get comments            |
+| 10| GET    | `/api/articles/s/:shortId`            | Article by short link   |
+| 11| GET    | `/api/promotions?type=advertisement`  | Get advertisements      |
+| 12| POST   | `/api/engagement/view/:articleId`     | Record view             |
+| 13| GET    | `/api/engagement/comments/:articleId` | Get comments            |
 
 ## Private (Auth Required — pass `Authorization: Bearer <accessToken>`)
 
 | # | Method | Endpoint                                   | Description              |
 |---|--------|--------------------------------------------|--------------------------|
-| 13| GET    | `/api/auth/me`                             | Current user profile     |
-| 14| POST   | `/api/auth/logout`                         | Logout + revoke refresh  |
-| 15| POST   | `/api/articles/feed/seen`                  | Mark articles as seen    |
-| 16| POST   | `/api/engagement/like/:articleId`          | Like / unlike article    |
-| 17| POST   | `/api/engagement/dislike/:articleId`       | Dislike / undislike      |
-| 18| POST   | `/api/engagement/share/:articleId`         | Record share             |
-| 19| POST   | `/api/engagement/bookmark/:articleId`      | Bookmark / unbookmark    |
-| 20| GET    | `/api/engagement/bookmarks`                | User's bookmarks         |
-| 21| GET    | `/api/engagement/status/:articleId`        | Engagement status        |
-| 22| POST   | `/api/engagement/comments/:articleId`      | Add comment              |
-| 23| PUT    | `/api/engagement/comments/:commentId`      | Edit comment (10 min)    |
-| 24| DELETE | `/api/engagement/comments/:commentId`      | Delete comment           |
-| 25| POST   | `/api/engagement/comments/:commentId/like` | Like / unlike comment    |
+| 14| GET    | `/api/auth/me`                             | Current user profile     |
+| 15| POST   | `/api/auth/logout`                         | Logout + revoke refresh  |
+| 16| POST   | `/api/articles/feed/seen`                  | Mark articles as seen    |
+| 17| POST   | `/api/engagement/like/:articleId`          | Like / unlike article    |
+| 18| POST   | `/api/engagement/dislike/:articleId`       | Dislike / undislike      |
+| 19| POST   | `/api/engagement/share/:articleId`         | Record share             |
+| 20| POST   | `/api/engagement/bookmark/:articleId`      | Bookmark / unbookmark    |
+| 21| GET    | `/api/engagement/bookmarks`                | User's bookmarks         |
+| 22| GET    | `/api/engagement/status/:articleId`        | Engagement status        |
+| 23| POST   | `/api/engagement/comments/:articleId`      | Add comment              |
+| 24| PUT    | `/api/engagement/comments/:commentId`      | Edit comment (10 min)    |
+| 25| DELETE | `/api/engagement/comments/:commentId`      | Delete comment           |
+| 26| POST   | `/api/engagement/comments/:commentId/like` | Like / unlike comment    |
 
 ---
 

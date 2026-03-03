@@ -35,98 +35,33 @@ router.get('/feed', optionalAuth, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
     const {
-      lat,
-      lng,
+      latitude,
+      longitude,
       radiusKM = 50,
       category,
       lang = defaultLang,
       userId,
       limit = 20,
-      page = 1
+      page = 1,
+      article: pinnedArticleId
     } = req.query;
 
     const pageLimit = Math.min(Number(limit) || 20, 100);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * pageLimit;
 
-    // ── Resolve seen articles for exclusion ──
-    let seenIds = [];
-    const resolvedUserId = userId || req.user?._id;
-    if (resolvedUserId) {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const user = await User.findById(resolvedUserId)
-        .select('seenArticles')
-        .lean();
-
-      if (user?.seenArticles?.length) {
-        seenIds = user.seenArticles
-          .filter(s => new Date(s.seenAt) >= thirtyDaysAgo)
-          .map(s => s.articleId);
-      }
-    }
-
-    const pipeline = [];
-
-    // ── Stage 1: $geoNear (must be first) ──
-    if (lat && lng) {
-      const geoQuery = { status: 'published' };
-      if (seenIds.length) geoQuery._id = { $nin: seenIds };
-
-      pipeline.push({
-        $geoNear: {
-          near: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
-          distanceField: 'distance',
-          maxDistance: Number(radiusKM) * 1000,
-          spherical: true,
-          query: geoQuery
-        }
-      });
-    } else {
-      const matchBase = { status: 'published' };
-      if (seenIds.length) matchBase._id = { $nin: seenIds };
-      pipeline.push({ $match: matchBase });
-    }
-
-    // ── Stage 2: $match — category + exclusion ──
-    const filterMatch = {};
-    if (category) {
-      const catId = toObjectId(category);
-      if (catId) {
-        filterMatch.$or = [{ category: catId }, { categoryAncestors: catId }];
-      }
-    }
-    if (Object.keys(filterMatch).length) {
-      pipeline.push({ $match: filterMatch });
-    }
-
-    // ── Stage 3: $sort — trending first, then chronological ──
-    pipeline.push({ $sort: { trendingScore: -1, createdAt: -1 } });
-
-    // ── Pagination ──
-    pipeline.push({ $skip: skip });
-    pipeline.push({ $limit: pageLimit });
-
-    // ── Lookups ──
-    pipeline.push(
-      { $lookup: { from: 'users', localField: 'author', foreignField: '_id', as: 'author' } },
-      { $unwind: { path: '$author', preserveNullAndEmptyArrays: true } },
-      { $lookup: { from: 'categories', localField: 'category', foreignField: '_id', as: 'category' } },
-      { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } }
-    );
-
-    // ── Stage 4: $project — localized fields with English fallback ──
-    pipeline.push({
+    // ── Shared $project stage for localized fields ──
+    const projectStage = {
       $project: {
         _id: 1,
         articleId: 1,
+        shortId: 1,
+        shortLinks: 1,
         slug: 1,
         title: {
           $ifNull: [`$title.${lang}`, { $ifNull: ['$title.en', ''] }]
         },
         summary: {
           $ifNull: [`$summary.${lang}`, { $ifNull: ['$summary.en', ''] }]
-        },
-        content: {
-          $ifNull: [`$content.${lang}`, { $ifNull: ['$content.en', ''] }]
         },
         audioUrl: {
           $ifNull: [`$audio.${lang}`, { $ifNull: ['$audio.en', null] }]
@@ -153,9 +88,97 @@ router.get('/feed', optionalAuth, async (req, res) => {
           slug: '$category.slug'
         }
       }
-    });
+    };
 
-    const articles = await Article.aggregate(pipeline);
+    const lookupStages = [
+      { $lookup: { from: 'users', localField: 'author', foreignField: '_id', as: 'author' } },
+      { $unwind: { path: '$author', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'categories', localField: 'category', foreignField: '_id', as: 'category' } },
+      { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } }
+    ];
+
+    // ── Fetch pinned article (if requested) — no geo/category filter ──
+    let pinnedArticle = null;
+    const pinnedOid = toObjectId(pinnedArticleId);
+    if (pinnedOid && Number(page) === 1) {
+      const pinnedPipeline = [
+        { $match: { _id: pinnedOid } },
+        ...lookupStages,
+        projectStage
+      ];
+      const pinnedResult = await Article.aggregate(pinnedPipeline);
+      if (pinnedResult.length) pinnedArticle = pinnedResult[0];
+    }
+
+    // ── Resolve seen articles for exclusion ──
+    let seenIds = [];
+    const resolvedUserId = userId || req.user?._id;
+    if (resolvedUserId) {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const user = await User.findById(resolvedUserId)
+        .select('seenArticles')
+        .lean();
+
+      if (user?.seenArticles?.length) {
+        seenIds = user.seenArticles
+          .filter(s => new Date(s.seenAt) >= thirtyDaysAgo)
+          .map(s => s.articleId);
+      }
+    }
+
+    // Exclude pinned article from regular feed to avoid duplicates
+    const excludeIds = [...seenIds];
+    if (pinnedOid) excludeIds.push(pinnedOid);
+
+    const pipeline = [];
+
+    // ── Stage 1: $geoNear (must be first) ──
+    if (latitude && longitude) {
+      const geoQuery = { status: 'published' };
+      if (excludeIds.length) geoQuery._id = { $nin: excludeIds };
+
+      pipeline.push({
+        $geoNear: {
+          near: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+          distanceField: 'distance',
+          maxDistance: Number(radiusKM) * 1000,
+          spherical: true,
+          query: geoQuery
+        }
+      });
+    } else {
+      const matchBase = { status: 'published' };
+      if (excludeIds.length) matchBase._id = { $nin: excludeIds };
+      pipeline.push({ $match: matchBase });
+    }
+
+    // ── Stage 2: $match — category filter (only for feed, not pinned) ──
+    const filterMatch = {};
+    if (category) {
+      const catId = toObjectId(category);
+      if (catId) {
+        filterMatch.$or = [{ category: catId }, { categoryAncestors: catId }];
+      }
+    }
+    if (Object.keys(filterMatch).length) {
+      pipeline.push({ $match: filterMatch });
+    }
+
+    // ── Stage 3: $sort — trending first, then chronological ──
+    pipeline.push({ $sort: { trendingScore: -1, createdAt: -1 } });
+
+    // ── Pagination — reserve slot for pinned article on page 1 ──
+    const feedLimit = pinnedArticle ? pageLimit - 1 : pageLimit;
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: feedLimit });
+
+    // ── Lookups + Projection ──
+    pipeline.push(...lookupStages, projectStage);
+
+    const feedArticles = await Article.aggregate(pipeline);
+
+    // Prepend pinned article on page 1
+    const articles = pinnedArticle ? [pinnedArticle, ...feedArticles] : feedArticles;
 
     // Count total (without skip/limit) for pagination info
     const countPipeline = pipeline.filter(
@@ -176,8 +199,9 @@ router.get('/feed', optionalAuth, async (req, res) => {
       },
       meta: {
         lang,
-        radiusKM: lat && lng ? Number(radiusKM) : null,
-        seenExcluded: seenIds.length
+        radiusKM: latitude && longitude ? Number(radiusKM) : null,
+        seenExcluded: seenIds.length,
+        pinnedArticle: pinnedArticle ? pinnedArticle._id : null
       }
     });
   } catch (error) {
@@ -385,6 +409,54 @@ router.get('/ref/:articleId', optionalAuth, async (req, res) => {
     res.json({ article });
   } catch (error) {
     console.error('Get article by articleId error:', error);
+    res.status(500).json({ error: 'Failed to fetch article' });
+  }
+});
+
+// @route   GET /api/articles/s/:shortId
+// @desc    Get article by shortId or language short link
+// @access  Public
+router.get('/s/:shortId', optionalAuth, async (req, res) => {
+  try {
+    const defaultLang = await languageCache.getDefaultLanguageCode();
+    const { lang = defaultLang } = req.query;
+    const sid = req.params.shortId;
+
+    let article = await Article.findOne({ shortId: sid })
+      .populate('author', 'name avatar')
+      .populate('category', 'name slug color')
+      .lean();
+
+    if (!article) {
+      const activeLangs = await languageCache.getActiveLanguageCodes();
+      for (const lc of activeLangs) {
+        article = await Article.findOne({ [`shortLinks.${lc}`]: sid })
+          .populate('author', 'name avatar')
+          .populate('category', 'name slug color')
+          .lean();
+        if (article) break;
+      }
+    }
+
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    res.json({
+      article: {
+        ...article,
+        title: getLocalizedValue(article.title, lang, defaultLang),
+        summary: getLocalizedValue(article.summary, lang, defaultLang),
+        content: getLocalizedValue(article.content, lang, defaultLang),
+        audioUrl: article.audio?.[lang] || article.audio?.en || null,
+        category: article.category ? {
+          ...article.category,
+          name: getLocalizedValue(article.category.name, lang, defaultLang)
+        } : null
+      }
+    });
+  } catch (error) {
+    console.error('Get article by shortId error:', error);
     res.status(500).json({ error: 'Failed to fetch article' });
   }
 });
