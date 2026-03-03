@@ -346,6 +346,7 @@ const schemas = {
   // FCM Token schema
   upsertFcmToken: Joi.object({
     fcmToken: Joi.string().min(10).required(),
+    userId: Joi.string().hex().length(24).optional().allow(null, ''),
     location: Joi.object({
       latitude: Joi.number().min(-90).max(90).required(),
       longitude: Joi.number().min(-180).max(180).required()

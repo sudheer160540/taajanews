@@ -13,18 +13,20 @@ const { validate, schemas } = require('../middleware/validate');
 // @desc    Register or update an FCM token.
 //          If the fcmToken already exists → update userId & location.
 //          If it is new → create a fresh document.
-// @access  Private
+// @access  Public
 router.post(
   '/',
-  protect,
   validate(schemas.upsertFcmToken),
   async (req, res) => {
     try {
-      const { fcmToken, location } = req.body;
-      const userId = req.user._id;
+      const { fcmToken, location, userId } = req.body;
 
       // Build the fields to set / update
-      const updateFields = { userId };
+      const updateFields = {};
+
+      if (userId !== undefined) {
+        updateFields.userId = userId;
+      }
 
       if (location !== undefined) {
         // Allow caller to explicitly clear location by sending null
@@ -47,7 +49,7 @@ router.post(
         fcmToken: {
           id: doc._id,
           fcmToken: doc.fcmToken,
-          userId: doc.userId,
+          userId: doc.userId ?? null,
           location: doc.location ?? null,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt
