@@ -343,6 +343,15 @@ const schemas = {
     email: Joi.string().email().required()
   }),
 
+  // FCM Token schema
+  upsertFcmToken: Joi.object({
+    fcmToken: Joi.string().min(10).required(),
+    location: Joi.object({
+      latitude: Joi.number().min(-90).max(90).required(),
+      longitude: Joi.number().min(-180).max(180).required()
+    }).allow(null)
+  }),
+
   // Refresh token schema
   refreshToken: Joi.object({
     refreshToken: Joi.string().required()
