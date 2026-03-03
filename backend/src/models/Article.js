@@ -1,13 +1,10 @@
 const mongoose = require('mongoose');
-const crypto = require('crypto');
+const { nanoid } = require('nanoid');
 const slugify = require('../utils/slugify');
 const languageCache = require('../utils/languageCache');
 
-// Generate a short unique article ID (e.g., "TJ-a3f8b2c1")
-const generateArticleId = () => {
-  const randomPart = crypto.randomBytes(4).toString('hex');
-  return `TJ-${randomPart}`;
-};
+const generateArticleId = () => `TJ-${nanoid(8)}`;
+const generateShortId = () => nanoid(10);
 
 // Helper to create multilingual Map field
 const createMultilingualField = (required = false) => ({
@@ -43,6 +40,16 @@ const articleSchema = new mongoose.Schema({
     type: String,
     unique: true,
     index: true
+  },
+  shortId: {
+    type: String,
+    unique: true,
+    index: true
+  },
+  shortLinks: {
+    type: Map,
+    of: String,
+    default: new Map()
   },
   summary: {
     type: Map,
@@ -213,13 +220,44 @@ articleSchema.pre('save', async function(next) {
   // Generate articleId for new documents
   if (this.isNew && !this.articleId) {
     let id = generateArticleId();
-    // Ensure uniqueness
     let existing = await this.constructor.findOne({ articleId: id });
     while (existing) {
       id = generateArticleId();
       existing = await this.constructor.findOne({ articleId: id });
     }
     this.articleId = id;
+  }
+
+  // Generate shortId (nanoid) for new documents
+  if (this.isNew && !this.shortId) {
+    let sid = generateShortId();
+    let existing = await this.constructor.findOne({ shortId: sid });
+    while (existing) {
+      sid = generateShortId();
+      existing = await this.constructor.findOne({ shortId: sid });
+    }
+    this.shortId = sid;
+  }
+
+  // Generate per-language short links for all languages that have content
+  if (this.isNew || this.isModified('title') || this.isModified('content')) {
+    const activeLangs = await languageCache.getActiveLanguageCodes();
+    const existingLinks = this.shortLinks || new Map();
+
+    for (const lang of activeLangs) {
+      const hasTitle = this.title?.get(lang)?.trim();
+      const hasContent = this.content?.get(lang)?.trim();
+      if ((hasTitle || hasContent) && !existingLinks.get(lang)) {
+        let link = generateShortId();
+        let dup = await this.constructor.findOne({ [`shortLinks.${lang}`]: link });
+        while (dup) {
+          link = generateShortId();
+          dup = await this.constructor.findOne({ [`shortLinks.${lang}`]: link });
+        }
+        existingLinks.set(lang, link);
+      }
+    }
+    this.shortLinks = existingLinks;
   }
 
   // Only generate slug if it's a new document or title is modified and slug is not set
