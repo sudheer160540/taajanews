@@ -18,6 +18,7 @@ const languageRoutes = require('./routes/language.routes');
 const scrapedArticleRoutes = require('./routes/scrapedArticle.routes');
 const translateRoutes = require('./routes/translate.routes');
 const promotionRoutes = require('./routes/promotion.routes');
+const fcmTokenRoutes = require('./routes/fcmToken.routes');
 
 // Import utilities
 const languageCache = require('./utils/languageCache');
@@ -74,6 +75,7 @@ app.use('/api/languages', languageRoutes);
 app.use('/api/scraped-articles', scrapedArticleRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api/fcm-tokens', fcmTokenRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

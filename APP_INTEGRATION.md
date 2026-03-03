@@ -23,9 +23,10 @@
 9. [Promotions / Advertisements](#9-promotions--advertisements)
 10. [User Profile](#10-user-profile)
 11. [Yellow Pages](#11-yellow-pages)
-12. [Error Handling](#12-error-handling)
-13. [Quick Reference Table](#13-quick-reference-table)
-14. [App Startup Sequence](#14-app-startup-sequence)
+12. [FCM Tokens](#12-fcm-tokens)
+13. [Error Handling](#13-error-handling)
+14. [Quick Reference Table](#14-quick-reference-table)
+15. [App Startup Sequence](#15-app-startup-sequence)
 
 ---
 
@@ -1083,7 +1084,161 @@ final response = await dio.get('/api/users/yellow-pages/nearby', queryParameters
 
 ---
 
-## 12. Error Handling
+## 12. FCM Tokens
+
+FCM (Firebase Cloud Messaging) tokens identify a specific device for push notifications. Call the register endpoint right after login and whenever Firebase issues a refreshed token. The `fcmToken` string is the **unique key** — sending the same token again **updates** the record instead of creating a duplicate.
+
+### 12.1 Register / Update FCM Token
+
+**`POST /api/fcm-tokens`** — 🔒 Private
+
+| Behaviour | HTTP Status |
+|---|---|
+| `fcmToken` **not found** → creates new document | `201 Created` |
+| `fcmToken` **already exists** → updates `userId` + `location` | `200 OK` |
+
+**Request Body:**
+```json
+{
+  "fcmToken": "eXaMpLeFcMtOkEn_device123...",
+  "location": {
+    "latitude": 17.3850,
+    "longitude": 78.4867
+  }
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `fcmToken` | string | ✅ | Firebase device token (min 10 chars) |
+| `location` | object | ❌ | Device GPS at registration time. Omit if no permission. Send `null` to clear stored location |
+| `location.latitude` | number | ✅ if location | `-90` to `90` |
+| `location.longitude` | number | ✅ if location | `-180` to `180` |
+
+**Response `201` (new token registered):**
+```json
+{
+  "message": "FCM token registered",
+  "fcmToken": {
+    "id": "69c1234567890abcdef00001",
+    "fcmToken": "eXaMpLeFcMtOkEn_device123...",
+    "userId": "697ba9f01b749e103d435718",
+    "location": {
+      "latitude": 17.385,
+      "longitude": 78.4867
+    },
+    "createdAt": "2026-03-03T10:00:00.000Z",
+    "updatedAt": "2026-03-03T10:00:00.000Z"
+  }
+}
+```
+
+**Response `200` (existing token updated):**
+```json
+{
+  "message": "FCM token updated",
+  "fcmToken": {
+    "id": "69c1234567890abcdef00001",
+    "fcmToken": "eXaMpLeFcMtOkEn_device123...",
+    "userId": "697ba9f01b749e103d435718",
+    "location": {
+      "latitude": 17.385,
+      "longitude": 78.4867
+    },
+    "createdAt": "2026-03-01T08:00:00.000Z",
+    "updatedAt": "2026-03-03T10:00:00.000Z"
+  }
+}
+```
+
+**Errors:**
+| Status | Error |
+|---|---|
+| `400` | `Validation Error` + `details[]` |
+| `401` | `Not authorized, no token provided` |
+| `500` | `Failed to register FCM token` |
+
+---
+
+### 12.2 Remove FCM Token
+
+**`DELETE /api/fcm-tokens/:fcmToken`** — 🔒 Private
+
+Call on logout or when Firebase notifies that the token has been revoked. Users can only delete their own tokens.
+
+**Example:**
+```
+DELETE /api/fcm-tokens/eXaMpLeFcMtOkEn_device123...
+```
+
+**Response `200`:**
+```json
+{ "message": "FCM token removed" }
+```
+
+**Errors:**
+| Status | Error |
+|---|---|
+| `401` | `Not authorized, no token provided` |
+| `404` | `FCM token not found` |
+
+---
+
+### 12.3 Flutter Integration
+
+```dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:geolocator/geolocator.dart';
+
+/// Call right after a successful login or Google Sign-In.
+/// Safe to call on every app launch — it is an upsert.
+Future<void> registerFcmToken(Dio dio) async {
+  // 1. Get Firebase device token
+  final fcmToken = await FirebaseMessaging.instance.getToken();
+  if (fcmToken == null) return;
+
+  // 2. Try to get device GPS (optional)
+  Map<String, dynamic>? location;
+  try {
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+    location = {
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+    };
+  } catch (_) {
+    // Permission denied or unavailable — proceed without location
+    location = null;
+  }
+
+  // 3. Upsert the token (creates if new, updates if exists)
+  await dio.post('/api/fcm-tokens', data: {
+    'fcmToken': fcmToken,
+    if (location != null) 'location': location,
+  });
+}
+
+/// Call on user logout
+Future<void> removeFcmToken(Dio dio) async {
+  final fcmToken = await FirebaseMessaging.instance.getToken();
+  if (fcmToken == null) return;
+  await dio.delete('/api/fcm-tokens/$fcmToken');
+}
+
+/// Firebase may issue a new token at any time — keep it in sync
+void listenForTokenRefresh(Dio dio) {
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+    dio.post('/api/fcm-tokens', data: {'fcmToken': newToken});
+  });
+}
+```
+
+> ✅ **Best practice:** Call `registerFcmToken()` immediately after every successful login. Because the endpoint is an **upsert**, calling it multiple times with the same token is completely safe.
+
+---
+
+## 13. Error Handling
 
 ### Standard Error Format
 
@@ -1130,7 +1285,7 @@ Validation errors include a `details` array:
 
 ---
 
-## 13. Quick Reference Table
+## 14. Quick Reference Table
 
 ### 🔓 Public Endpoints (No Auth)
 
@@ -1172,10 +1327,12 @@ Validation errors include a `details` array:
 | 29 | `PUT` | `/api/engagement/comments/:commentId` | Edit comment (within 10 min) |
 | 30 | `DELETE` | `/api/engagement/comments/:commentId` | Delete comment |
 | 31 | `POST` | `/api/engagement/comments/:commentId/like` | Like / unlike comment |
+| 32 | `POST` | `/api/fcm-tokens` | Register / update FCM token (upsert) |
+| 33 | `DELETE` | `/api/fcm-tokens/:fcmToken` | Remove FCM token |
 
 ---
 
-## 14. App Startup Sequence
+## 15. App Startup Sequence
 
 ```
 App Launch
@@ -1191,9 +1348,12 @@ Check secure storage for tokens
     ├─ Tokens found ──► GET /api/auth/me → verify session
     │                       │
     │                       ├─ 200 → go to Home Feed
+    │                       │         └─► POST /api/fcm-tokens  ← register/refresh FCM token
     │                       └─ 401 → refresh or login
     │
     └─ No tokens ────► Show Login / Onboarding Screen
+                            │
+                            └─ After login ──► POST /api/fcm-tokens
 
 Home Feed
     │
@@ -1219,6 +1379,10 @@ User Profile / Settings
     ├─► PUT  /api/users/profile          (name, avatar, bio)
     ├─► PUT  /api/users/preferences      (language, city, area)
     └─► PUT  /api/users/:id/yellow-page  (enable listing + location)
+
+Logout
+    ├─► DELETE /api/fcm-tokens/:fcmToken  ← remove device token first
+    └─► POST   /api/auth/logout           ← then revoke refresh token
 ```
 
 ---
