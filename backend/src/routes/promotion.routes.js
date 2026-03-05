@@ -56,10 +56,10 @@ const schemas = {
   }).min(1)
 };
 
-// @route   GET /api/promotions
-// @desc    Get active promotions (public — for mobile app)
+// @route   GET /api/promotions/feed
+// @desc    Promotion feed for mobile app — active, newest first, optional location
 // @access  Public
-router.get('/', async (req, res) => {
+router.get('/feed', async (req, res) => {
   try {
     const {
       type,
@@ -72,81 +72,80 @@ router.get('/', async (req, res) => {
     } = req.query;
 
     const now = new Date();
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const pageLimit = Math.min(Number(limit) || 20, 100);
+    const skip = (pageNum - 1) * pageLimit;
 
-    if (lat && lng) {
-      const radiusMeters = Number(radiusKM) * 1000;
-      const pipeline = [
-        {
-          $geoNear: {
-            near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
-            distanceField: 'distance',
-            maxDistance: radiusMeters,
-            spherical: true,
-            query: { status: 'active' }
-          }
-        }
-      ];
-
-      const matchStage = {};
-      if (type) matchStage.type = type;
-      if (category) matchStage.category = new mongoose.Types.ObjectId(category);
-      matchStage.$or = [
+    const dateFilter = {
+      $or: [
         { startDate: null, endDate: null },
         { startDate: { $lte: now }, endDate: null },
         { startDate: null, endDate: { $gte: now } },
         { startDate: { $lte: now }, endDate: { $gte: now } }
+      ]
+    };
+
+    let nearbyIds = [];
+
+    // If location provided, find nearby promotions first, but also include non-located ones
+    if (lat && lng) {
+      const geoPipeline = [
+        {
+          $geoNear: {
+            near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+            distanceField: 'distance',
+            maxDistance: Number(radiusKM) * 1000,
+            spherical: true,
+            query: { status: 'active' }
+          }
+        },
+        { $project: { _id: 1, distance: 1 } }
       ];
-
-      if (Object.keys(matchStage).length > 1 || matchStage.$or) {
-        pipeline.push({ $match: matchStage });
-      }
-
-      pipeline.push({ $sort: { priority: -1, createdAt: -1 } });
-      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
-      pipeline.push({ $limit: Number(limit) });
-
-      const promotions = await Promotion.aggregate(pipeline);
-      await Promotion.populate(promotions, [
-        { path: 'category', select: 'name slug' },
-        { path: 'createdBy', select: 'name' }
-      ]);
-
-      return res.json({ promotions });
+      const geoResults = await Promotion.aggregate(geoPipeline);
+      nearbyIds = geoResults.map(r => r._id);
     }
 
-    const query = { status: 'active' };
-    if (type) query.type = type;
-    if (category) query.category = category;
-    query.$or = [
-      { startDate: null, endDate: null },
-      { startDate: { $lte: now }, endDate: null },
-      { startDate: null, endDate: { $gte: now } },
-      { startDate: { $lte: now }, endDate: { $gte: now } }
-    ];
+    // Build the main query: active + date valid
+    const baseMatch = { status: 'active', ...dateFilter };
+    if (type) baseMatch.type = type;
+    if (category) baseMatch.category = new mongoose.Types.ObjectId(category);
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const promotions = await Promotion.find(query)
+    if (lat && lng) {
+      // Include: nearby promotions OR promotions without a real location (coordinates [0,0])
+      baseMatch.$and = [
+        {
+          $or: [
+            { _id: { $in: nearbyIds } },
+            { 'location.coordinates': { $eq: [0, 0] } },
+            { 'location.coordinates': { $exists: false } },
+            { location: null }
+          ]
+        }
+      ];
+    }
+
+    const total = await Promotion.countDocuments(baseMatch);
+
+    const promotions = await Promotion.find(baseMatch)
       .populate('category', 'name slug')
       .populate('createdBy', 'name')
-      .sort({ priority: -1, createdAt: -1 })
+      .sort({ createdAt: -1, priority: -1 })
       .skip(skip)
-      .limit(Number(limit))
+      .limit(pageLimit)
       .lean();
-
-    const total = await Promotion.countDocuments(query);
 
     res.json({
       promotions,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNum,
+        limit: pageLimit,
         total,
-        pages: Math.ceil(total / Number(limit)),
+        pages: Math.ceil(total / pageLimit),
         hasMore: skip + promotions.length < total
       }
     });
   } catch (error) {
-    console.error('Get promotions error:', error);
+    console.error('Get promotion feed error:', error);
     res.status(500).json({ error: 'Failed to fetch promotions' });
   }
 });
@@ -163,15 +162,16 @@ router.get('/manage/list', protect, adminOnly, async (req, res) => {
     if (type) query.type = type;
 
     const skip = (Number(page) - 1) * Number(limit);
-    const promotions = await Promotion.find(query)
-      .populate('category', 'name slug')
-      .populate('createdBy', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean();
-
-    const total = await Promotion.countDocuments(query);
+    const [promotions, total] = await Promise.all([
+      Promotion.find(query)
+        .populate('category', 'name slug')
+        .populate('createdBy', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Promotion.countDocuments(query)
+    ]);
 
     res.json({
       promotions,

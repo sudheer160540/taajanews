@@ -1026,31 +1026,33 @@ Toggle like on a comment.
 
 ---
 
-## 7.1 Get Advertisements
+## 7.1 Promotion Feed
 
-### `GET /api/promotions?type=advertisement`
+### `GET /api/promotions/feed`
 
-Returns active advertisement banners. Supports optional geolocation filtering and category filtering.
+Returns active promotions (ads and goodwords), newest first. When location is provided, returns both nearby promotions AND promotions without a specific location (global promotions). Without location, returns all active promotions.
 
 **Auth:** None
 
 | Parameter  | Type   | Default | Description                                          |
 |------------|--------|---------|------------------------------------------------------|
-| `type`     | string | **required** | Pass `advertisement` to get only ads            |
+| `type`     | string | —       | Filter by type: `advertisement` or `goodwords`       |
 | `category` | string | —       | Category `_id` to filter by                          |
-| `lat`      | number | —       | User latitude (for geo-targeted ads)                 |
+| `lat`      | number | —       | User latitude (for geo-targeted promotions)          |
 | `lng`      | number | —       | User longitude                                       |
 | `radiusKM` | number | `50`    | Search radius in kilometers                          |
-| `limit`    | number | `20`    | Page size                                            |
+| `limit`    | number | `20`    | Page size (max 100)                                  |
 | `page`     | number | `1`     | Page number                                          |
 
 **Examples:**
 
 ```
-GET /api/promotions?type=advertisement
-GET /api/promotions?type=advertisement&limit=5
-GET /api/promotions?type=advertisement&lat=16.807&lng=81.531&radiusKM=50
-GET /api/promotions?type=advertisement&category=697ba9f11b749e103d435727
+GET /api/promotions/feed
+GET /api/promotions/feed?type=advertisement
+GET /api/promotions/feed?type=goodwords&limit=5
+GET /api/promotions/feed?lat=17.406&lng=78.477&radiusKM=50
+GET /api/promotions/feed?lat=17.406&lng=78.477&type=advertisement
+GET /api/promotions/feed?category=697ba9f11b749e103d435727&page=2
 ```
 
 **Response:**
@@ -1059,38 +1061,59 @@ GET /api/promotions?type=advertisement&category=697ba9f11b749e103d435727
 {
   "promotions": [
     {
-      "_id": "69b1234567890abcdef00001",
+      "_id": "69a84d5076bb023c508cdd79",
       "image": "https://taajanews.blob.core.windows.net/images/banner1.jpg",
-      "title": "Special Offer - 50% Off",
-      "description": "Limited time offer on all products",
-      "type": "advertisement",
+      "title": "goodwords",
+      "description": "goodwords",
+      "type": "goodwords",
       "location": {
         "type": "Point",
-        "coordinates": [81.5316033, 16.8072523],
-        "formattedAddress": "Tadepalligudem, Andhra Pradesh, India",
-        "city": "Tadepalligudem",
-        "state": "Andhra Pradesh",
+        "coordinates": [78.4772439, 17.406498],
+        "formattedAddress": "Hyderabad, Telangana, India",
+        "city": "Hyderabad",
+        "state": "Telangana",
         "country": "India"
       },
       "status": "active",
-      "link": "https://example.com/offer",
+      "link": "https://example.com",
       "category": {
-        "_id": "697ba9f11b749e103d435727",
-        "name": "Business",
+        "_id": "697ba9f11b749e103d435731",
+        "name": { "te": "క్రీడలు", "en": "Sports", "hi": "खेल" },
+        "slug": "sports"
+      },
+      "priority": 0,
+      "startDate": "2026-03-04T00:00:00.000Z",
+      "endDate": "2026-03-31T00:00:00.000Z",
+      "createdBy": { "_id": "697ba9f01b749e103d435718", "name": "Admin User" },
+      "createdAt": "2026-03-04T15:18:40.699Z",
+      "updatedAt": "2026-03-04T15:18:40.699Z"
+    },
+    {
+      "_id": "69a1dc86ceb88ca89d617443",
+      "image": "https://taajanews.blob.core.windows.net/images/banner2.jpg",
+      "title": "demo sample",
+      "description": "Global promotion — no specific location",
+      "type": "advertisement",
+      "location": { "type": "Point", "coordinates": [0, 0] },
+      "status": "active",
+      "link": "https://www.example.com",
+      "category": {
+        "_id": "697ba9f11b749e103d43572c",
+        "name": { "te": "వ్యాపారం", "en": "Business", "hi": "व्यापार" },
         "slug": "business"
       },
-      "priority": 10,
-      "startDate": "2026-01-01T00:00:00.000Z",
-      "endDate": "2026-12-31T23:59:59.000Z",
+      "priority": 0,
+      "startDate": null,
+      "endDate": null,
       "createdBy": { "_id": "697ba9f01b749e103d435718", "name": "Admin User" },
-      "createdAt": "2026-01-30T10:00:00.000Z",
-      "updatedAt": "2026-01-30T10:00:00.000Z"
+      "createdAt": "2026-02-27T18:03:50.849Z",
+      "updatedAt": "2026-02-27T18:03:50.849Z"
     }
   ],
   "pagination": {
     "page": 1,
     "limit": 20,
-    "total": 1,
+    "total": 2,
     "pages": 1,
     "hasMore": false
   }
@@ -1098,14 +1121,15 @@ GET /api/promotions?type=advertisement&category=697ba9f11b749e103d435727
 ```
 
 **Flutter integration notes:**
-- Always pass `type=advertisement` to fetch only ads
-- Call on app startup or when the feed screen loads to display ad banners between articles
-- If `link` is not null, make the banner tappable and open the URL (in-app browser or external)
-- If `link` is null, the banner is display-only
-- Use `image` as the banner background
-- Ads are sorted by `priority` (highest first), then by newest
-- Only active ads within their scheduled date range are returned
-- Pass `lat` & `lng` from the user's device to get location-targeted ads
+- Call on app startup or when the feed screen loads to display banners between articles
+- Pass `type=advertisement` for only ads, `type=goodwords` for only quotes/messages, or omit for both
+- When `lat` & `lng` are provided: returns nearby promotions + global promotions (coordinates `[0,0]` or no location)
+- When `lat` & `lng` are NOT provided: returns all active promotions regardless of location
+- If `link` is not null, make the banner tappable and open the URL
+- If `link` is null, the banner is display-only (e.g. a quote)
+- Promotions are sorted newest first, then by priority
+- Only active promotions within their scheduled date range are returned
+- Pagination is fully supported — use `page` and `limit` parameters
 
 ---
 
@@ -1125,7 +1149,7 @@ GET /api/promotions?type=advertisement&category=697ba9f11b749e103d435727
 | 8 | POST   | `/api/auth/refresh-token`             | Refresh access token    |
 | 9 | GET    | `/api/articles/feed`                  | News feed               |
 | 10| GET    | `/api/articles/s/:shortId`            | Article by short link   |
-| 11| GET    | `/api/promotions?type=advertisement`  | Get advertisements      |
+| 11| GET    | `/api/promotions/feed`                | Promotion feed          |
 | 12| POST   | `/api/engagement/view/:articleId`     | Record view             |
 | 13| GET    | `/api/engagement/comments/:articleId` | Get comments            |
 
