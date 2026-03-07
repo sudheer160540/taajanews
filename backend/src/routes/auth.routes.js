@@ -25,7 +25,8 @@ router.post('/register', validate(schemas.register), async (req, res) => {
       name,
       email,
       password,
-      role: 'user'
+      role: 'user',
+      location: { type: 'Point', coordinates: [0, 0] }
     });
 
     const token = generateToken(user._id);
@@ -144,7 +145,8 @@ router.post('/admin/create', validate(schemas.register), async (req, res) => {
       name,
       email,
       password,
-      role: 'admin'
+      role: 'admin',
+      location: { type: 'Point', coordinates: [0, 0] }
     });
 
     const token = generateToken(admin._id);
@@ -203,7 +205,8 @@ router.post('/google', validate(schemas.googleAuth), async (req, res) => {
         avatar: picture || null,
         authProvider: 'google',
         role: role || 'user',
-        lastLogin: new Date()
+        lastLogin: new Date(),
+        location: { type: 'Point', coordinates: [0, 0] }
       });
     }
 
@@ -257,7 +260,8 @@ router.post('/register/app', validate(schemas.registerApp), async (req, res) => 
       phone: phone || null,
       password,
       authProvider: 'local',
-      role: role || 'user'
+      role: role || 'user',
+      location: { type: 'Point', coordinates: [0, 0] }
     });
 
     const token = generateToken(user._id);
