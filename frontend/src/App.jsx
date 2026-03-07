@@ -28,6 +28,7 @@ import UsersManager from './pages/dashboard/UsersManager';
 import LocationsManager from './pages/dashboard/LocationsManager';
 import LanguagesManager from './pages/dashboard/LanguagesManager';
 import PromotionsManager from './pages/dashboard/PromotionsManager';
+import VideosManager from './pages/dashboard/VideosManager';
 
 // Loading screen
 const LoadingScreen = () => (
@@ -184,6 +185,14 @@ function App() {
           element={
             <ProtectedRoute requireAdmin>
               <PromotionsManager />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="videos"
+          element={
+            <ProtectedRoute requireAdmin>
+              <VideosManager />
             </ProtectedRoute>
           }
         />

@@ -28,7 +28,8 @@ import {
   Language as LanguageIcon,
   Logout as LogoutIcon,
   Add as AddIcon,
-  Campaign as CampaignIcon
+  Campaign as CampaignIcon,
+  VideoLibrary as VideoIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -55,6 +56,7 @@ const DashboardLayout = () => {
     { path: '/dashboard/users', label: t('manageUsers'), icon: <PeopleIcon /> },
     { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
     { path: '/dashboard/promotions', label: 'Promotions', icon: <CampaignIcon /> },
+    { path: '/dashboard/videos', label: 'Videos', icon: <VideoIcon /> },
   ];
 
   const drawer = (

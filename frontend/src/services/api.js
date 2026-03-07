@@ -144,6 +144,15 @@ export const promotionsApi = {
   delete: (id) => api.delete(`/promotions/${id}`)
 };
 
+export const videosApi = {
+  getAll: (params) => api.get('/videos', { params }),
+  getPublic: (params) => api.get('/videos/public', { params }),
+  getById: (id) => api.get(`/videos/${id}`),
+  create: (data) => api.post('/videos', data),
+  update: (id, data) => api.put(`/videos/${id}`, data),
+  delete: (id) => api.delete(`/videos/${id}`)
+};
+
 export const languagesApi = {
   getAll: () => api.get('/languages'),
   getAllAdmin: () => api.get('/languages/all'),
