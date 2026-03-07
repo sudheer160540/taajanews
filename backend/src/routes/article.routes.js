@@ -164,8 +164,8 @@ router.get('/feed', optionalAuth, async (req, res) => {
       pipeline.push({ $match: filterMatch });
     }
 
-    // ── Stage 3: $sort — trending first, then chronological ──
-    pipeline.push({ $sort: { trendingScore: -1, createdAt: -1 } });
+    // ── Stage 3: $sort — newest first, then by trending score ──
+    pipeline.push({ $sort: { createdAt: -1, trendingScore: -1 } });
 
     // ── Pagination — reserve slot for pinned article on page 1 ──
     const feedLimit = pinnedArticle ? pageLimit - 1 : pageLimit;
