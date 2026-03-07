@@ -19,14 +19,17 @@ import {
   TextField,
   Switch,
   FormControlLabel,
-  Alert
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  CloudUpload as UploadIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
-import { categoriesApi } from '../../services/api';
+import { categoriesApi, uploadApi } from '../../services/api';
 
 const CategoriesManager = () => {
   const { t } = useTranslation();
@@ -40,10 +43,14 @@ const CategoriesManager = () => {
     description: { te: '', en: '', hi: '' },
     color: '#1976d2',
     isActive: true,
-    isFeatured: false
+    isFeatured: false,
+    icon: '',
+    image: ''
   });
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -78,7 +85,9 @@ const CategoriesManager = () => {
         },
         color: category.color || '#1976d2',
         isActive: category.isActive !== false,
-        isFeatured: category.isFeatured || false
+        isFeatured: category.isFeatured || false,
+        icon: category.icon || '',
+        image: category.image || ''
       });
     } else {
       setEditingCategory(null);
@@ -87,7 +96,9 @@ const CategoriesManager = () => {
         description: { te: '', en: '', hi: '' },
         color: '#1976d2',
         isActive: true,
-        isFeatured: false
+        isFeatured: false,
+        icon: '',
+        image: ''
       });
     }
     setDialogOpen(true);
@@ -139,6 +150,73 @@ const CategoriesManager = () => {
     }
   };
 
+  const extractBlobName = (blobUrl) => {
+    if (!blobUrl) return null;
+    try {
+      const url = new URL(blobUrl);
+      // Path is /container/blobName — strip leading slash and container
+      const parts = url.pathname.split('/');
+      return parts.slice(2).join('/');
+    } catch {
+      return null;
+    }
+  };
+
+  const deleteBlobFromAzure = async (blobUrl) => {
+    const blobName = extractBlobName(blobUrl);
+    if (blobName) {
+      try {
+        await uploadApi.delete(blobName);
+      } catch (err) {
+        console.error('Failed to delete blob from Azure:', err);
+      }
+    }
+  };
+
+  const handleIconUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingIcon(true);
+    setError(null);
+    try {
+      if (formData.icon) await deleteBlobFromAzure(formData.icon);
+      const response = await uploadApi.uploadFile(file);
+      setFormData(prev => ({ ...prev, icon: response.data.blobUrl }));
+    } catch (err) {
+      setError('Failed to upload icon');
+      console.error('Icon upload error:', err);
+    } finally {
+      setUploadingIcon(false);
+    }
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingImage(true);
+    setError(null);
+    try {
+      if (formData.image) await deleteBlobFromAzure(formData.image);
+      const response = await uploadApi.uploadFile(file);
+      setFormData(prev => ({ ...prev, image: response.data.blobUrl }));
+    } catch (err) {
+      setError('Failed to upload stock icon');
+      console.error('Stock icon upload error:', err);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveIcon = async () => {
+    await deleteBlobFromAzure(formData.icon);
+    setFormData(prev => ({ ...prev, icon: '' }));
+  };
+
+  const handleRemoveImage = async () => {
+    await deleteBlobFromAzure(formData.image);
+    setFormData(prev => ({ ...prev, image: '' }));
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -164,6 +242,8 @@ const CategoriesManager = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>Icon</TableCell>
+                <TableCell>Stock Icon</TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>Description</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -172,15 +252,27 @@ const CategoriesManager = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={3} align="center">{t('loading')}</TableCell>
+                  <TableCell colSpan={5} align="center">{t('loading')}</TableCell>
                 </TableRow>
               ) : categories.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} align="center">{t('noResults')}</TableCell>
+                  <TableCell colSpan={5} align="center">{t('noResults')}</TableCell>
                 </TableRow>
               ) : (
                 categories.map((category) => (
                   <TableRow key={category._id}>
+                    <TableCell>
+                      {category.icon ? (
+                        <Box component="img" src={category.icon} alt="icon"
+                          sx={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 1 }} />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {category.image ? (
+                        <Box component="img" src={category.image} alt="stock icon"
+                          sx={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 1 }} />
+                      ) : '-'}
+                    </TableCell>
                     <TableCell>
                       {category._multilingual?.name?.te || category.name}
                     </TableCell>
@@ -287,6 +379,57 @@ const CategoriesManager = () => {
             margin="normal"
             InputLabelProps={{ shrink: true }}
           />
+
+          {/* Icon Upload */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Normal Icon</Typography>
+            {formData.icon ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box component="img" src={formData.icon} alt="Icon"
+                  sx={{ width: 56, height: 56, objectFit: 'contain', border: '1px solid #e0e0e0', borderRadius: 1, p: 0.5 }} />
+                <IconButton size="small" color="error" onClick={handleRemoveIcon}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ) : (
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={uploadingIcon ? <CircularProgress size={18} /> : <UploadIcon />}
+                disabled={uploadingIcon}
+                size="small"
+              >
+                {uploadingIcon ? 'Uploading...' : 'Upload Icon'}
+                <input type="file" hidden accept="image/*" onChange={handleIconUpload} />
+              </Button>
+            )}
+          </Box>
+
+          {/* Stock Icon Upload */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Stock Icon</Typography>
+            {formData.image ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box component="img" src={formData.image} alt="Stock Icon"
+                  sx={{ width: 56, height: 56, objectFit: 'contain', border: '1px solid #e0e0e0', borderRadius: 1, p: 0.5 }} />
+                <IconButton size="small" color="error" onClick={handleRemoveImage}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ) : (
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={uploadingImage ? <CircularProgress size={18} /> : <UploadIcon />}
+                disabled={uploadingImage}
+                size="small"
+              >
+                {uploadingImage ? 'Uploading...' : 'Upload Stock Icon'}
+                <input type="file" hidden accept="image/*" onChange={handleImageUpload} />
+              </Button>
+            )}
+          </Box>
+
           <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
             <FormControlLabel
               control={

@@ -4,6 +4,18 @@ const Category = require('../models/Category');
 const { protect, adminOnly, optionalAuth } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
+const { deleteBlob } = require('../config/azure');
+
+const extractBlobName = (blobUrl) => {
+  if (!blobUrl) return null;
+  try {
+    const url = new URL(blobUrl);
+    const parts = url.pathname.split('/');
+    return parts.slice(2).join('/');
+  } catch {
+    return null;
+  }
+};
 
 // Helper to get value from Map or plain object
 const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
@@ -204,10 +216,14 @@ router.put('/:id', protect, adminOnly, async (req, res) => {
       'image', 'order', 'isActive', 'isFeatured'
     ];
     
+    const existingCategory = await Category.findById(req.params.id).lean();
+    if (!existingCategory) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
     const updates = {};
     Object.keys(req.body).forEach(key => {
       if (allowedUpdates.includes(key)) {
-        // Convert multilingual fields to Maps
         if (key === 'name' || key === 'description') {
           updates[key] = new Map(Object.entries(req.body[key] || {}));
         } else {
@@ -216,15 +232,19 @@ router.put('/:id', protect, adminOnly, async (req, res) => {
       }
     });
 
+    // Clean up old Azure blobs when icon/image is replaced or removed
+    for (const field of ['icon', 'image']) {
+      if (field in updates && existingCategory[field] && existingCategory[field] !== updates[field]) {
+        const oldBlobName = extractBlobName(existingCategory[field]);
+        if (oldBlobName) deleteBlob(oldBlobName);
+      }
+    }
+
     const category = await Category.findByIdAndUpdate(
       req.params.id,
       updates,
       { new: true, runValidators: true }
     );
-
-    if (!category) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
 
     res.json({ 
       message: 'Category updated',
