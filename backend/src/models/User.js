@@ -113,15 +113,15 @@ const userSchema = new mongoose.Schema({
     type: {
       type: String,
       enum: ['Point']
-      // intentionally no default
+      // no default
     },
     coordinates: {
       type: [Number]
-      // intentionally no default
+      // no default
     },
     formattedAddress: {
-      type: String,
-      default: null
+      type: String
+      // no default — prevents Mongoose auto-creating { formattedAddress: null }
     }
   }
 }, {
@@ -138,6 +138,24 @@ userSchema.index({ role: 1, isActive: 1 });
 userSchema.index({ 'preferences.city': 1, 'preferences.area': 1 });
 userSchema.index({ isEnableYelloPage: 1 });
 userSchema.index({ location: '2dsphere' }, { sparse: true });
+
+// Sanitize location before saving — if only formattedAddress is set (no coordinates),
+// fill in valid GeoJSON defaults so the 2dsphere index never throws
+userSchema.pre('save', function(next) {
+  if (this.location) {
+    const hasCoords = Array.isArray(this.location.coordinates) && this.location.coordinates.length === 2;
+    const hasType = this.location.type === 'Point';
+
+    if (!hasCoords || !hasType) {
+      this.location = {
+        type: 'Point',
+        coordinates: [0, 0],
+        ...(this.location.formattedAddress && { formattedAddress: this.location.formattedAddress })
+      };
+    }
+  }
+  next();
+});
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
