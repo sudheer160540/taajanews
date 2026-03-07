@@ -52,34 +52,62 @@ router.get('/', protect, adminOnly, async (req, res) => {
 });
 
 // @route   GET /api/videos/public
-// @desc    Get published videos (public feed)
+// @desc    Get published videos (public feed for mobile app)
 // @access  Public
 router.get('/public', async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const perPage = parseInt(limit, 10);
 
     const [videos, total] = await Promise.all([
       Video.find({ status: 'published' })
-        .select('title description videoUrl thumbnail createdAt')
+        .select('title description videoUrl thumbnail createdBy createdAt')
+        .populate('createdBy', 'name avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit, 10))
+        .limit(perPage)
         .lean(),
       Video.countDocuments({ status: 'published' })
     ]);
+
+    const currentPage = parseInt(page, 10);
+    const totalPages = Math.ceil(total / perPage);
 
     res.json({
       videos,
       pagination: {
         total,
-        page: parseInt(page, 10),
-        pages: Math.ceil(total / parseInt(limit, 10))
+        page: currentPage,
+        pages: totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPrevPage: currentPage > 1
       }
     });
   } catch (error) {
     console.error('Get public videos error:', error);
     res.status(500).json({ error: 'Failed to fetch videos' });
+  }
+});
+
+// @route   GET /api/videos/public/:id
+// @desc    Get single published video (for mobile app)
+// @access  Public
+router.get('/public/:id', async (req, res) => {
+  try {
+    const video = await Video.findOne({ _id: req.params.id, status: 'published' })
+      .select('title description videoUrl thumbnail createdBy createdAt')
+      .populate('createdBy', 'name avatar')
+      .lean();
+
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    res.json({ video });
+  } catch (error) {
+    console.error('Get public video error:', error);
+    res.status(500).json({ error: 'Failed to fetch video' });
   }
 });
 

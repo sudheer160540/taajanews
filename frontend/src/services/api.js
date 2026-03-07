@@ -147,6 +147,7 @@ export const promotionsApi = {
 export const videosApi = {
   getAll: (params) => api.get('/videos', { params }),
   getPublic: (params) => api.get('/videos/public', { params }),
+  getPublicById: (id) => api.get(`/videos/public/${id}`),
   getById: (id) => api.get(`/videos/${id}`),
   create: (data) => api.post('/videos', data),
   update: (id, data) => api.put(`/videos/${id}`, data),
