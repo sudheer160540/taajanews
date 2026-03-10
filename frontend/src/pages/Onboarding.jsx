@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,25 +14,21 @@ import {
   StepLabel,
   CircularProgress,
   Chip,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemIcon,
+  Alert,
   TextField,
-  InputAdornment,
-  Alert
+  Autocomplete as MuiAutocomplete
 } from '@mui/material';
 import {
   Language as LanguageIcon,
-  LocationCity as CityIcon,
-  Place as PlaceIcon,
+  LocationOn as LocationIcon,
   MyLocation as MyLocationIcon,
-  Search as SearchIcon,
   Check as CheckIcon
 } from '@mui/icons-material';
 import { useLocation } from '../contexts/LocationContext';
 import { languagesApi } from '../services/api';
+import api from '../services/api';
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const Onboarding = () => {
   const { t, i18n } = useTranslation();
@@ -40,39 +36,37 @@ const Onboarding = () => {
   const {
     city,
     area,
-    cities,
-    areas,
-    fetchCities,
-    fetchAreas,
     selectCity,
     selectArea,
     detectLocation,
-    isOnboardingComplete
+    clearLocation
   } = useLocation();
 
   const [activeStep, setActiveStep] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState(null);
   const [languages, setLanguages] = useState([]);
   const [languagesLoading, setLanguagesLoading] = useState(true);
 
-  const steps = [t('selectLanguage'), t('selectCity'), t('selectArea')];
+  const [mapsLoaded, setMapsLoaded] = useState(false);
+  const [locationInput, setLocationInput] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [resolvingPlace, setResolvingPlace] = useState(false);
+  const sessionTokenRef = useRef(null);
 
-  // Fetch languages from API
+  const steps = [t('selectLanguage'), t('selectCity') || 'Select Location'];
+
   useEffect(() => {
     const loadLanguages = async () => {
       try {
         const response = await languagesApi.getAll();
         setLanguages(response.data.languages || []);
-      } catch (err) {
-        console.error('Failed to fetch languages:', err);
-        // Fallback to default languages
+      } catch {
         setLanguages([
           { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
           { code: 'en', name: 'English', nativeName: 'English' },
-          { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' }
+          { code: 'hi', name: 'Hindi', nativeName: 'హిన్दी' }
         ]);
       } finally {
         setLanguagesLoading(false);
@@ -82,48 +76,125 @@ const Onboarding = () => {
   }, []);
 
   useEffect(() => {
-    if (activeStep === 1 && cities.length === 0) {
-      fetchCities();
-    }
-  }, [activeStep, cities.length, fetchCities]);
-
-  useEffect(() => {
-    if (activeStep === 2 && city && areas.length === 0) {
-      fetchAreas(city._id);
-    }
-  }, [activeStep, city, areas.length, fetchAreas]);
-
-  // Determine initial step based on existing selections
-  useEffect(() => {
-    if (city && area) {
-      setActiveStep(2);
-    } else if (city) {
-      setActiveStep(2);
+    if (city) {
+      setActiveStep(1);
     }
   }, []);
+
+  // Load Google Maps JS + Places library
+  useEffect(() => {
+    let cancelled = false;
+    const init = async () => {
+      if (!window.google?.maps) {
+        if (!document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+          script.async = true;
+          document.head.appendChild(script);
+        }
+        await new Promise(resolve => {
+          const check = setInterval(() => {
+            if (window.google?.maps) { clearInterval(check); resolve(); }
+          }, 100);
+        });
+      }
+      await google.maps.importLibrary('places');
+      if (!cancelled) setMapsLoaded(true);
+    };
+    init();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fetchSuggestions = useCallback(async (input) => {
+    if (!input || input.length < 3 || !mapsLoaded) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+      }
+      const { suggestions: results } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input,
+        sessionToken: sessionTokenRef.current,
+        includedPrimaryTypes: ['locality', 'sublocality', 'administrative_area_level_2', 'administrative_area_level_3'],
+        includedRegionCodes: ['in'],
+      });
+      setSuggestions(results || []);
+    } catch {
+      setSuggestions([]);
+    }
+  }, [mapsLoaded]);
+
+  const handlePlaceSelect = useCallback(async (suggestion) => {
+    if (!suggestion?.placePrediction) return;
+    setResolvingPlace(true);
+    setError(null);
+    try {
+      const place = suggestion.placePrediction.toPlace();
+      await place.fetchFields({
+        fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'],
+      });
+      const lat = place.location.lat();
+      const lng = place.location.lng();
+
+      let placeName = place.displayName || '';
+      let placeAddress = place.formattedAddress || '';
+
+      setSelectedPlace({ name: placeName, address: placeAddress, lat, lng });
+      sessionTokenRef.current = null;
+
+      // Use coordinates to find the nearest city/area in our database
+      const [cityRes, areaRes] = await Promise.all([
+        api.get('/locations/cities/nearby', { params: { lat, lng, limit: 1 } }),
+        api.get('/locations/areas/nearby', { params: { lat, lng, limit: 1 } })
+      ]);
+
+      const nearestCity = cityRes.data.cities?.[0];
+      const nearestArea = areaRes.data.areas?.[0];
+
+      if (nearestCity) {
+        selectCity(nearestCity);
+        if (nearestArea) {
+          selectArea(nearestArea);
+        }
+      } else {
+        // No matching city in DB — store the Google Place info as a custom city
+        selectCity({
+          _id: `gplace_${Date.now()}`,
+          name: placeName,
+          state: placeAddress,
+          coordinates: { lat, lng }
+        });
+      }
+    } catch (err) {
+      console.error('Place resolve error:', err);
+      setError('Failed to resolve location. Please try again.');
+    } finally {
+      setResolvingPlace(false);
+    }
+  }, [selectCity, selectArea]);
 
   const handleLanguageSelect = (langCode) => {
     i18n.changeLanguage(langCode);
     setActiveStep(1);
   };
 
-  const handleCitySelect = (selectedCity) => {
-    selectCity(selectedCity);
-    setActiveStep(2);
-  };
-
-  const handleAreaSelect = (selectedArea) => {
-    selectArea(selectedArea);
-  };
-
   const handleDetectLocation = async () => {
     setDetectingLocation(true);
     setError(null);
     try {
-      await detectLocation();
-      setActiveStep(2);
-    } catch (err) {
-      setError('Could not detect your location. Please select manually.');
+      const result = await detectLocation();
+      if (result?.city) {
+        setSelectedPlace({
+          name: result.city.name || '',
+          address: result.area?.name || '',
+          lat: result.city.coordinates?.lat,
+          lng: result.city.coordinates?.lng
+        });
+      }
+    } catch {
+      setError('Could not detect your location. Please search for it instead.');
     } finally {
       setDetectingLocation(false);
     }
@@ -133,70 +204,31 @@ const Onboarding = () => {
     navigate('/');
   };
 
-  const handleSkipArea = () => {
-    navigate('/');
+  const handleChangeLocation = () => {
+    clearLocation();
+    setSelectedPlace(null);
+    setLocationInput('');
+    setSuggestions([]);
   };
 
-  // Helper to get name for display (API returns localized name directly)
   const getDisplayName = (item) => {
     if (!item) return '';
-    // If name is a string, return it directly (already localized by API)
     if (typeof item.name === 'string') return item.name;
-    // If name is an object, try to get by current language or fallback
-    if (typeof item.name === 'object') {
+    if (typeof item.name === 'object' && item.name) {
       return item.name[i18n.language] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
     }
     return '';
   };
 
-  // Helper to get state for display
-  const getDisplayState = (item) => {
-    if (!item || !item.state) return '';
-    if (typeof item.state === 'string') return item.state;
-    if (typeof item.state === 'object') {
-      return item.state[i18n.language] || item.state.te || item.state.en || Object.values(item.state)[0] || '';
-    }
-    return '';
-  };
-
-  // Search in multilingual field or direct name
-  const searchInField = (item, fieldName, query) => {
-    const lowerQuery = query.toLowerCase();
-    // Check direct field (already localized)
-    if (typeof item[fieldName] === 'string' && item[fieldName].toLowerCase().includes(lowerQuery)) {
-      return true;
-    }
-    // Check _multilingual object if available
-    if (item._multilingual && item._multilingual[fieldName]) {
-      const multiValues = Object.values(item._multilingual[fieldName]);
-      return multiValues.some(v => v && v.toLowerCase().includes(lowerQuery));
-    }
-    // Check if field is an object with language keys
-    if (typeof item[fieldName] === 'object' && item[fieldName]) {
-      const values = Object.values(item[fieldName]);
-      return values.some(v => v && v.toLowerCase().includes(lowerQuery));
-    }
-    return false;
-  };
-
-  const filteredCities = searchQuery
-    ? cities.filter(c => searchInField(c, 'name', searchQuery) || searchInField(c, 'state', searchQuery))
-    : cities;
-
-  const filteredAreas = searchQuery
-    ? areas.filter(a => searchInField(a, 'name', searchQuery) || (a.pincode && a.pincode.includes(searchQuery)))
-    : areas;
-
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+        background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)',
         py: 4
       }}
     >
       <Container maxWidth="sm">
-        {/* Logo/Header */}
         <Box sx={{ textAlign: 'center', mb: 4, color: 'white' }}>
           <Typography variant="h4" fontWeight={700} gutterBottom>
             {t('appName')}
@@ -206,7 +238,6 @@ const Onboarding = () => {
           </Typography>
         </Box>
 
-        {/* Stepper */}
         <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
           {steps.map((label) => (
             <Step key={label}>
@@ -265,14 +296,15 @@ const Onboarding = () => {
               </Box>
             )}
 
-            {/* Step 2: City Selection */}
+            {/* Step 2: Location via Google Places Autocomplete */}
             {activeStep === 1 && (
               <Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <CityIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">{t('selectCity')}</Typography>
+                  <LocationIcon color="primary" sx={{ mr: 1 }} />
+                  <Typography variant="h6">{t('selectCity') || 'Select Location'}</Typography>
                 </Box>
 
+                {/* Detect my location button */}
                 <Button
                   variant="outlined"
                   fullWidth
@@ -281,157 +313,116 @@ const Onboarding = () => {
                   disabled={detectingLocation}
                   sx={{ mb: 2 }}
                 >
-                  {detectingLocation ? t('loading') : t('detectLocation')}
+                  {detectingLocation ? t('loading') : (t('detectLocation') || 'Detect My Location')}
                 </Button>
 
-                <TextField
-                  fullWidth
-                  placeholder={t('search')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon />
-                      </InputAdornment>
-                    )
-                  }}
-                  sx={{ mb: 2 }}
-                />
-
-                {/* Featured Cities */}
-                {!searchQuery && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                      {t('popularCities') || 'Popular Cities'}
+                {/* Google Places Autocomplete */}
+                {!mapsLoaded ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                    <CircularProgress size={24} />
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                      Loading maps...
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {cities.filter(c => c.isFeatured).slice(0, 6).map((c) => (
-                        <Chip
-                          key={c._id}
-                          label={getDisplayName(c)}
-                          onClick={() => handleCitySelect(c)}
-                          variant={city?._id === c._id ? 'filled' : 'outlined'}
-                          color={city?._id === c._id ? 'primary' : 'default'}
-                        />
-                      ))}
-                    </Box>
-                  </Box>
-                )}
-
-                {cities.length === 0 ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <CircularProgress />
                   </Box>
                 ) : (
-                  <List sx={{ maxHeight: 300, overflow: 'auto' }}>
-                    {filteredCities.map((c) => (
-                      <ListItem key={c._id} disablePadding>
-                        <ListItemButton
-                          selected={city?._id === c._id}
-                          onClick={() => handleCitySelect(c)}
-                        >
-                          <ListItemIcon>
-                            <CityIcon color={city?._id === c._id ? 'primary' : 'inherit'} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={getDisplayName(c)}
-                            secondary={getDisplayState(c)}
-                          />
-                          {city?._id === c._id && <CheckIcon color="primary" />}
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                    {filteredCities.length === 0 && (
-                      <ListItem>
-                        <ListItemText
-                          primary={t('noResults') || 'No results found'}
-                          sx={{ textAlign: 'center', color: 'text.secondary' }}
-                        />
-                      </ListItem>
+                  <MuiAutocomplete
+                    freeSolo
+                    options={suggestions}
+                    getOptionLabel={(option) => {
+                      if (typeof option === 'string') return option;
+                      return option?.placePrediction?.text?.text || '';
+                    }}
+                    filterOptions={(x) => x}
+                    inputValue={locationInput}
+                    onInputChange={(_, value) => {
+                      setLocationInput(value);
+                      fetchSuggestions(value);
+                    }}
+                    onChange={(_, value) => {
+                      if (value && typeof value !== 'string') {
+                        handlePlaceSelect(value);
+                      }
+                    }}
+                    loading={resolvingPlace}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Search for your city or area..."
+                        variant="outlined"
+                        fullWidth
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: <LocationIcon color="action" sx={{ ml: 1, mr: 0.5 }} />,
+                          endAdornment: (
+                            <>
+                              {resolvingPlace && <CircularProgress size={20} />}
+                              {params.InputProps.endAdornment}
+                            </>
+                          )
+                        }}
+                      />
                     )}
-                  </List>
-                )}
-
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
-                  <Button onClick={() => setActiveStep(0)}>
-                    Back
-                  </Button>
-                </Box>
-              </Box>
-            )}
-
-            {/* Step 3: Area Selection */}
-            {activeStep === 2 && (
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <PlaceIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">{t('selectArea')}</Typography>
-                </Box>
-
-                {city && (
-                  <Chip
-                    label={getDisplayName(city)}
-                    onDelete={() => { selectCity(null); setActiveStep(1); }}
+                    renderOption={(props, option) => (
+                      <li {...props} key={option?.placePrediction?.placeId || Math.random()}>
+                        <LocationIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                        <Box>
+                          <Typography variant="body2">
+                            {option?.placePrediction?.structuredFormat?.mainText?.text || ''}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {option?.placePrediction?.structuredFormat?.secondaryText?.text || ''}
+                          </Typography>
+                        </Box>
+                      </li>
+                    )}
                     sx={{ mb: 2 }}
                   />
                 )}
 
-                <TextField
-                  fullWidth
-                  placeholder={t('search') || 'Search...'}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon />
-                      </InputAdornment>
-                    )
-                  }}
-                  sx={{ mb: 2 }}
-                />
-
-                {areas.length === 0 && city ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <CircularProgress />
+                {/* Selected location display */}
+                {city && (
+                  <Box
+                    sx={{
+                      mt: 2,
+                      p: 2,
+                      borderRadius: 2,
+                      bgcolor: 'success.light',
+                      color: 'success.contrastText',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <CheckIcon sx={{ mr: 1 }} />
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight={600}>
+                          {getDisplayName(city)}
+                        </Typography>
+                        {area && (
+                          <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                            {getDisplayName(area)}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleChangeLocation}
+                      sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.5)' }}
+                    >
+                      Change
+                    </Button>
                   </Box>
-                ) : (
-                  <List sx={{ maxHeight: 250, overflow: 'auto' }}>
-                    {filteredAreas.map((a) => (
-                      <ListItem key={a._id} disablePadding>
-                        <ListItemButton
-                          selected={area?._id === a._id}
-                          onClick={() => handleAreaSelect(a)}
-                        >
-                          <ListItemIcon>
-                            <PlaceIcon color={area?._id === a._id ? 'primary' : 'inherit'} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={getDisplayName(a)}
-                            secondary={a.pincode}
-                          />
-                          {area?._id === a._id && <CheckIcon color="primary" />}
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                    {filteredAreas.length === 0 && (
-                      <ListItem>
-                        <ListItemText
-                          primary={t('noResults') || 'No areas found'}
-                          sx={{ textAlign: 'center', color: 'text.secondary' }}
-                        />
-                      </ListItem>
-                    )}
-                  </List>
                 )}
 
                 <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-                  <Button onClick={() => { setActiveStep(1); setSearchQuery(''); }}>
+                  <Button onClick={() => setActiveStep(0)}>
                     {t('back') || 'Back'}
                   </Button>
                   <Box>
-                    <Button onClick={handleSkipArea} sx={{ mr: 1 }}>
+                    <Button onClick={() => navigate('/')} sx={{ mr: 1 }}>
                       {t('skip') || 'Skip'}
                     </Button>
                     <Button
@@ -447,6 +438,16 @@ const Onboarding = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Back to home link */}
+        <Box sx={{ textAlign: 'center', mt: 3 }}>
+          <Button
+            onClick={() => navigate('/')}
+            sx={{ color: 'rgba(255,255,255,0.8)' }}
+          >
+            ← Browse without location
+          </Button>
+        </Box>
       </Container>
     </Box>
   );

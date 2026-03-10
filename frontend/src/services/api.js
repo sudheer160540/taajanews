@@ -52,6 +52,7 @@ api.interceptors.response.use(
 
 // API helper functions
 export const articlesApi = {
+  getFeed: (params) => api.get('/articles/feed', { params }),
   getAll: (params) => api.get('/articles', { params }),
   getBySlug: (slug, lang = 'en') => api.get(`/articles/slug/${slug}`, { params: { lang } }),
   getById: (id) => api.get(`/articles/${id}`),
@@ -152,6 +153,10 @@ export const videosApi = {
   create: (data) => api.post('/videos', data),
   update: (id, data) => api.put(`/videos/${id}`, data),
   delete: (id) => api.delete(`/videos/${id}`)
+};
+
+export const yellowPagesApi = {
+  getNearby: (params) => api.get('/users/yellow-pages/nearby', { params })
 };
 
 export const languagesApi = {

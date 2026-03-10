@@ -4,15 +4,15 @@ let theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976d2',
-      light: '#42a5f5',
-      dark: '#1565c0',
+      main: '#B80000',
+      light: '#D43333',
+      dark: '#8B0000',
       contrastText: '#ffffff',
     },
     secondary: {
-      main: '#dc004e',
-      light: '#ff4081',
-      dark: '#c51162',
+      main: '#FF6B35',
+      light: '#FF8F66',
+      dark: '#CC5529',
       contrastText: '#ffffff',
     },
     error: {

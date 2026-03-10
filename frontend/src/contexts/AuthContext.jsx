@@ -45,13 +45,13 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       const response = await api.post('/auth/login', { email, password });
       const { token, user: userData } = response.data;
-      
+
       Cookies.set('taaja_token', token, { expires: 7 });
       setUser(userData);
-      
-      return { success: true };
+
+      return { success: true, user: userData };
     } catch (err) {
-      const message = err.response?.data?.error || 'Login failed';
+      const message = err.response?.data?.error || 'Invalid username or password';
       setError(message);
       return { success: false, error: message };
     }
@@ -62,13 +62,30 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       const response = await api.post('/auth/register', { name, email, password });
       const { token, user: userData } = response.data;
-      
+
       Cookies.set('taaja_token', token, { expires: 7 });
       setUser(userData);
-      
-      return { success: true };
+
+      return { success: true, user: userData };
     } catch (err) {
       const message = err.response?.data?.error || 'Registration failed';
+      setError(message);
+      return { success: false, error: message };
+    }
+  }, []);
+
+  const googleLogin = useCallback(async (idToken) => {
+    try {
+      setError(null);
+      const response = await api.post('/auth/google', { idToken });
+      const { token, user: userData } = response.data;
+
+      Cookies.set('taaja_token', token, { expires: 7 });
+      setUser(userData);
+
+      return { success: true, user: userData };
+    } catch (err) {
+      const message = err.response?.data?.error || 'Google login failed';
       setError(message);
       return { success: false, error: message };
     }
@@ -118,6 +135,7 @@ export const AuthProvider = ({ children }) => {
     isAdmin: user?.role === 'admin',
     isReporter: user?.role === 'reporter' || user?.role === 'admin',
     login,
+    googleLogin,
     register,
     logout,
     updateProfile,
