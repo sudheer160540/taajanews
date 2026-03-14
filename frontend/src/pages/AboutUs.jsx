@@ -82,7 +82,7 @@ const AboutUs = () => {
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
           <Box
             component="img"
-            src="/logo.jpeg"
+            src="/logo.png"
             alt="Taaja News"
             sx={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.6)' }}
           />

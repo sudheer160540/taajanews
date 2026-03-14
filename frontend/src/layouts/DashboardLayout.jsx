@@ -64,7 +64,7 @@ const DashboardLayout = () => {
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <Box
           component="img"
-          src="/logo.jpeg"
+          src="/logo.png"
           alt="Taaja News"
           sx={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', mb: 1 }}
         />

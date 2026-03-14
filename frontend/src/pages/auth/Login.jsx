@@ -85,7 +85,7 @@ const Login = () => {
         <Box sx={{ textAlign: 'center', mb: 4, color: 'white' }}>
           <Box
             component="img"
-            src="/logo.jpeg"
+            src="/logo.png"
             alt="Taaja News"
             sx={{ width: 90, height: 90, borderRadius: '50%', mb: 2, objectFit: 'cover', boxShadow: 3 }}
           />

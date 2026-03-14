@@ -26,7 +26,7 @@ const Footer = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box
             component="img"
-            src="/logo.jpeg"
+            src="/logo.png"
             alt="Taaja News"
             sx={{ width: 36, height: 36, borderRadius: '4px', objectFit: 'cover' }}
           />

@@ -7,12 +7,7 @@ import {
   Typography,
   IconButton,
   Box,
-  Drawer,
-  List,
-  ListItem,
-  ListItemIcon,
   ListItemText,
-  ListItemButton,
   Divider,
   BottomNavigation,
   BottomNavigationAction,
@@ -27,7 +22,6 @@ import {
   useTheme
 } from '@mui/material';
 import {
-  Menu as MenuIcon,
   Home as HomeIcon,
   Search as SearchIcon,
   Person as PersonIcon,
@@ -36,7 +30,6 @@ import {
   Dashboard as DashboardIcon,
   LocationOn as LocationIcon,
   Language as LanguageIcon,
-  MenuBook as YellowPagesIcon,
   VideoLibrary as VideoIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -54,7 +47,6 @@ const MainLayout = () => {
   const { user, isAuthenticated, isReporter, logout } = useAuth();
   const { city, area, clearLocation } = useLocation();
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
   const [langMenuAnchor, setLangMenuAnchor] = useState(null);
   const [languages, setLanguages] = useState([]);
@@ -106,14 +98,6 @@ const MainLayout = () => {
     return '';
   };
 
-  const navItems = [
-    { path: '/', label: t('home'), icon: <HomeIcon /> },
-    { path: '/search', label: t('search'), icon: <SearchIcon /> },
-    { path: '/yellow-pages', label: 'Yellow Pages', icon: <YellowPagesIcon /> },
-    { path: '/videos', label: 'Videos', icon: <VideoIcon /> },
-    { path: '/bookmarks', label: t('bookmark'), icon: <BookmarkIcon />, requireAuth: true }
-  ];
-
   const bottomNavItems = [
     { path: '/', label: t('home'), icon: <HomeIcon /> },
     { path: '/search', label: t('search'), icon: <SearchIcon /> },
@@ -138,7 +122,6 @@ const MainLayout = () => {
   const handleLanguageSelect = (langCode) => {
     i18n.changeLanguage(langCode);
     setLangMenuAnchor(null);
-    setDrawerOpen(false);
   };
 
   const handleLogout = async () => {
@@ -176,22 +159,13 @@ const MainLayout = () => {
       {/* Top AppBar */}
       <AppBar position="sticky" elevation={1}>
         <Toolbar>
-          <IconButton
-            edge="start"
-            color="inherit"
-            onClick={() => setDrawerOpen(true)}
-            sx={{ mr: 1 }}
-          >
-            <MenuIcon />
-          </IconButton>
-
           <Box
             sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', mr: 2 }}
             onClick={() => navigate('/')}
           >
             <Box
               component="img"
-              src="/logo.jpeg"
+              src="/logo.png"
               alt="Taaja News"
               sx={{ width: 32, height: 32, borderRadius: '50%', mr: 1, objectFit: 'cover' }}
             />
@@ -251,16 +225,16 @@ const MainLayout = () => {
                 <Divider />
                 {isReporter && (
                   <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/dashboard'); }}>
-                    <ListItemIcon><DashboardIcon fontSize="small" /></ListItemIcon>
+                    <DashboardIcon fontSize="small" sx={{ mr: 1 }} />
                     {t('dashboard')}
                   </MenuItem>
                 )}
                 <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/bookmarks'); }}>
-                  <ListItemIcon><BookmarkIcon fontSize="small" /></ListItemIcon>
+                  <BookmarkIcon fontSize="small" sx={{ mr: 1 }} />
                   {t('bookmark')}
                 </MenuItem>
                 <MenuItem onClick={handleLogout}>
-                  <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+                  <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
                   {t('logout')}
                 </MenuItem>
               </Menu>
@@ -315,88 +289,6 @@ const MainLayout = () => {
           </Box>
         )}
       </AppBar>
-
-      {/* Side Drawer */}
-      <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 280 }} role="presentation">
-          <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white' }}>
-            <Typography variant="h6" fontWeight={700}>{t('appName')}</Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8 }}>{t('tagline')}</Typography>
-          </Box>
-
-          {city && (
-            <Box sx={{ p: 2 }}>
-              <Chip
-                icon={<LocationIcon />}
-                label={`${getDisplayName(city)}${area ? ` · ${getDisplayName(area)}` : ''}`}
-                onClick={() => { setDrawerOpen(false); navigate('/onboarding'); }}
-                onDelete={clearLocation}
-              />
-            </Box>
-          )}
-
-          <Divider />
-
-          <List>
-            {navItems.map((item) => (
-              <ListItem key={item.path} disablePadding>
-                <ListItemButton
-                  selected={currentPath === item.path}
-                  onClick={() => {
-                    setDrawerOpen(false);
-                    if (item.requireAuth && !isAuthenticated) {
-                      navigate('/auth/login');
-                    } else {
-                      navigate(item.path);
-                    }
-                  }}
-                >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-
-          <Divider />
-
-          <List>
-            <ListItem>
-              <ListItemIcon><LanguageIcon /></ListItemIcon>
-              <ListItemText primary={t('selectLanguage') || 'Select Language'} secondary={currentLang?.nativeName || i18n.language} />
-            </ListItem>
-            {languages.map((lang) => (
-              <ListItem key={lang.code} disablePadding sx={{ pl: 2 }}>
-                <ListItemButton selected={i18n.language === lang.code} onClick={() => handleLanguageSelect(lang.code)}>
-                  <ListItemText primary={lang.nativeName} secondary={lang.name} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-
-          {isAuthenticated && (
-            <>
-              <Divider />
-              <List>
-                {isReporter && (
-                  <ListItem disablePadding>
-                    <ListItemButton onClick={() => { setDrawerOpen(false); navigate('/dashboard'); }}>
-                      <ListItemIcon><DashboardIcon /></ListItemIcon>
-                      <ListItemText primary={t('dashboard')} />
-                    </ListItemButton>
-                  </ListItem>
-                )}
-                <ListItem disablePadding>
-                  <ListItemButton onClick={handleLogout}>
-                    <ListItemIcon><LogoutIcon /></ListItemIcon>
-                    <ListItemText primary={t('logout')} />
-                  </ListItemButton>
-                </ListItem>
-              </List>
-            </>
-          )}
-        </Box>
-      </Drawer>
 
       {/* Main Content */}
       <Box component="main" sx={{ flexGrow: 1, pb: isMobile ? 8 : 0 }}>
