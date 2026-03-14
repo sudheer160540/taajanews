@@ -9,28 +9,20 @@ import {
   Box,
   ListItemText,
   Divider,
-  BottomNavigation,
-  BottomNavigationAction,
-  Paper,
   Avatar,
   Menu,
   MenuItem,
   Chip,
   Tab,
-  Tabs,
-  useMediaQuery,
-  useTheme
+  Tabs
 } from '@mui/material';
 import {
-  Home as HomeIcon,
-  Search as SearchIcon,
   Person as PersonIcon,
   Bookmark as BookmarkIcon,
   Logout as LogoutIcon,
   Dashboard as DashboardIcon,
   LocationOn as LocationIcon,
   Language as LanguageIcon,
-  VideoLibrary as VideoIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -41,8 +33,6 @@ const MainLayout = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const routerLocation = useRouterLocation();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const { user, isAuthenticated, isReporter, logout } = useAuth();
   const { city, area, clearLocation } = useLocation();
@@ -96,27 +86,6 @@ const MainLayout = () => {
       return item.name[i18n.language] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
     }
     return '';
-  };
-
-  const bottomNavItems = [
-    { path: '/', label: t('home'), icon: <HomeIcon /> },
-    { path: '/search', label: t('search'), icon: <SearchIcon /> },
-    { path: '/videos', label: 'Videos', icon: <VideoIcon /> },
-    { path: '/bookmarks', label: t('bookmark'), icon: <BookmarkIcon />, requireAuth: true }
-  ];
-
-  const getBottomNavValue = () => {
-    const idx = bottomNavItems.findIndex(item => item.path === currentPath);
-    return idx >= 0 ? idx : 0;
-  };
-
-  const handleBottomNavChange = (_, newValue) => {
-    const item = bottomNavItems[newValue];
-    if (item.requireAuth && !isAuthenticated) {
-      navigate('/auth/login');
-    } else {
-      navigate(item.path);
-    }
   };
 
   const handleLanguageSelect = (langCode) => {
@@ -176,7 +145,7 @@ const MainLayout = () => {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {!isMobile && locationDisplay}
+          {locationDisplay}
 
           <Chip
             icon={<LanguageIcon fontSize="small" />}
@@ -281,33 +250,15 @@ const MainLayout = () => {
             </Tabs>
           </Box>
         )}
-
-        {/* Mobile location bar */}
-        {isMobile && (
-          <Box sx={{ bgcolor: 'primary.light', px: 2, py: 0.5, display: 'flex', alignItems: 'center' }}>
-            {locationDisplay}
-          </Box>
-        )}
       </AppBar>
 
       {/* Main Content */}
-      <Box component="main" sx={{ flexGrow: 1, pb: isMobile ? 8 : 0 }}>
+      <Box component="main" sx={{ flexGrow: 1 }}>
         <Outlet />
       </Box>
 
       {/* Footer */}
       <Footer />
-
-      {/* Mobile Bottom Navigation */}
-      {isMobile && (
-        <Paper sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000 }} elevation={3}>
-          <BottomNavigation value={getBottomNavValue()} onChange={handleBottomNavChange} showLabels>
-            {bottomNavItems.map((item) => (
-              <BottomNavigationAction key={item.path} label={item.label} icon={item.icon} />
-            ))}
-          </BottomNavigation>
-        </Paper>
-      )}
     </Box>
   );
 };
