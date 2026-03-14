@@ -31,7 +31,7 @@ import { useLocation } from '../contexts/LocationContext';
 const Home = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { city, area } = useLocation();
+  const { city, area, coordinates } = useLocation();
   const lang = i18n.language;
 
   const [articles, setArticles] = useState([]);
@@ -40,32 +40,54 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
 
-  // Helper to get localized name from API response
   const getDisplayName = (item) => {
     if (!item) return '';
-    // If name is a string, return it directly (already localized by API)
     if (typeof item.name === 'string') return item.name;
-    // If name is an object with language keys
     if (typeof item.name === 'object' && item.name) {
       return item.name[lang] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
     }
     return '';
   };
 
+  const getLocationCoords = () => {
+    if (coordinates) return coordinates;
+
+    if (area?.center?.coordinates) {
+      return { lng: area.center.coordinates[0], lat: area.center.coordinates[1] };
+    }
+    if (area?.location?.coordinates) {
+      return { lng: area.location.coordinates[0], lat: area.location.coordinates[1] };
+    }
+    if (city?.center?.coordinates) {
+      return { lng: city.center.coordinates[0], lat: city.center.coordinates[1] };
+    }
+    if (city?.location?.coordinates) {
+      return { lng: city.location.coordinates[0], lat: city.location.coordinates[1] };
+    }
+    if (city?.coordinates) {
+      return { lat: city.coordinates.lat, lng: city.coordinates.lng };
+    }
+    return null;
+  };
+
   useEffect(() => {
     fetchData();
-  }, [city, area, selectedCategory]);
+  }, [city, area, coordinates, selectedCategory, lang]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const params = { lang, limit: 20 };
-      if (city) params.city = city._id;
-      if (area) params.area = area._id;
-      if (selectedCategory !== 'all') params.category = selectedCategory;
+      const feedParams = { lang, limit: 20 };
+      const loc = getLocationCoords();
+      if (loc) {
+        feedParams.latitude = loc.lat;
+        feedParams.longitude = loc.lng;
+        feedParams.radiusKM = 50;
+      }
+      if (selectedCategory !== 'all') feedParams.category = selectedCategory;
 
       const [articlesRes, trendingRes, categoriesRes] = await Promise.all([
-        articlesApi.getAll(params),
+        articlesApi.getFeed(feedParams),
         articlesApi.getTrending({ limit: 5, lang }),
         categoriesApi.getAll({ parent: 'null', active: 'true' })
       ]);

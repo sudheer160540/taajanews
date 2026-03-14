@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
-import { useLocation } from './contexts/LocationContext';
 import { Box, CircularProgress } from '@mui/material';
 
 // Layouts
@@ -14,6 +13,11 @@ import ArticleView from './pages/ArticleView';
 import CategoryView from './pages/CategoryView';
 import FlipReader from './pages/FlipReader';
 import Search from './pages/Search';
+import YellowPages from './pages/YellowPages';
+import Videos from './pages/Videos';
+import AboutUs from './pages/AboutUs';
+import EditorialPolicy from './pages/EditorialPolicy';
+import TermsAndConditions from './pages/TermsAndConditions';
 
 // Auth pages
 import Login from './pages/auth/Login';
@@ -30,7 +34,6 @@ import LanguagesManager from './pages/dashboard/LanguagesManager';
 import PromotionsManager from './pages/dashboard/PromotionsManager';
 import VideosManager from './pages/dashboard/VideosManager';
 
-// Loading screen
 const LoadingScreen = () => (
   <Box
     sx={{
@@ -38,17 +41,15 @@ const LoadingScreen = () => (
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)'
+      background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)'
     }}
   >
     <CircularProgress sx={{ color: 'white' }} size={48} />
   </Box>
 );
 
-// Protected route wrapper
 const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false, requireAdmin = false }) => {
-  const { user, loading, isAuthenticated, isReporter, isAdmin } = useAuth();
-  const { isOnboardingComplete } = useLocation();
+  const { loading, isAuthenticated, isReporter, isAdmin } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -59,27 +60,11 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
   }
 
   if (requireReporter && !isReporter) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return children;
-};
-
-// Onboarding gate
-const OnboardingGate = ({ children }) => {
-  const { isOnboardingComplete, loading } = useLocation();
-  const { loading: authLoading } = useAuth();
-
-  if (loading || authLoading) {
-    return <LoadingScreen />;
-  }
-
-  if (!isOnboardingComplete) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -87,37 +72,31 @@ const OnboardingGate = ({ children }) => {
 
 function App() {
   const { loading: authLoading } = useAuth();
-  const { loading: locationLoading } = useLocation();
 
-  if (authLoading || locationLoading) {
+  if (authLoading) {
     return <LoadingScreen />;
   }
 
   return (
     <Routes>
-      {/* Onboarding */}
+      {/* Onboarding (optional — accessible but not forced) */}
       <Route path="/onboarding" element={<Onboarding />} />
 
       {/* Auth routes */}
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/register" element={<Register />} />
 
-      {/* Default route - redirect to login */}
-      <Route path="/" element={<Navigate to="/auth/login" replace />} />
-
-      {/* Public routes with main layout */}
-      <Route
-        path="/site"
-        element={
-          <OnboardingGate>
-            <MainLayout />
-          </OnboardingGate>
-        }
-      >
+      {/* Public routes — default landing is news feed */}
+      <Route path="/" element={<MainLayout />}>
         <Route index element={<Home />} />
         <Route path="article/:slug" element={<ArticleView />} />
         <Route path="category/:slug" element={<CategoryView />} />
         <Route path="search" element={<Search />} />
+        <Route path="yellow-pages" element={<YellowPages />} />
+        <Route path="videos" element={<Videos />} />
+        <Route path="about" element={<AboutUs />} />
+        <Route path="editorial-policy" element={<EditorialPolicy />} />
+        <Route path="terms" element={<TermsAndConditions />} />
         <Route path="bookmarks" element={
           <ProtectedRoute requireAuth>
             <Search bookmarks />
@@ -126,14 +105,7 @@ function App() {
       </Route>
 
       {/* Flip reader (fullscreen) */}
-      <Route
-        path="/read/:slug"
-        element={
-          <OnboardingGate>
-            <FlipReader />
-          </OnboardingGate>
-        }
-      />
+      <Route path="/read/:slug" element={<FlipReader />} />
 
       {/* Dashboard routes */}
       <Route
@@ -148,58 +120,16 @@ function App() {
         <Route path="articles" element={<ArticlesList />} />
         <Route path="articles/new" element={<ArticleEditor />} />
         <Route path="articles/edit/:id" element={<ArticleEditor />} />
-        <Route
-          path="categories"
-          element={
-            <ProtectedRoute requireAdmin>
-              <CategoriesManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="users"
-          element={
-            <ProtectedRoute requireAdmin>
-              <UsersManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="locations"
-          element={
-            <ProtectedRoute requireAdmin>
-              <LocationsManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="languages"
-          element={
-            <ProtectedRoute requireAdmin>
-              <LanguagesManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="promotions"
-          element={
-            <ProtectedRoute requireAdmin>
-              <PromotionsManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="videos"
-          element={
-            <ProtectedRoute requireAdmin>
-              <VideosManager />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="categories" element={<ProtectedRoute requireAdmin><CategoriesManager /></ProtectedRoute>} />
+        <Route path="users" element={<ProtectedRoute requireAdmin><UsersManager /></ProtectedRoute>} />
+        <Route path="locations" element={<ProtectedRoute requireAdmin><LocationsManager /></ProtectedRoute>} />
+        <Route path="languages" element={<ProtectedRoute requireAdmin><LanguagesManager /></ProtectedRoute>} />
+        <Route path="promotions" element={<ProtectedRoute requireAdmin><PromotionsManager /></ProtectedRoute>} />
+        <Route path="videos" element={<ProtectedRoute requireAdmin><VideosManager /></ProtectedRoute>} />
       </Route>
 
-      {/* Catch all */}
-      <Route path="*" element={<Navigate to="/auth/login" replace />} />
+      {/* Catch all — go to home feed */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

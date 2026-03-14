@@ -21,12 +21,13 @@ import {
   Visibility,
   VisibilityOff
 } from '@mui/icons-material';
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Register = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { register, error: authError } = useAuth();
+  const { register, googleLogin, error: authError } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -35,6 +36,15 @@ const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const redirectByRole = (userData) => {
+    const role = userData?.role;
+    if (role === 'admin' || role === 'reporter') {
+      navigate('/dashboard');
+    } else {
+      navigate('/');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,13 +63,25 @@ const Register = () => {
     setLoading(true);
 
     const result = await register(name, email, password);
-    
+
     if (result.success) {
-      navigate('/');
+      redirectByRole(result.user);
     } else {
       setError(result.error);
     }
-    
+
+    setLoading(false);
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError(null);
+    setLoading(true);
+    const result = await googleLogin(credentialResponse.credential);
+    if (result.success) {
+      redirectByRole(result.user);
+    } else {
+      setError(result.error);
+    }
     setLoading(false);
   };
 
@@ -69,7 +91,7 @@ const Register = () => {
         minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
-        background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+        background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)',
         py: 4
       }}
     >
@@ -94,6 +116,19 @@ const Register = () => {
                 {error || authError}
               </Alert>
             )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google sign-in failed')}
+                width="100%"
+                text="signup_with"
+                shape="rectangular"
+                size="large"
+              />
+            </Box>
+
+            <Divider sx={{ my: 2 }}>or</Divider>
 
             <Box component="form" onSubmit={handleSubmit}>
               <TextField
@@ -189,14 +224,14 @@ const Register = () => {
 
             <Typography textAlign="center" variant="body2">
               {t('hasAccount')}{' '}
-              <Link to="/auth/login" style={{ color: '#1976d2' }}>
+              <Link to="/auth/login" style={{ color: '#B80000' }}>
                 {t('login')}
               </Link>
             </Typography>
 
             <Box sx={{ mt: 2, textAlign: 'center' }}>
               <Link to="/" style={{ color: '#666', textDecoration: 'none' }}>
-                ← {t('home')}
+                ← Browse News
               </Link>
             </Box>
           </CardContent>

@@ -1,7 +1,7 @@
 :root {
   --font-primary: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, sans-serif;
-  --color-primary: #1976d2;
-  --color-secondary: #dc004e;
+  --color-primary: #B80000;
+  --color-secondary: #FF6B35;
   --color-background: #f5f5f5;
   --shadow-light: 0 2px 8px rgba(0, 0, 0, 0.1);
   --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.15);

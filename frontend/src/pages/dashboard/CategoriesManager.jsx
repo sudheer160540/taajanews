@@ -41,7 +41,7 @@ const CategoriesManager = () => {
   const [formData, setFormData] = useState({
     name: { te: '', en: '', hi: '' },
     description: { te: '', en: '', hi: '' },
-    color: '#1976d2',
+    color: '#B80000',
     isActive: true,
     isFeatured: false,
     icon: '',
@@ -83,7 +83,7 @@ const CategoriesManager = () => {
           en: multilingual.description?.en || '',
           hi: multilingual.description?.hi || ''
         },
-        color: category.color || '#1976d2',
+        color: category.color || '#B80000',
         isActive: category.isActive !== false,
         isFeatured: category.isFeatured || false,
         icon: category.icon || '',
@@ -94,7 +94,7 @@ const CategoriesManager = () => {
       setFormData({
         name: { te: '', en: '', hi: '' },
         description: { te: '', en: '', hi: '' },
-        color: '#1976d2',
+        color: '#B80000',
         isActive: true,
         isFeatured: false,
         icon: '',

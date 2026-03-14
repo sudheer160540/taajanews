@@ -29,7 +29,6 @@ import {
   Share as ShareIcon,
   Bookmark as BookmarkIcon,
   BookmarkBorder as BookmarkBorderIcon,
-  AutoStories as ReadIcon,
   AccessTime as TimeIcon,
   Visibility as ViewIcon,
   Send as SendIcon,
@@ -303,16 +302,6 @@ const ArticleView = () => {
               {article.engagement?.views} {t('views')}
             </Typography>
           </Box>
-          
-          <Box sx={{ flexGrow: 1 }} />
-          
-          <Button
-            variant="contained"
-            startIcon={<ReadIcon />}
-            onClick={() => navigate(`/read/${slug}`)}
-          >
-            {lang === 'hi' ? 'फ्लिप रीडर में पढ़ें' : 'Read in Flip Reader'}
-          </Button>
         </Box>
       </Box>
 
