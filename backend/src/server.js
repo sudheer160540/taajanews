@@ -20,6 +20,7 @@ const translateRoutes = require('./routes/translate.routes');
 const promotionRoutes = require('./routes/promotion.routes');
 const videoRoutes = require('./routes/video.routes');
 const fcmTokenRoutes = require('./routes/fcmToken.routes');
+const accountDeletionRoutes = require('./routes/accountDeletion.routes');
 
 // Import utilities
 const languageCache = require('./utils/languageCache');
@@ -78,6 +79,7 @@ app.use('/api/translate', translateRoutes);
 app.use('/api/promotions', promotionRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/fcm-tokens', fcmTokenRoutes);
+app.use('/api/account-deletion', accountDeletionRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
