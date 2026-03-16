@@ -15,6 +15,7 @@ import FlipReader from './pages/FlipReader';
 import Search from './pages/Search';
 import YellowPages from './pages/YellowPages';
 import Videos from './pages/Videos';
+import DeleteAccount from './pages/DeleteAccount';
 import AboutUs from './pages/AboutUs';
 import EditorialPolicy from './pages/EditorialPolicy';
 import TermsAndConditions from './pages/TermsAndConditions';
@@ -97,6 +98,7 @@ function App() {
         <Route path="about" element={<AboutUs />} />
         <Route path="editorial-policy" element={<EditorialPolicy />} />
         <Route path="terms" element={<TermsAndConditions />} />
+        <Route path="delete-account" element={<DeleteAccount />} />
         <Route path="bookmarks" element={
           <ProtectedRoute requireAuth>
             <Search bookmarks />

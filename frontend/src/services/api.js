@@ -130,7 +130,8 @@ export const usersApi = {
   updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),
   updateStatus: (id, isActive) => api.put(`/users/${id}/status`, { isActive }),
   getReporters: () => api.get('/users/reporters'),
-  assignCategories: (id, categories) => api.put(`/users/reporters/${id}/categories`, { categories })
+  assignCategories: (id, categories) => api.put(`/users/reporters/${id}/categories`, { categories }),
+  delete: (id) => api.delete(`/users/${id}`)
 };
 
 export const translateApi = {
@@ -157,6 +158,11 @@ export const videosApi = {
 
 export const yellowPagesApi = {
   getNearby: (params) => api.get('/users/yellow-pages/nearby', { params })
+};
+
+export const accountDeletionApi = {
+  submit: (data) => api.post('/account-deletion', data),
+  checkStatus: (email) => api.get(`/account-deletion/status/${encodeURIComponent(email)}`)
 };
 
 export const languagesApi = {
