@@ -18,6 +18,7 @@ import Videos from './pages/Videos';
 import DeleteAccount from './pages/DeleteAccount';
 import AboutUs from './pages/AboutUs';
 import EditorialPolicy from './pages/EditorialPolicy';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsAndConditions from './pages/TermsAndConditions';
 
 // Auth pages
@@ -97,6 +98,7 @@ function App() {
         <Route path="videos" element={<Videos />} />
         <Route path="about" element={<AboutUs />} />
         <Route path="editorial-policy" element={<EditorialPolicy />} />
+        <Route path="privacy-policy" element={<PrivacyPolicy />} />
         <Route path="terms" element={<TermsAndConditions />} />
         <Route path="delete-account" element={<DeleteAccount />} />
         <Route path="bookmarks" element={
