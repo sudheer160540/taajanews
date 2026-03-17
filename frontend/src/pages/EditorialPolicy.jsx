@@ -14,7 +14,7 @@ const BulletList = ({ items }) => (
     {items.map((item, i) => (
       <ListItem key={i} sx={{ display: 'list-item', listStyleType: 'disc', pl: 0, py: 0.3 }}>
         <ListItemText
-          primary={item.bold ? <><strong>{item.bold}</strong>{item.rest}</> : item}
+          primary={typeof item === 'object' ? <><strong>{item.bold}</strong>{item.rest}</> : item}
           primaryTypographyProps={{ variant: 'body2' }}
         />
       </ListItem>
@@ -27,7 +27,7 @@ const NumberedList = ({ items }) => (
     {items.map((item, i) => (
       <ListItem key={i} sx={{ display: 'list-item', listStyleType: 'decimal', pl: 0, py: 0.3 }}>
         <ListItemText
-          primary={item.bold ? <><strong>{item.bold}</strong>{item.rest}</> : item}
+          primary={typeof item === 'object' ? <><strong>{item.bold}</strong>{item.rest}</> : item}
           primaryTypographyProps={{ variant: 'body2' }}
         />
       </ListItem>
