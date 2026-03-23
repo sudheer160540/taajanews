@@ -20,6 +20,7 @@ import AboutUs from './pages/AboutUs';
 import EditorialPolicy from './pages/EditorialPolicy';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsAndConditions from './pages/TermsAndConditions';
+import ContactUs from './pages/ContactUs';
 
 // Auth pages
 import Login from './pages/auth/Login';
@@ -101,6 +102,7 @@ function App() {
         <Route path="privacy-policy" element={<PrivacyPolicy />} />
         <Route path="terms" element={<TermsAndConditions />} />
         <Route path="delete-account" element={<DeleteAccount />} />
+        <Route path="contact" element={<ContactUs />} />
         <Route path="bookmarks" element={
           <ProtectedRoute requireAuth>
             <Search bookmarks />

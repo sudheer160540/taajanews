@@ -12,8 +12,6 @@ import {
   CardActionArea,
   Chip,
   Skeleton,
-  Tabs,
-  Tab,
   IconButton,
   Button,
   Divider
@@ -25,7 +23,7 @@ import {
   Visibility as ViewIcon,
   AutoStories as ReadIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi } from '../services/api';
+import { articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 
 const Home = () => {
@@ -36,9 +34,7 @@ const Home = () => {
 
   const [articles, setArticles] = useState([]);
   const [trendingArticles, setTrendingArticles] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('all');
 
   const getDisplayName = (item) => {
     if (!item) return '';
@@ -72,7 +68,7 @@ const Home = () => {
 
   useEffect(() => {
     fetchData();
-  }, [city, area, coordinates, selectedCategory, lang]);
+  }, [city, area, coordinates, lang]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -84,17 +80,14 @@ const Home = () => {
         feedParams.longitude = loc.lng;
         feedParams.radiusKM = 50;
       }
-      if (selectedCategory !== 'all') feedParams.category = selectedCategory;
 
-      const [articlesRes, trendingRes, categoriesRes] = await Promise.all([
+      const [articlesRes, trendingRes] = await Promise.all([
         articlesApi.getFeed(feedParams),
-        articlesApi.getTrending({ limit: 5, lang }),
-        categoriesApi.getAll({ parent: 'null', active: 'true' })
+        articlesApi.getTrending({ limit: 5, lang })
       ]);
 
       setArticles(articlesRes.data.articles);
       setTrendingArticles(trendingRes.data.articles);
-      setCategories(categoriesRes.data.categories);
     } catch (err) {
       console.error('Failed to fetch data:', err);
     } finally {
@@ -178,24 +171,6 @@ const Home = () => {
           </Box>
         </CardContent>
       </CardActionArea>
-      <Box sx={{ p: 1, pt: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Chip
-          label={article.category?.name?.[lang] || article.category?.name?.en}
-          size="small"
-          variant="outlined"
-          onClick={(e) => {
-            e.stopPropagation();
-            navigate(`/category/${article.category?.slug}`);
-          }}
-        />
-        <Button
-          size="small"
-          startIcon={<ReadIcon />}
-          onClick={() => navigate(`/read/${article.slug}`)}
-        >
-          {lang === 'hi' ? 'पढ़ें' : 'Read'}
-        </Button>
-      </Box>
     </Card>
   );
 
@@ -268,24 +243,6 @@ const Home = () => {
             </Typography>
           </Box>
         )}
-
-        {/* Category Tabs */}
-        <Tabs
-          value={selectedCategory}
-          onChange={(_, value) => setSelectedCategory(value)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab value="all" label={lang === 'hi' ? 'सभी' : lang === 'te' ? 'అన్నీ' : 'All'} />
-          {categories.map((category) => (
-            <Tab
-              key={category._id}
-              value={category._id}
-              label={getDisplayName(category)}
-            />
-          ))}
-        </Tabs>
 
         {/* Articles Grid */}
         <Grid container spacing={3}>

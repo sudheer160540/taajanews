@@ -99,12 +99,18 @@ const MainLayout = () => {
     navigate('/');
   };
 
-  const activeCategorySlug = currentPath.startsWith('/category/')
-    ? currentPath.split('/category/')[1]
-    : false;
+  const activeCategorySlug = currentPath === '/'
+    ? 'all'
+    : currentPath.startsWith('/category/')
+      ? currentPath.split('/category/')[1]
+      : false;
 
   const handleCategoryClick = (slug) => {
-    navigate(`/category/${slug}`);
+    if (slug === 'all') {
+      navigate('/');
+    } else {
+      navigate(`/category/${slug}`);
+    }
   };
 
   const locationDisplay = (
@@ -234,11 +240,13 @@ const MainLayout = () => {
                   textTransform: 'none',
                   fontWeight: 500
                 },
-                '& .Mui-selected': { color: '#fff' },
+                '& .Mui-selected': { color: '#fff', fontWeight: 700 },
                 '& .MuiTabs-indicator': { backgroundColor: '#fff' },
                 '& .MuiTabs-scrollButtons': { color: 'rgba(255,255,255,0.7)' }
               }}
             >
+              <Tab value="all" label={currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All'} onClick={() => handleCategoryClick('all')}/>
+
               {categories.map((cat) => (
                 <Tab
                   key={cat._id}

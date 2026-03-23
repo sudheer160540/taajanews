@@ -269,7 +269,7 @@ const ArticleView = () => {
           {article.title}
         </Typography>
 
-        <Typography variant="subtitle1" color="text.secondary" paragraph>
+        <Typography variant="subtitle1" color="text.secondary" paragraph fontStyle="italic">
           {article.summary}
         </Typography>
 

@@ -50,16 +50,16 @@ const PrivacyPolicy = () => {
           the terms outlined in this policy.
         </Typography>
 
-        <SubSection number="1.1" title="Information We Collect">
+        <SubSection number="1.1." title="Information We Collect">
           <BulletList items={[
-            { bold: 'Personal Information: ', rest: 'Name, email address, phone number, and professional details (optional).' },
+            { bold: 'Personal Information: ', rest: 'Name, Email address, Phone Number, and Professional details (Optional).' },
             { bold: 'Feedback & Communication: ', rest: 'Details provided during support requests or feedback.' },
             { bold: 'Device Information: ', rest: 'Device ID, model, and operating system.' },
             { bold: 'Location Information: ', rest: 'We may access device location to provide location-based news and relevant notifications.' },
           ]} />
         </SubSection>
 
-        <SubSection number="1.2" title="Local Yellow Pages Directory (Optional)">
+        <SubSection number="1.2." title="Local Yellow Pages Directory (Optional)">
           <Typography variant="body2" paragraph>
             We collect professional details and phone numbers to enhance social and economic networking opportunities.
           </Typography>
@@ -122,7 +122,7 @@ const PrivacyPolicy = () => {
           { bold: 'Manage Consent: ', rest: 'Withdraw consent for the Yellow Pages listing instantly via app settings.' },
           {
             bold: 'Contact: ',
-            rest: 'For any privacy-related actions, email: taajanews.net@gmail.com. We will process such requests within a reasonable timeframe.',
+            rest: 'For any privacy-related actions, email: support@taajanews.net. We will process such requests within a reasonable timeframe.',
           },
         ]} />
       </Section>
@@ -163,8 +163,8 @@ const PrivacyPolicy = () => {
       <Divider sx={{ my: 3 }} />
       <Typography variant="body2" color="text.secondary" align="center">
         For any privacy-related concerns, contact us at{' '}
-        <Box component="a" href="mailto:taajanews.net@gmail.com" sx={{ color: '#B80000', fontWeight: 600 }}>
-          taajanews.net@gmail.com
+        <Box component="a" href="mailto:support@taajanews.net" sx={{ color: '#B80000', fontWeight: 600 }}>
+          support@taajanews.net
         </Box>
       </Typography>
     </Container>

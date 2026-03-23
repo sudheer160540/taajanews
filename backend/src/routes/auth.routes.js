@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
-const { protect, generateToken, generateAccessToken, createRefreshToken, setTokenCookie } = require('../middleware/auth');
+const { protect, generateToken, generateAccessToken, createRefreshToken, setTokenCookie, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -122,48 +122,34 @@ router.get('/me', protect, async (req, res) => {
 });
 
 // @route   POST /api/auth/admin/create
-// @desc    Create admin user (first-time setup only)
-// @access  Public (only works if no admin exists)
-router.post('/admin/create', validate(schemas.register), async (req, res) => {
+// @desc    Create a new user with any role (admin only)
+// @access  Private/Admin
+router.post('/admin/create', protect, adminOnly, async (req, res) => {
   try {
-    // Check if admin already exists
-    const existingAdmin = await User.findOne({ role: 'admin' });
-    if (existingAdmin) {
-      return res.status(403).json({ error: 'Admin account already exists' });
+    const { name, email, password, role = 'user' } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email and password are required' });
     }
 
-    const { name, email, password } = req.body;
+    if (!['user', 'reporter', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
 
-    // Check if email is already registered
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
+      return res.status(400).json({ error: 'Email already in use' });
     }
 
-    // Create admin user
-    const admin = await User.create({
-      name,
-      email,
-      password,
-      role: 'admin',
-      location: { type: 'Point', coordinates: [0, 0] }
-    });
-
-    const token = generateToken(admin._id);
-    const accessToken = generateAccessToken(admin._id);
-    const refreshToken = await createRefreshToken(admin._id);
-    setTokenCookie(res, token);
+    const user = await User.create({ name, email, password, role });
 
     res.status(201).json({
-      message: 'Admin account created successfully',
-      token,
-      accessToken,
-      refreshToken,
-      user: admin.toPublicJSON()
+      message: 'User created successfully',
+      user: user.toPublicJSON()
     });
   } catch (error) {
-    console.error('Admin creation error:', error);
-    res.status(500).json({ error: 'Failed to create admin account' });
+    console.error('Admin create user error:', error);
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 

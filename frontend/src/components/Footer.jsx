@@ -6,7 +6,7 @@ const footerLinks = [
   { label: 'Privacy Policy', path: '/privacy-policy' },
   { label: 'Editorial Policy', path: '/editorial-policy' },
   { label: 'About Us', path: '/about' },
-  { label: 'Contact Us', href: 'mailto:taajanews.net@gmail.com' },
+  { label: 'Contact Us', path: '/contact' },
   { label: 'Delete Account', path: '/delete-account' },
 ];
 

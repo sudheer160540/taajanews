@@ -482,17 +482,24 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
     }
 
     // Get breadcrumb
-    const breadcrumb = await Category.getBreadcrumb(article.category._id);
+    const breadcrumb = article.category?._id
+      ? await Category.getBreadcrumb(article.category._id)
+      : [];
 
     // Get related articles
-    const relatedArticles = await Article.find({
+    const relatedQuery = {
       status: 'published',
-      _id: { $ne: article._id },
-      $or: [
-        { category: article.category._id },
-        { tags: { $in: article.tags || [] } }
-      ]
-    })
+      _id: { $ne: article._id }
+    };
+
+    if (article.category?._id || (article.tags && article.tags.length)) {
+      relatedQuery.$or = [
+        ...(article.category?._id ? [{ category: article.category._id }] : []),
+        ...(article.tags?.length ? [{ tags: { $in: article.tags } }] : [])
+      ];
+    }
+
+    const relatedArticles = await Article.find(relatedQuery)
       .select('title slug featuredImage publishedAt')
       .limit(5)
       .lean();
