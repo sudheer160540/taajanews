@@ -127,13 +127,16 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const isReporter = user?.role === 'reporter' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
+
   const value = {
     user,
     loading,
     error,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
-    isReporter: user?.role === 'reporter' || user?.role === 'admin',
+    isAdmin,
+    isReporter,
     login,
     googleLogin,
     register,
