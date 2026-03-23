@@ -35,6 +35,8 @@ const Home = () => {
   const [articles, setArticles] = useState([]);
   const [trendingArticles, setTrendingArticles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pagination, setPagination] = useState({ page: 1, hasMore: false });
 
   const getDisplayName = (item) => {
     if (!item) return '';
@@ -73,7 +75,7 @@ const Home = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const feedParams = { lang, limit: 20 };
+      const feedParams = { lang, limit: 20, page: 1 };
       const loc = getLocationCoords();
       if (loc) {
         feedParams.latitude = loc.lat;
@@ -87,11 +89,35 @@ const Home = () => {
       ]);
 
       setArticles(articlesRes.data.articles);
+      setPagination(articlesRes.data.pagination);
       setTrendingArticles(trendingRes.data.articles);
     } catch (err) {
       console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMore = async () => {
+    if (loadingMore || !pagination.hasMore) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = pagination.page + 1;
+      const feedParams = { lang, limit: 20, page: nextPage };
+      const loc = getLocationCoords();
+      if (loc) {
+        feedParams.latitude = loc.lat;
+        feedParams.longitude = loc.lng;
+        feedParams.radiusKM = 50;
+      }
+
+      const articlesRes = await articlesApi.getFeed(feedParams);
+      setArticles((prev) => [...prev, ...articlesRes.data.articles]);
+      setPagination(articlesRes.data.pagination);
+    } catch (err) {
+      console.error('Failed to fetch more articles:', err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -305,6 +331,23 @@ const Home = () => {
                   <ArticleCard article={article} />
                 </Grid>
               ))}
+
+              {/* View More Button */}
+              {pagination.hasMore && (
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      onClick={fetchMore}
+                      disabled={loadingMore}
+                      startIcon={loadingMore ? null : <ReadIcon />}
+                    >
+                      {loadingMore ? t('loading') || 'Loading...' : t('viewMore') || 'View More'}
+                    </Button>
+                  </Box>
+                </Grid>
+              )}
             </>
           )}
         </Grid>

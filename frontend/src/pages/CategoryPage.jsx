@@ -3,9 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Container, Typography, Grid, Card, CardContent,
-  CardMedia, CardActionArea, Chip, Skeleton
+  CardMedia, CardActionArea, Chip, Skeleton, Button
 } from '@mui/material';
-import { AccessTime as TimeIcon, Visibility as ViewIcon } from '@mui/icons-material';
+import { AccessTime as TimeIcon, Visibility as ViewIcon, AutoStories as ReadIcon } from '@mui/icons-material';
 import { articlesApi, categoriesApi } from '../services/api';
 
 const CategoryPage = () => {
@@ -17,6 +17,8 @@ const CategoryPage = () => {
   const [articles, setArticles] = useState([]);
   const [category, setCategory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pagination, setPagination] = useState({ page: 1, hasMore: false });
 
   const getDisplayName = (item) => {
     if (!item) return '';
@@ -41,15 +43,34 @@ const CategoryPage = () => {
       setCategory(matchedCat || null);
 
       // Fetch articles filtered by category _id
-      const params = { lang, limit: 20 };
+      const params = { lang, limit: 20, page: 1 };
       if (matchedCat?._id) params.category = matchedCat._id;
 
       const artRes = await articlesApi.getFeed(params);
       setArticles(artRes.data.articles || []);
+      setPagination(artRes.data.pagination);
     } catch (err) {
       console.error('Failed to fetch category articles:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMore = async () => {
+    if (loadingMore || !pagination.hasMore) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = pagination.page + 1;
+      const params = { lang, limit: 20, page: nextPage };
+      if (category?._id) params.category = category._id;
+
+      const artRes = await articlesApi.getFeed(params);
+      setArticles((prev) => [...prev, ...(artRes.data.articles || [])]);
+      setPagination(artRes.data.pagination);
+    } catch (err) {
+      console.error('Failed to fetch more articles:', err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -157,6 +178,23 @@ const CategoryPage = () => {
                   <ArticleCard article={article} />
                 </Grid>
               ))}
+
+              {/* View More Button */}
+              {pagination.hasMore && (
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      onClick={fetchMore}
+                      disabled={loadingMore}
+                      startIcon={loadingMore ? null : <ReadIcon />}
+                    >
+                      {loadingMore ? t('loading') || 'Loading...' : t('viewMore') || 'View More'}
+                    </Button>
+                  </Box>
+                </Grid>
+              )}
             </>
           )}
         </Grid>
