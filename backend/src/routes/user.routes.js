@@ -334,7 +334,7 @@ router.put('/:id/role', protect, adminOnly, async (req, res) => {
   try {
     const { role } = req.body;
 
-    if (!['user', 'reporter', 'admin'].includes(role)) {
+    if (!['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 

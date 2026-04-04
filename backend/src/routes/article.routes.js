@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const Article = require('../models/Article');
 const Category = require('../models/Category');
 const User = require('../models/User');
-const { protect, optionalAuth, reporterOrAdmin, adminOnly } = require('../middleware/auth');
+const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
 
@@ -72,6 +72,8 @@ router.get('/feed', optionalAuth, async (req, res) => {
         engagement: 1,
         trendingScore: 1,
         readingTime: 1,
+        source: 1,
+        sourceUrl: 1,
         isFeatured: 1,
         isBreaking: 1,
         publishedAt: 1,
@@ -568,7 +570,9 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
       title: new Map(Object.entries(req.body.title || {})),
       summary: new Map(Object.entries(req.body.summary || {})),
       content: new Map(Object.entries(req.body.content || {})),
-      author: req.user._id
+      author: req.user._id,
+      source: req.body.source || 'TaajaNews',
+      sourceUrl: req.body.sourceUrl || ''
     };
 
     // Get category ancestors if category provided
@@ -653,6 +657,10 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       updateData.audio = new Map(Object.entries(updateData.audio));
     }
 
+    if (!updateData.source) {
+      updateData.source = 'TaajaNews';
+    }
+
     const updatedArticle = await Article.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -670,9 +678,9 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 });
 
 // @route   PUT /api/articles/:id/status
-// @desc    Update article status
-// @access  Private/Admin
-router.put('/:id/status', protect, adminOnly, async (req, res) => {
+// @desc    Update article status (sub-editor, chief-editor, admin)
+// @access  Private/Editor+
+router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   try {
     const { status } = req.body;
     
@@ -725,6 +733,55 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
   }
 });
 
+// @route   GET /api/articles/manage/stats
+// @desc    Aggregated stats for the logged-in user's articles
+// @access  Private/Reporter
+router.get('/manage/stats', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const match = {};
+    if (req.user.role === 'reporter') {
+      match.author = req.user._id;
+    }
+
+    const [result] = await Article.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          totalArticles: { $sum: 1 },
+          publishedArticles: {
+            $sum: { $cond: [{ $eq: ['$status', 'published'] }, 1, 0] }
+          },
+          draftArticles: {
+            $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] }
+          },
+          pendingArticles: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          },
+          totalViews: { $sum: '$engagement.views' },
+          totalLikes: { $sum: '$engagement.likes' },
+          totalShares: { $sum: '$engagement.shares' }
+        }
+      }
+    ]);
+
+    res.json({
+      stats: result || {
+        totalArticles: 0,
+        publishedArticles: 0,
+        draftArticles: 0,
+        pendingArticles: 0,
+        totalViews: 0,
+        totalLikes: 0,
+        totalShares: 0
+      }
+    });
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 // @route   GET /api/articles/manage/list
 // @desc    Get articles for management (reporter dashboard)
 // @access  Private/Reporter
@@ -755,7 +812,7 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     }
 
     const articles = await Article.find(query)
-      .select('title slug status publishedAt createdAt engagement author category')
+      .select('title slug status publishedAt createdAt engagement author category source sourceUrl')
       .populate('author', 'name')
       .populate('category', 'name')
       .sort({ createdAt: -1 })

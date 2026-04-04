@@ -132,7 +132,7 @@ router.post('/admin/create', protect, adminOnly, async (req, res) => {
       return res.status(400).json({ error: 'Name, email and password are required' });
     }
 
-    if (!['user', 'reporter', 'admin'].includes(role)) {
+    if (!['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 

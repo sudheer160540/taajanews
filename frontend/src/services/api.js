@@ -62,7 +62,8 @@ export const articlesApi = {
   update: (id, data) => api.put(`/articles/${id}`, data),
   updateStatus: (id, status) => api.put(`/articles/${id}/status`, { status }),
   delete: (id) => api.delete(`/articles/${id}`),
-  getManaged: (params) => api.get('/articles/manage/list', { params })
+  getManaged: (params) => api.get('/articles/manage/list', { params }),
+  getStats: () => api.get('/articles/manage/stats')
 };
 
 export const categoriesApi = {

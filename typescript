@@ -1,0 +1,61 @@
+Script started on Sat Apr  4 13:28:32 2026
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hccat > /tmp/patch_routes.js << 'EOF'[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hcconst fs = require('fs');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hllet content = fs.readFileSync('/Users/sudheernunna/taaja_news/backend/src/routes/article.routes. [Kjjs', 'utf8');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hccontent = content.replace([?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "author: req.user._id\n    };",[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "author: req.user._id,\n      source: req.body.source || 'TaajaNews',\n      sourceUrl: req.bo [Kddy.sourceUrl || ''\n    };"[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h));[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hccontent = content.replace([?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "    if (updateData.audio) {\n      updateData.audio = new Map(Object.entries(updateData.audio [K)));\n    }\n\n    const updatedArticle",[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "    if (updateData.audio) {\n      updateData.audio = new Map(Object.entries(updateData.audio [K)));\n    }\n\n    if (!updateData.source) {\n      updateData.source = 'TaajaNews';\n    }\n\n    const u [KppdatedArticle"[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h));[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hffs.writeFileSync('/Users/sudheernunna/taaja_news/backend/src/routes/article.routes.js', content) [K;[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hcconsole.log('Done');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hEEOF[?2004l
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hnnode /tmp/patch_routes.js[?2004l
+Done
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hggrep -n "source\|sourceUrl" /Users/sudheernunna/taaja_news/back [Keend/src/routes/article.routes.js[?2004l
+572:      source: req.body.source || 'TaajaNews',
+573:      sourceUrl: req.body.sourceUrl || ''
+658:    if (!updateData.source) {
+659:      updateData.source = 'TaajaNews';
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hccat > /tmp/patch_frontend.js << 'EOF'[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hcconst fs = require('fs');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hllet content = fs.readFileSync('/Users/sudheernunna/taaja_news/frontend/src/pages/dashboard/Artic [KlleEditor.jsx', 'utf8');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h/// 1. Add source/sourceUrl to initial state[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hccontent = content.replace([?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "    featuredImage: null,\n    audio: {}\n  });",[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "    featuredImage: null,\n    audio: {},\n    source: 'TaajaNews',\n    sourceUrl: ''\n  });" [K[K[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h));[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h/// 2. Load source/sourceUrl when editing[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hccontent = content.replace([?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "          featuredImage: articleData.featuredImage || null,\n          audio: audioObj\n      [K    });",[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "          featuredImage: articleData.featuredImage || null,\n          audio: audioObj,\n     [K       source: articleData.source || 'TaajaNews',\n          sourceUrl: articleData.sourceUrl || ''\n      [K    });"[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h));[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h/// 3. Include source/sourceUrl in save payload[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hccontent = content.replace([?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "        isFeatured: article.isFeatured,\n        isBreaking: article.isBreaking\n      };",[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h   "        isFeatured: article.isFeatured,\n        isBreaking: article.isBreaking,\n        sou [Krrce: article.source || 'TaajaNews',\n        sourceUrl: article.sourceUrl || ''\n      };"[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h));[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004h[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hffs.writeFileSync('/Users/sudheernunna/taaja_news/frontend/src/pages/dashboard/ArticleEditor.jsx' [K,, content);[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hcconsole.log('Done');[?2004l
+[0m[27m[24m[Jheredoc> [K[?2004hEEOF[?2004l
+node /tmp/patch_frontend.js
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hnnode /tmp/patch_frontend.js[?2004l
+Done
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004hggrep -n "source\|sourceUrl" /Users/sudheernunna/taaja_news/fron [Kttend/src/pages/dashboard/ArticleEditor.jsx[?2004l
+69:    source: 'TaajaNews',
+70:    sourceUrl: ''
+153:          source: articleData.source || 'TaajaNews',
+154:          sourceUrl: articleData.sourceUrl || ''
+430:        source: article.source || 'TaajaNews',
+431:        sourceUrl: article.sourceUrl || ''
+[1m[7m%[27m[1m[0m                                                                                                         [0m[27m[24m[Jsudheernunna@SUDHEERN-M-7V2F taaja_news % [K[?2004h

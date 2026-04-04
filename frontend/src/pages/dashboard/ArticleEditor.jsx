@@ -36,11 +36,13 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, categoriesApi, uploadApi, translateApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { isEditor } = useAuth();
   const isEditing = !!id;
 
   // Languages state
@@ -65,7 +67,9 @@ const ArticleEditor = () => {
     isFeatured: false,
     isBreaking: false,
     featuredImage: null,
-    audio: {}
+    audio: {},
+    source: 'TaajaNews',
+    sourceUrl: ''
   });
   const [generateAudio, setGenerateAudio] = useState(false);
   
@@ -147,7 +151,9 @@ const ArticleEditor = () => {
           isFeatured: articleData.isFeatured || false,
           isBreaking: articleData.isBreaking || false,
           featuredImage: articleData.featuredImage || null,
-          audio: audioObj
+          audio: audioObj,
+          source: articleData.source || 'TaajaNews',
+          sourceUrl: articleData.sourceUrl || ''
         });
 
         // Set the location input display text
@@ -386,11 +392,11 @@ const ArticleEditor = () => {
     }
   };
 
-  const handleSave = async (publish = false) => {
+  // saveMode: 'draft' | 'pending' | 'published'
+  const handleSave = async (saveMode = 'draft') => {
     setError(null);
     setSuccess(null);
 
-    // Validation - only title and content are required
     if (!article.title[defaultLang]) {
       setError(`Title is required in the default language (${defaultLang})`);
       return;
@@ -399,12 +405,10 @@ const ArticleEditor = () => {
       setError(`Content is required in the default language (${defaultLang})`);
       return;
     }
-    // Summary, category, and featuredImage are optional
 
     setSaving(true);
 
     try {
-      // Filter out empty language values
       const cleanMultilingual = (obj) => {
         const cleaned = {};
         Object.entries(obj).forEach(([key, value]) => {
@@ -415,14 +419,18 @@ const ArticleEditor = () => {
         return cleaned;
       };
 
+      const targetStatus = saveMode === 'draft' ? (article.status === 'published' ? article.status : 'draft') : saveMode;
+
       const articleData = {
         title: cleanMultilingual(article.title),
         summary: cleanMultilingual(article.summary),
         content: cleanMultilingual(article.content),
         tags: article.tags,
-        status: publish ? 'pending' : article.status,
+        status: targetStatus,
         isFeatured: article.isFeatured,
-        isBreaking: article.isBreaking
+        isBreaking: article.isBreaking,
+        source: article.source || 'TaajaNews',
+        sourceUrl: article.sourceUrl || ''
       };
 
       if (article.category) articleData.category = article.category;
@@ -474,19 +482,31 @@ const ArticleEditor = () => {
         <Button
           variant="outlined"
           startIcon={<SaveIcon />}
-          onClick={() => handleSave(false)}
+          onClick={() => handleSave('draft')}
           disabled={saving}
         >
           {t('save')} {t('draft')}
         </Button>
         <Button
           variant="contained"
+          color="warning"
           startIcon={<PublishIcon />}
-          onClick={() => handleSave(true)}
+          onClick={() => handleSave('pending')}
           disabled={saving}
         >
           {saving ? t('loading') : 'Submit for Review'}
         </Button>
+        {isEditor && (
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={<PublishIcon />}
+            onClick={() => handleSave('published')}
+            disabled={saving}
+          >
+            {saving ? t('loading') : 'Publish'}
+          </Button>
+        )}
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
@@ -753,6 +773,34 @@ const ArticleEditor = () => {
                   </Box>
                 )}
               </Box>
+            </CardContent>
+          </Card>
+
+          {/* Source */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                Source
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="Source Name"
+                value={article.source}
+                onChange={(e) => handleChange('source', e.target.value)}
+                margin="dense"
+                placeholder="Taaja News"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Source URL"
+                value={article.sourceUrl}
+                onChange={(e) => handleChange('sourceUrl', e.target.value)}
+                margin="dense"
+                placeholder="https://example.com/original-article"
+                type="url"
+              />
             </CardContent>
           </Card>
 

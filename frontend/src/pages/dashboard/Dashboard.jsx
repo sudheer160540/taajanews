@@ -46,22 +46,20 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await articlesApi.getManaged({ limit: 10 });
-      const articles = response.data.articles;
+      const [statsRes, articlesRes] = await Promise.all([
+        articlesApi.getStats(),
+        articlesApi.getManaged({ limit: 5 })
+      ]);
 
-      // Calculate stats
-      const totalViews = articles.reduce((sum, a) => sum + (a.engagement?.views || 0), 0);
-      const totalLikes = articles.reduce((sum, a) => sum + (a.engagement?.likes || 0), 0);
-      const publishedCount = articles.filter(a => a.status === 'published').length;
-
+      const s = statsRes.data.stats;
       setStats({
-        totalArticles: response.data.pagination.total,
-        totalViews,
-        totalLikes,
-        publishedArticles: publishedCount
+        totalArticles: s.totalArticles || 0,
+        publishedArticles: s.publishedArticles || 0,
+        totalViews: s.totalViews || 0,
+        totalLikes: s.totalLikes || 0
       });
 
-      setRecentArticles(articles.slice(0, 5));
+      setRecentArticles(articlesRes.data.articles);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
