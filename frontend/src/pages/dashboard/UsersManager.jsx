@@ -40,7 +40,14 @@ import {
 import { usersApi, authApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
-const ROLES = ['user', 'reporter', 'admin'];
+const ROLES = ['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'];
+const ROLE_LABELS = {
+  'user': 'User',
+  'reporter': 'Reporter',
+  'sub-editor': 'Sub-Editor',
+  'chief-editor': 'Chief Editor',
+  'admin': 'Admin'
+};
 const emptyForm = { name: '', email: '', password: '', role: 'user' };
 
 const UsersManager = () => {
@@ -187,6 +194,8 @@ const UsersManager = () => {
   const getRoleColor = (role) => {
     switch (role) {
       case 'admin': return 'error';
+      case 'chief-editor': return 'secondary';
+      case 'sub-editor': return 'warning';
       case 'reporter': return 'primary';
       default: return 'default';
     }
@@ -277,7 +286,7 @@ const UsersManager = () => {
                     </TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
-                      <Chip label={user.role} size="small" color={getRoleColor(user.role)} />
+                      <Chip label={ROLE_LABELS[user.role] || user.role} size="small" color={getRoleColor(user.role)} />
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -319,15 +328,11 @@ const UsersManager = () => {
         <MenuItem disabled>
           <Typography variant="caption" color="text.secondary">Change Role</Typography>
         </MenuItem>
-        {selectedUser?.role !== 'user' && (
-          <MenuItem onClick={() => handleRoleChange('user')}>Set as User</MenuItem>
-        )}
-        {selectedUser?.role !== 'reporter' && (
-          <MenuItem onClick={() => handleRoleChange('reporter')}>Set as Reporter</MenuItem>
-        )}
-        {selectedUser?.role !== 'admin' && (
-          <MenuItem onClick={() => handleRoleChange('admin')}>Set as Admin</MenuItem>
-        )}
+        {ROLES.filter(r => r !== selectedUser?.role).map(r => (
+          <MenuItem key={r} onClick={() => handleRoleChange(r)}>
+            Set as {ROLE_LABELS[r]}
+          </MenuItem>
+        ))}
         <MenuItem divider />
         <MenuItem onClick={handleStatusToggle}>
           {selectedUser?.isActive ? 'Deactivate User' : 'Activate User'}
@@ -387,7 +392,7 @@ const UsersManager = () => {
             >
               {ROLES.map((r) => (
                 <MenuItem key={r} value={r}>
-                  {r.charAt(0).toUpperCase() + r.slice(1)}
+                  {ROLE_LABELS[r]}
                 </MenuItem>
               ))}
             </Select>

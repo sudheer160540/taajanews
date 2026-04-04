@@ -189,6 +189,16 @@ const articleSchema = new mongoose.Schema({
     type: Number,
     default: 1
   },
+  source: {
+    type: String,
+    trim: true,
+    default: 'TaajaNews'
+  },
+  sourceUrl: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   seo: {
     metaTitle: String,
     metaDescription: String,

@@ -111,11 +111,21 @@ const adminOnly = (req, res, next) => {
 };
 
 /**
- * Reporter or Admin middleware
+ * Reporter or above middleware (reporter, sub-editor, chief-editor, admin)
  */
 const reporterOrAdmin = (req, res, next) => {
-  if (!req.user || !['reporter', 'admin'].includes(req.user.role)) {
+  if (!req.user || !['reporter', 'sub-editor', 'chief-editor', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Reporter or admin access required' });
+  }
+  next();
+};
+
+/**
+ * Editor or Admin middleware — only sub-editor, chief-editor, admin can publish
+ */
+const editorOrAdmin = (req, res, next) => {
+  if (!req.user || !['sub-editor', 'chief-editor', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Editor or admin access required' });
   }
   next();
 };
@@ -178,6 +188,7 @@ module.exports = {
   authorize,
   adminOnly,
   reporterOrAdmin,
+  editorOrAdmin,
   generateToken,
   generateAccessToken,
   createRefreshToken,
