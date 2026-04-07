@@ -37,7 +37,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const ArticlesList = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isEditor, canPublish } = useAuth();
   const lang = i18n.language;
 
   const [articles, setArticles] = useState([]);
@@ -278,28 +278,38 @@ const ArticlesList = () => {
         />
       </Card>
 
-      {/* Actions Menu */}
+      {/* Actions Menu — role-based status transitions */}
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
         onClose={handleMenuClose}
       >
+        {/* Any role: submit draft for review */}
         {selectedArticle?.status === 'draft' && (
           <MenuItem onClick={() => handleStatusChange('pending')}>
             Submit for Review
           </MenuItem>
         )}
-        {isAdmin && selectedArticle?.status === 'pending' && (
+        {/* Sub-editor+: send pending article back to draft for rework */}
+        {isEditor && selectedArticle?.status === 'pending' && (
+          <MenuItem onClick={() => handleStatusChange('draft')}>
+            Send Back to Draft
+          </MenuItem>
+        )}
+        {/* Chief editor / Admin: publish pending article */}
+        {canPublish && selectedArticle?.status === 'pending' && (
           <MenuItem onClick={() => handleStatusChange('published')}>
             Publish
           </MenuItem>
         )}
-        {selectedArticle?.status === 'published' && (
+        {/* Chief editor / Admin: archive published article */}
+        {canPublish && selectedArticle?.status === 'published' && (
           <MenuItem onClick={() => handleStatusChange('archived')}>
             Archive
           </MenuItem>
         )}
-        {selectedArticle?.status === 'archived' && (
+        {/* Chief editor / Admin: restore archived article */}
+        {canPublish && selectedArticle?.status === 'archived' && (
           <MenuItem onClick={() => handleStatusChange('draft')}>
             Restore to Draft
           </MenuItem>
