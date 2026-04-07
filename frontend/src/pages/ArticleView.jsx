@@ -32,7 +32,8 @@ import {
   AccessTime as TimeIcon,
   Visibility as ViewIcon,
   Send as SendIcon,
-  NavigateNext as NavNextIcon
+  NavigateNext as NavNextIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,7 +43,7 @@ const ArticleView = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isEditor } = useAuth();
   const lang = i18n.language;
 
   const [article, setArticle] = useState(null);
@@ -302,6 +303,16 @@ const ArticleView = () => {
               {article.engagement?.views} {t('views')}
             </Typography>
           </Box>
+          {isEditor && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<EditIcon />}
+              onClick={() => navigate(`/dashboard/articles/edit/${article._id}`)}
+            >
+              Edit Article
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -319,6 +330,28 @@ const ArticleView = () => {
       >
         {article.content}
       </Typography>
+
+      {/* Source Attribution */}
+      {article.source && (
+        <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1, borderLeft: '3px solid', borderColor: 'primary.main' }}>
+          <Typography variant="body2" color="text.secondary">
+            <strong>Source:</strong>{' '}
+            {article.sourceUrl ? (
+              <Box
+                component="a"
+                href={article.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+              >
+                {article.source}
+              </Box>
+            ) : (
+              article.source
+            )}
+          </Typography>
+        </Box>
+      )}
 
       {/* Tags */}
       {article.tags?.length > 0 && (

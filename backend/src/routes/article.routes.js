@@ -661,6 +661,17 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       updateData.source = 'TaajaNews';
     }
 
+    // Reporter can only save as draft or pending; sub-editor same.
+    // Only chief-editor/admin can set published/archived via update.
+    if (updateData.status) {
+      if (req.user.role === 'reporter' && !['draft', 'pending'].includes(updateData.status)) {
+        return res.status(403).json({ error: 'Reporters can only save as draft or submit for review' });
+      }
+      if (req.user.role === 'sub-editor' && !['draft', 'pending'].includes(updateData.status)) {
+        return res.status(403).json({ error: 'Sub-Editors cannot publish directly' });
+      }
+    }
+
     const updatedArticle = await Article.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -678,19 +689,26 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 });
 
 // @route   PUT /api/articles/:id/status
-// @desc    Update article status (sub-editor, chief-editor, admin)
+// @desc    Update article status (role-based)
 // @access  Private/Editor+
+//   sub-editor  → can set draft, pending
+//   chief-editor, admin → can set draft, pending, published, archived
 router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   try {
     const { status } = req.body;
-    
+
     if (!['draft', 'pending', 'published', 'archived'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
+    if (['published', 'archived'].includes(status) &&
+        !['chief-editor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Chief Editor or Admin can publish or archive articles' });
+    }
+
     const article = await Article.findByIdAndUpdate(
       req.params.id,
-      { 
+      {
         status,
         publishedAt: status === 'published' ? new Date() : undefined
       },

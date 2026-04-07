@@ -42,7 +42,7 @@ const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { isEditor } = useAuth();
+  const { canPublish } = useAuth();
   const isEditing = !!id;
 
   // Languages state
@@ -496,7 +496,7 @@ const ArticleEditor = () => {
         >
           {saving ? t('loading') : 'Submit for Review'}
         </Button>
-        {isEditor && (
+        {canPublish && (
           <Button
             variant="contained"
             color="success"
@@ -554,6 +554,8 @@ const ArticleEditor = () => {
                     if (e.target.value.length <= 200) handleChange('title', e.target.value, currentLang);
                   }}
                   margin="normal"
+                  multiline
+                  rows={3}
                   required={languages[langTab]?.isDefault}
                   placeholder={languages[langTab]?.isDefault ? '' : `Optional - will fallback to ${defaultLang}`}
                   helperText={`${(article.title[currentLang] || '').length} / 200`}
@@ -569,7 +571,7 @@ const ArticleEditor = () => {
                   }}
                   margin="normal"
                   multiline
-                  rows={2}
+                  rows={5}
                   required={languages[langTab]?.isDefault}
                   placeholder={languages[langTab]?.isDefault ? '' : `Optional - will fallback to ${defaultLang}`}
                   helperText={`${(article.summary[currentLang] || '').length} / 500`}
