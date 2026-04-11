@@ -134,25 +134,29 @@ router.get('/feed', optionalAuth, async (req, res) => {
 
     const pipeline = [];
 
-    // ── Stage 1: $geoNear (must be first) ──
-    if (latitude && longitude) {
-      const geoQuery = { status: 'published' };
-      if (excludeIds.length) geoQuery._id = { $nin: excludeIds };
+    // // ── Stage 1: $geoNear (must be first) ──
+    // if (latitude && longitude) {
+    //   const geoQuery = { status: 'published' };
+    //   if (excludeIds.length) geoQuery._id = { $nin: excludeIds };
 
-      pipeline.push({
-        $geoNear: {
-          near: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
-          distanceField: 'distance',
-          maxDistance: Number(radiusKM) * 1000,
-          spherical: true,
-          query: geoQuery
-        }
-      });
-    } else {
+    //   pipeline.push({
+    //     $geoNear: {
+    //       near: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+    //       distanceField: 'distance',
+    //       maxDistance: Number(radiusKM) * 1000,
+    //       spherical: true,
+    //       query: geoQuery
+    //     }
+    //   });
+    // } else {
+    //   const matchBase = { status: 'published' };
+    //   if (excludeIds.length) matchBase._id = { $nin: excludeIds };
+    //   pipeline.push({ $match: matchBase });
+    // }
+ ///// this will remove and keep uncomment abode code after review
       const matchBase = { status: 'published' };
       if (excludeIds.length) matchBase._id = { $nin: excludeIds };
       pipeline.push({ $match: matchBase });
-    }
 
     // ── Stage 2: $match — category filter (only for feed, not pinned) ──
     const filterMatch = {};

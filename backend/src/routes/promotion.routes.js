@@ -88,22 +88,22 @@ router.get('/feed', async (req, res) => {
     let nearbyIds = [];
 
     // If location provided, find nearby promotions first, but also include non-located ones
-    if (lat && lng) {
-      const geoPipeline = [
-        {
-          $geoNear: {
-            near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
-            distanceField: 'distance',
-            maxDistance: Number(radiusKM) * 1000,
-            spherical: true,
-            query: { status: 'active' }
-          }
-        },
-        { $project: { _id: 1, distance: 1 } }
-      ];
-      const geoResults = await Promotion.aggregate(geoPipeline);
-      nearbyIds = geoResults.map(r => r._id);
-    }
+    // if (lat && lng) {
+    //   const geoPipeline = [
+    //     {
+    //       $geoNear: {
+    //         near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+    //         distanceField: 'distance',
+    //         maxDistance: Number(radiusKM) * 1000,
+    //         spherical: true,
+    //         query: { status: 'active' }
+    //       }
+    //     },
+    //     { $project: { _id: 1, distance: 1 } }
+    //   ];
+    //   const geoResults = await Promotion.aggregate(geoPipeline);
+    //   nearbyIds = geoResults.map(r => r._id);
+    // }
 
     // Build the main query: active + date valid
     const baseMatch = { status: 'active', ...dateFilter };
