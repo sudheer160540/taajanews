@@ -81,51 +81,61 @@ router.get('/yellow-pages/nearby', validate(schemas.nearbyYelloPage, 'query'), a
 
     let users, total;
 
-    if (hasLocation) {
-      // ── Geo query: nearest first within radius ──────────────────────────────
-      const [geoUsers, countResult] = await Promise.all([
-        User.find({
-          ...baseFilter,
-          location: {
-            $near: {
-              $geometry: { type: 'Point', coordinates: [Number(longitude), Number(latitude)] },
-              $maxDistance: radiusInMeters
-            }
-          }
-        })
-          .select('-password -refreshToken -seenArticles')
-          .skip((Number(page) - 1) * Number(limit))
-          .limit(Number(limit)),
+    // if (hasLocation) {
+    //   // ── Geo query: nearest first within radius ──────────────────────────────
+    //   const [geoUsers, countResult] = await Promise.all([
+    //     User.find({
+    //       ...baseFilter,
+    //       location: {
+    //         $near: {
+    //           $geometry: { type: 'Point', coordinates: [Number(longitude), Number(latitude)] },
+    //           $maxDistance: radiusInMeters
+    //         }
+    //       }
+    //     })
+    //       .select('-password -refreshToken -seenArticles')
+    //       .skip((Number(page) - 1) * Number(limit))
+    //       .limit(Number(limit)),
 
-        User.aggregate([
-          {
-            $geoNear: {
-              near: { type: 'Point', coordinates: [Number(longitude), Number(latitude)] },
-              distanceField: 'dist',
-              maxDistance: radiusInMeters,
-              query: baseFilter,
-              spherical: true
-            }
-          },
-          { $count: 'total' }
-        ])
-      ]);
+    //     User.aggregate([
+    //       {
+    //         $geoNear: {
+    //           near: { type: 'Point', coordinates: [Number(longitude), Number(latitude)] },
+    //           distanceField: 'dist',
+    //           maxDistance: radiusInMeters,
+    //           query: baseFilter,
+    //           spherical: true
+    //         }
+    //       },
+    //       { $count: 'total' }
+    //     ])
+    //   ]);
 
-      users = geoUsers;
-      total = countResult.length ? countResult[0].total : 0;
+    //   users = geoUsers;
+    //   total = countResult.length ? countResult[0].total : 0;
 
-    } else {
-      // ── No location: return all yellow-page users, sorted by name ──────────
-      [users, total] = await Promise.all([
-        User.find(baseFilter)
-          .select('-password -refreshToken -seenArticles')
-          .sort({ name: 1 })
-          .skip((Number(page) - 1) * Number(limit))
-          .limit(Number(limit)),
+    // } else {
+    //   // ── No location: return all yellow-page users, sorted by name ──────────
+    //   [users, total] = await Promise.all([
+    //     User.find(baseFilter)
+    //       .select('-password -refreshToken -seenArticles')
+    //       .sort({ name: 1 })
+    //       .skip((Number(page) - 1) * Number(limit))
+    //       .limit(Number(limit)),
 
-        User.countDocuments(baseFilter)
-      ]);
-    }
+    //     User.countDocuments(baseFilter)
+    //   ]);
+    // }
+
+    [users, total] = await Promise.all([
+      User.find(baseFilter)
+        .select('-password -refreshToken -seenArticles')
+        .sort({ name: 1 })
+        .skip((Number(page) - 1) * Number(limit))
+        .limit(Number(limit)),
+
+      User.countDocuments(baseFilter)
+    ]);
 
     res.json({
       users,
