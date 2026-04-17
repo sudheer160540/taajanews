@@ -70,6 +70,11 @@ const articleSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Author is required']
   },
+  reporterName: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
@@ -192,7 +197,7 @@ const articleSchema = new mongoose.Schema({
   source: {
     type: String,
     trim: true,
-    default: 'TaajaNews'
+    default: 'Taaja News Network'
   },
   sourceUrl: {
     type: String,

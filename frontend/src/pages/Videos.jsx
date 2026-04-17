@@ -26,6 +26,44 @@ import {
 } from '@mui/icons-material';
 import { videosApi } from '../services/api';
 
+const normalizeYouTubeUrl = (raw) => (raw || '').trim();
+
+const getYouTubeVideoId = (rawUrl) => {
+  const urlStr = normalizeYouTubeUrl(rawUrl);
+  if (!urlStr) return null;
+
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      const id = u.pathname.split('/').filter(Boolean)[0];
+      return id || null;
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const v = u.searchParams.get('v');
+      if (v) return v;
+
+      const parts = u.pathname.split('/').filter(Boolean);
+      const embedIdx = parts.indexOf('embed');
+      if (embedIdx !== -1 && parts[embedIdx + 1]) return parts[embedIdx + 1];
+
+      const shortsIdx = parts.indexOf('shorts');
+      if (shortsIdx !== -1 && parts[shortsIdx + 1]) return parts[shortsIdx + 1];
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+};
+
+const getYouTubeEmbedUrl = (rawUrl) => {
+  const id = getYouTubeVideoId(rawUrl);
+  return id ? `https://www.youtube.com/embed/${id}` : null;
+};
+
 const Videos = () => {
   const { t } = useTranslation();
   const [videos, setVideos] = useState([]);
@@ -201,18 +239,39 @@ const Videos = () => {
             </DialogTitle>
             <DialogContent sx={{ p: 0 }}>
               <Box sx={{ position: 'relative', width: '100%', pt: '56.25%', bgcolor: 'black' }}>
-                <video
-                  src={selectedVideo.videoUrl}
-                  controls
-                  autoPlay
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%'
-                  }}
-                />
+                {(() => {
+                  const embed = getYouTubeEmbedUrl(selectedVideo.videoUrl);
+                  return embed ? (
+                    <Box
+                      component="iframe"
+                      src={embed}
+                      title={selectedVideo.title || 'YouTube video'}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        border: 0
+                      }}
+                    />
+                  ) : (
+                    <video
+                      src={selectedVideo.videoUrl}
+                      controls
+                      autoPlay
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%'
+                      }}
+                    />
+                  );
+                })()}
               </Box>
               <Box sx={{ p: 2 }}>
                 {selectedVideo.description && (

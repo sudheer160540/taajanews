@@ -41,6 +41,7 @@ const CategoriesManager = () => {
   const [formData, setFormData] = useState({
     name: { te: '', en: '', hi: '' },
     description: { te: '', en: '', hi: '' },
+    order: 0,
     color: '#B80000',
     isActive: true,
     isFeatured: false,
@@ -83,6 +84,7 @@ const CategoriesManager = () => {
           en: multilingual.description?.en || '',
           hi: multilingual.description?.hi || ''
         },
+        order: Number.isFinite(Number(category.order)) ? Number(category.order) : 0,
         color: category.color || '#B80000',
         isActive: category.isActive !== false,
         isFeatured: category.isFeatured || false,
@@ -94,6 +96,7 @@ const CategoriesManager = () => {
       setFormData({
         name: { te: '', en: '', hi: '' },
         description: { te: '', en: '', hi: '' },
+        order: 0,
         color: '#B80000',
         isActive: true,
         isFeatured: false,
@@ -120,7 +123,8 @@ const CategoriesManager = () => {
 
     try {
       const data = {
-        ...formData
+        ...formData,
+        order: Number.isFinite(Number(formData.order)) ? Number(formData.order) : 0
       };
 
       if (editingCategory) {
@@ -242,6 +246,7 @@ const CategoriesManager = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>Order</TableCell>
                 <TableCell>Icon</TableCell>
                 <TableCell>Stock Icon</TableCell>
                 <TableCell>Name</TableCell>
@@ -252,15 +257,16 @@ const CategoriesManager = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center">{t('loading')}</TableCell>
+                  <TableCell colSpan={6} align="center">{t('loading')}</TableCell>
                 </TableRow>
               ) : categories.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center">{t('noResults')}</TableCell>
+                  <TableCell colSpan={6} align="center">{t('noResults')}</TableCell>
                 </TableRow>
               ) : (
                 categories.map((category) => (
                   <TableRow key={category._id}>
+                    <TableCell>{Number.isFinite(Number(category.order)) ? Number(category.order) : 0}</TableCell>
                     <TableCell>
                       {category.icon ? (
                         <Box component="img" src={category.icon} alt="icon"
@@ -303,6 +309,19 @@ const CategoriesManager = () => {
         <DialogContent>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           
+          <TextField
+            fullWidth
+            label="Order"
+            type="number"
+            value={formData.order}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              order: e.target.value === '' ? '' : Number(e.target.value)
+            }))}
+            margin="normal"
+            inputProps={{ min: 0, step: 1 }}
+          />
+
           <TextField
             fullWidth
             label="Name (Telugu) *"

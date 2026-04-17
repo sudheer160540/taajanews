@@ -100,6 +100,43 @@ router.get('/tree', async (req, res) => {
   }
 });
 
+// @route   GET /api/categories/slug/:slug
+// @desc    Get category by slug
+// @access  Public
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const defaultLang = await languageCache.getDefaultLanguageCode();
+    const { lang = defaultLang } = req.query;
+
+    const category = await Category.findOne({ slug: req.params.slug })
+      .populate('parent', 'name slug')
+      .lean();
+
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    const children = await Category.find({ 
+      parent: category._id, 
+      isActive: true 
+    }).sort({ order: 1 }).lean();
+
+    const breadcrumb = await Category.getBreadcrumb(category._id);
+
+    res.json({ 
+      category: transformCategory(category, lang, defaultLang),
+      children: children.map(c => transformCategory(c, lang, defaultLang)),
+      breadcrumb: breadcrumb.map(b => ({
+        ...b,
+        name: getLocalizedValue(b.name, lang, defaultLang)
+      }))
+    });
+  } catch (error) {
+    console.error('Get category by slug error:', error);
+    res.status(500).json({ error: 'Failed to fetch category' });
+  }
+});
+
 // @route   GET /api/categories/:id
 // @desc    Get single category
 // @access  Public
@@ -143,43 +180,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// @route   GET /api/categories/slug/:slug
-// @desc    Get category by slug
-// @access  Public
-router.get('/slug/:slug', async (req, res) => {
-  try {
-    const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { lang = defaultLang } = req.query;
-
-    const category = await Category.findOne({ slug: req.params.slug })
-      .populate('parent', 'name slug')
-      .lean();
-
-    if (!category) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
-
-    const children = await Category.find({ 
-      parent: category._id, 
-      isActive: true 
-    }).sort({ order: 1 }).lean();
-
-    const breadcrumb = await Category.getBreadcrumb(category._id);
-
-    res.json({ 
-      category: transformCategory(category, lang, defaultLang),
-      children: children.map(c => transformCategory(c, lang, defaultLang)),
-      breadcrumb: breadcrumb.map(b => ({
-        ...b,
-        name: getLocalizedValue(b.name, lang, defaultLang)
-      }))
-    });
-  } catch (error) {
-    console.error('Get category by slug error:', error);
-    res.status(500).json({ error: 'Failed to fetch category' });
-  }
-});
-
 // @route   POST /api/categories
 // @desc    Create category
 // @access  Private/Admin
@@ -203,6 +203,29 @@ router.post('/', protect, adminOnly, validate(schemas.createCategory), async (re
       return res.status(400).json({ error: 'Category slug already exists' });
     }
     res.status(500).json({ error: 'Failed to create category' });
+  }
+});
+
+// @route   PUT /api/categories/reorder
+// @desc    Reorder categories
+// @access  Private/Admin
+router.put('/reorder', protect, adminOnly, async (req, res) => {
+  try {
+    const { categoryOrders } = req.body; // [{ id, order }]
+
+    const bulkOps = categoryOrders.map(({ id, order }) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { order }
+      }
+    }));
+
+    await Category.bulkWrite(bulkOps);
+
+    res.json({ message: 'Categories reordered' });
+  } catch (error) {
+    console.error('Reorder categories error:', error);
+    res.status(500).json({ error: 'Failed to reorder categories' });
   }
 });
 
@@ -283,29 +306,6 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
   } catch (error) {
     console.error('Delete category error:', error);
     res.status(500).json({ error: 'Failed to delete category' });
-  }
-});
-
-// @route   PUT /api/categories/reorder
-// @desc    Reorder categories
-// @access  Private/Admin
-router.put('/reorder', protect, adminOnly, async (req, res) => {
-  try {
-    const { categoryOrders } = req.body; // [{ id, order }]
-
-    const bulkOps = categoryOrders.map(({ id, order }) => ({
-      updateOne: {
-        filter: { _id: id },
-        update: { order }
-      }
-    }));
-
-    await Category.bulkWrite(bulkOps);
-
-    res.json({ message: 'Categories reordered' });
-  } catch (error) {
-    console.error('Reorder categories error:', error);
-    res.status(500).json({ error: 'Failed to reorder categories' });
   }
 });
 

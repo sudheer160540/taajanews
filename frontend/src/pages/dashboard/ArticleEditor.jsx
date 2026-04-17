@@ -68,7 +68,8 @@ const ArticleEditor = () => {
     isBreaking: false,
     featuredImage: null,
     audio: {},
-    source: 'TaajaNews',
+    reporterName: '',
+    source: 'Taaja News Network',
     sourceUrl: ''
   });
   const [generateAudio, setGenerateAudio] = useState(false);
@@ -77,6 +78,7 @@ const ArticleEditor = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [errorDetails, setErrorDetails] = useState([]);
   const [success, setSuccess] = useState(null);
   const [langTab, setLangTab] = useState(0);
   const [tagInput, setTagInput] = useState('');
@@ -152,7 +154,8 @@ const ArticleEditor = () => {
           isBreaking: articleData.isBreaking || false,
           featuredImage: articleData.featuredImage || null,
           audio: audioObj,
-          source: articleData.source || 'TaajaNews',
+          reporterName: articleData.reporterName || '',
+          source: articleData.source || 'Taaja News Network',
           sourceUrl: articleData.sourceUrl || ''
         });
 
@@ -163,10 +166,19 @@ const ArticleEditor = () => {
       }
     } catch (err) {
       setError('Failed to initialize editor');
+      setErrorDetails([]);
       console.error(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const setApiError = (err, fallbackMessage) => {
+    const data = err?.response?.data;
+    const message = data?.error || fallbackMessage || 'Something went wrong';
+    const details = Array.isArray(data?.details) ? data.details : [];
+    setError(message);
+    setErrorDetails(details);
   };
 
   // Load Google Maps + new Places library
@@ -304,7 +316,7 @@ const ArticleEditor = () => {
 
       setSuccess('Image uploaded successfully');
     } catch (err) {
-      setError('Failed to upload image');
+      setApiError(err, 'Failed to upload image');
       console.error(err);
     } finally {
       setUploading(false);
@@ -313,6 +325,7 @@ const ArticleEditor = () => {
 
   const handleTranslate = async () => {
     setError(null);
+    setErrorDetails([]);
     setSuccess(null);
 
     // Collect non-empty fields
@@ -330,6 +343,7 @@ const ArticleEditor = () => {
 
     if (Object.keys(titleInput).length === 0 && Object.keys(summaryInput).length === 0 && Object.keys(contentInput).length === 0) {
       setError('Please enter content in at least one language before translating');
+      setErrorDetails([]);
       return;
     }
 
@@ -385,7 +399,7 @@ const ArticleEditor = () => {
 
       setSuccess(generateAudio ? 'Translation and audio generation completed' : 'Translation completed successfully');
     } catch (err) {
-      setError(err.response?.data?.error || 'Translation failed. Please try again.');
+      setApiError(err, 'Translation failed. Please try again.');
       console.error(err);
     } finally {
       setTranslating(false);
@@ -395,14 +409,17 @@ const ArticleEditor = () => {
   // saveMode: 'draft' | 'pending' | 'published'
   const handleSave = async (saveMode = 'draft') => {
     setError(null);
+    setErrorDetails([]);
     setSuccess(null);
 
     if (!article.title[defaultLang]) {
       setError(`Title is required in the default language (${defaultLang})`);
+      setErrorDetails([]);
       return;
     }
     if (!article.content[defaultLang]) {
       setError(`Content is required in the default language (${defaultLang})`);
+      setErrorDetails([]);
       return;
     }
 
@@ -429,7 +446,8 @@ const ArticleEditor = () => {
         status: targetStatus,
         isFeatured: article.isFeatured,
         isBreaking: article.isBreaking,
-        source: article.source || 'TaajaNews',
+        reporterName: article.reporterName || '',
+        source: article.source || 'Taaja News Network',
         sourceUrl: article.sourceUrl || ''
       };
 
@@ -447,7 +465,7 @@ const ArticleEditor = () => {
         navigate(`/dashboard/articles/edit/${response.data.article._id}`);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save article');
+      setApiError(err, 'Failed to save article');
     } finally {
       setSaving(false);
     }
@@ -509,7 +527,29 @@ const ArticleEditor = () => {
         )}
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {error && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => {
+            setError(null);
+            setErrorDetails([]);
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {error}
+          </Typography>
+          {errorDetails.length > 0 && (
+            <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+              {errorDetails.map((msg, idx) => (
+                <Box component="li" key={`${idx}-${msg}`}>
+                  <Typography variant="body2">{msg}</Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Alert>
+      )}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
       <Grid container spacing={3}>
@@ -787,11 +827,20 @@ const ArticleEditor = () => {
               <TextField
                 fullWidth
                 size="small"
+                label="Reporter Name"
+                value={article.reporterName}
+                onChange={(e) => handleChange('reporterName', e.target.value)}
+                margin="dense"
+                placeholder="Enter reporter name (manual)"
+              />
+              <TextField
+                fullWidth
+                size="small"
                 label="Source Name"
                 value={article.source}
                 onChange={(e) => handleChange('source', e.target.value)}
                 margin="dense"
-                placeholder="Taaja News"
+                placeholder="Taaja News Network"
               />
               <TextField
                 fullWidth

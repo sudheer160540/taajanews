@@ -155,6 +155,7 @@ const schemas = {
       Joi.string(),
       Joi.string().min(5).max(200)
     ).required(),
+    reporterName: Joi.string().max(150).allow('', null),
     summary: Joi.object().pattern(
       Joi.string(),
       Joi.string().max(500).allow('')
