@@ -29,7 +29,8 @@ import {
   Logout as LogoutIcon,
   Add as AddIcon,
   Campaign as CampaignIcon,
-  VideoLibrary as VideoIcon
+  VideoLibrary as VideoIcon,
+  AccountCircle as AccountCircleIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -47,6 +48,7 @@ const DashboardLayout = () => {
 
   const menuItems = [
     { path: '/dashboard', label: t('dashboard'), icon: <DashboardIcon /> },
+    { path: '/dashboard/profile', label: t('profile'), icon: <AccountCircleIcon /> },
     { path: '/dashboard/articles', label: t('myArticles'), icon: <ArticleIcon /> },
     { path: '/dashboard/articles/new', label: t('createArticle'), icon: <AddIcon /> },
   ];
@@ -75,8 +77,25 @@ const DashboardLayout = () => {
 
       <Divider />
 
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Avatar src={user?.avatar} sx={{ bgcolor: 'primary.main' }}>
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          cursor: 'pointer',
+          '&:hover': { bgcolor: 'action.hover' }
+        }}
+        onClick={() => {
+          navigate('/dashboard/profile');
+          if (isMobile) setMobileOpen(false);
+        }}
+      >
+        <Avatar
+          src={user?.profilePhoto?.url || user?.avatar || undefined}
+          alt={user?.name || 'Profile photo'}
+          sx={{ bgcolor: 'primary.main' }}
+        >
           {user?.name?.[0]}
         </Avatar>
         <Box>

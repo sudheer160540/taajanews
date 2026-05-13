@@ -135,25 +135,29 @@ router.get('/feed', optionalAuth, async (req, res) => {
 
     const pipeline = [];
 
-    // ── Stage 1: $geoNear (must be first) ──
-    if (latitude && longitude) {
-      const geoQuery = { status: 'published' };
-      if (excludeIds.length) geoQuery._id = { $nin: excludeIds };
+    // // ── Stage 1: $geoNear (must be first) ──
+    // if (latitude && longitude) {
+    //   const geoQuery = { status: 'published' };
+    //   if (excludeIds.length) geoQuery._id = { $nin: excludeIds };
 
-      pipeline.push({
-        $geoNear: {
-          near: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
-          distanceField: 'distance',
-          maxDistance: Number(radiusKM) * 1000,
-          spherical: true,
-          query: geoQuery
-        }
-      });
-    } else {
+    //   pipeline.push({
+    //     $geoNear: {
+    //       near: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+    //       distanceField: 'distance',
+    //       maxDistance: Number(radiusKM) * 1000,
+    //       spherical: true,
+    //       query: geoQuery
+    //     }
+    //   });
+    // } else {
+    //   const matchBase = { status: 'published' };
+    //   if (excludeIds.length) matchBase._id = { $nin: excludeIds };
+    //   pipeline.push({ $match: matchBase });
+    // }
+ ///// this will remove and keep uncomment abode code after review
       const matchBase = { status: 'published' };
       if (excludeIds.length) matchBase._id = { $nin: excludeIds };
       pipeline.push({ $match: matchBase });
-    }
 
     // ── Stage 2: $match — category filter (only for feed, not pinned) ──
     const filterMatch = {};
@@ -633,6 +637,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this article' });
     }
 
+    // Reporters cannot edit their own article once it has been published.
+    // Sub-Editor / Chief-Editor / Admin retain edit access after publish.
+    if (req.user.role === 'reporter' && article.status === 'published') {
+      return res.status(403).json({
+        error: 'Reporters cannot edit an article after it has been published. Please contact an editor to make changes.'
+      });
+    }
+
     // If category changed, update ancestors
     if (req.body.category && article && article.category && req.body.category !== article.category.toString()) {
       const newCategory = await Category.findById(req.body.category);
@@ -664,6 +676,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 
     if (!updateData.source) {
       updateData.source = 'Taaja News Network';
+    }
+
+    if (typeof updateData.youtubeUrl === 'string') {
+      const trimmed = updateData.youtubeUrl.trim();
+      if (trimmed && !/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\/[^\s]+$/i.test(trimmed)) {
+        return res.status(400).json({ error: 'youtubeUrl must be a valid YouTube URL' });
+      }
+      updateData.youtubeUrl = trimmed;
     }
 
     // Reporter can only save as draft or pending; sub-editor same.

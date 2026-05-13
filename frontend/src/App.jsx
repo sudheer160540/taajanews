@@ -36,6 +36,7 @@ import LocationsManager from './pages/dashboard/LocationsManager';
 import LanguagesManager from './pages/dashboard/LanguagesManager';
 import PromotionsManager from './pages/dashboard/PromotionsManager';
 import VideosManager from './pages/dashboard/VideosManager';
+import Profile from './pages/dashboard/Profile';
 
 const LoadingScreen = () => (
   <Box
@@ -123,6 +124,7 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="articles" element={<ArticlesList />} />
         <Route path="articles/new" element={<ArticleEditor />} />
         <Route path="articles/edit/:id" element={<ArticleEditor />} />

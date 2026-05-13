@@ -119,8 +119,25 @@ const schemas = {
   // User schemas
   updateProfile: Joi.object({
     name: Joi.string().min(2).max(100),
+    email: Joi.string().email().lowercase().trim().max(254),
+    phone: Joi.string()
+      .pattern(/^\+?[1-9]\d{6,14}$/)
+      .allow(null, '')
+      .messages({
+        'string.pattern.base': 'Phone number must be a valid international format (e.g. +919876543210)'
+      }),
     avatar: Joi.string().uri().allow(null, ''),
-    bio: Joi.string().max(500).allow(null, '')
+    bio: Joi.string().max(500).allow(null, ''),
+    profilePhoto: Joi.alternatives().try(
+      Joi.valid(null),
+      Joi.object({
+        url: Joi.string().uri().max(2048).required(),
+        width: Joi.number().integer().min(16).max(4096).required(),
+        height: Joi.number().integer().min(16).max(4096).required(),
+        size: Joi.number().integer().min(0).max(5 * 1024 * 1024).required(),
+        contentType: Joi.string().valid('image/jpeg', 'image/png', 'image/webp').required()
+      })
+    )
   }),
 
   updatePreferences: Joi.object({
@@ -197,6 +214,15 @@ const schemas = {
       Joi.string(),
       Joi.string().uri().allow('')
     ).allow(null),
+    youtubeUrl: Joi.string()
+      .uri({ scheme: ['http', 'https'] })
+      .pattern(/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\/[^\s]+$/i)
+      .max(500)
+      .allow('', null)
+      .messages({
+        'string.pattern.base': 'youtubeUrl must be a valid YouTube URL',
+        'string.uri': 'youtubeUrl must be a valid URL'
+      }),
     tags: Joi.array().items(Joi.string().max(50)),
     status: Joi.string().valid('draft', 'pending', 'published', 'archived'),
     isFeatured: Joi.boolean(),

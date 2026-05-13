@@ -38,7 +38,7 @@ import {
   CloudUpload as UploadIcon,
   OpenInNew as LinkIcon
 } from '@mui/icons-material';
-import { promotionsApi, categoriesApi, uploadApi } from '../../services/api';
+import { promotionsApi, uploadApi } from '../../services/api';
 
 const INITIAL_FORM = {
   image: '',
@@ -48,15 +48,19 @@ const INITIAL_FORM = {
   location: null,
   status: 'active',
   link: '',
-  category: '',
+  youtubeUrl: '',
   priority: 0,
   startDate: '',
   endDate: ''
 };
 
+// Strict allow-list for YouTube URLs (HTTPS only, known hosts only)
+const YOUTUBE_URL_REGEX = /^https:\/\/(www\.youtube\.com\/(watch\?v=|embed\/|shorts\/)[A-Za-z0-9_-]{6,}(\S*)?|youtu\.be\/[A-Za-z0-9_-]{6,}(\S*)?)$/;
+
+const isValidYouTubeUrl = (url) => !url || YOUTUBE_URL_REGEX.test(url);
+
 const PromotionsManager = () => {
   const [promotions, setPromotions] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPromotion, setEditingPromotion] = useState(null);
@@ -81,10 +85,6 @@ const PromotionsManager = () => {
     fetchPromotions();
   }, [page, rowsPerPage, filterType, filterStatus]);
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
   const fetchPromotions = async () => {
     setLoading(true);
     try {
@@ -106,15 +106,6 @@ const PromotionsManager = () => {
     }
   };
 
-  const fetchCategories = async () => {
-    try {
-      const response = await categoriesApi.getAll({});
-      setCategories(response.data.categories || []);
-    } catch (err) {
-      console.error('Failed to fetch categories:', err);
-    }
-  };
-
   const handleOpenDialog = (promotion = null) => {
     if (promotion) {
       setEditingPromotion(promotion);
@@ -126,7 +117,7 @@ const PromotionsManager = () => {
         location: promotion.location || null,
         status: promotion.status || 'active',
         link: promotion.link || '',
-        category: promotion.category?._id || promotion.category || '',
+        youtubeUrl: promotion.youtubeUrl || '',
         priority: promotion.priority || 0,
         startDate: promotion.startDate ? promotion.startDate.slice(0, 10) : '',
         endDate: promotion.endDate ? promotion.endDate.slice(0, 10) : ''
@@ -269,6 +260,12 @@ const PromotionsManager = () => {
       return;
     }
 
+    const trimmedYoutube = formData.youtubeUrl?.trim() || '';
+    if (trimmedYoutube && !isValidYouTubeUrl(trimmedYoutube)) {
+      setError('YouTube URL must be a valid HTTPS link (youtube.com or youtu.be)');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -279,7 +276,8 @@ const PromotionsManager = () => {
         type: formData.type,
         status: formData.status,
         link: formData.link?.trim() || null,
-        category: formData.category || null,
+        // YouTube video only applies to advertisements
+        youtubeUrl: formData.type === 'advertisement' ? (trimmedYoutube || null) : null,
         priority: Number(formData.priority) || 0,
         startDate: formData.startDate || null,
         endDate: formData.endDate || null
@@ -566,25 +564,8 @@ const PromotionsManager = () => {
               />
             </Grid>
 
-            {/* Category & Priority */}
-            <Grid item xs={6}>
-              <FormControl fullWidth>
-                <InputLabel>Category</InputLabel>
-                <Select
-                  value={formData.category}
-                  label="Category"
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                >
-                  <MenuItem value="">None</MenuItem>
-                  {categories.map((cat) => (
-                    <MenuItem key={cat._id} value={cat._id}>
-                      {cat._multilingual?.name?.en || cat.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={6}>
+            {/* Priority */}
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 label="Priority"
@@ -607,6 +588,25 @@ const PromotionsManager = () => {
                 helperText="Optional — users will navigate to this URL when they tap"
               />
             </Grid>
+
+            {/* YouTube Video (advertisements only) */}
+            {formData.type === 'advertisement' && (
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="YouTube Video URL"
+                  value={formData.youtubeUrl}
+                  onChange={(e) => setFormData(prev => ({ ...prev, youtubeUrl: e.target.value }))}
+                  placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                  error={!!formData.youtubeUrl && !isValidYouTubeUrl(formData.youtubeUrl.trim())}
+                  helperText={
+                    formData.youtubeUrl && !isValidYouTubeUrl(formData.youtubeUrl.trim())
+                      ? 'Must be a valid HTTPS YouTube URL (youtube.com or youtu.be)'
+                      : 'Optional — plays a YouTube video for this advertisement'
+                  }
+                />
+              </Grid>
+            )}
 
             {/* Location (Google Maps Autocomplete) */}
             <Grid item xs={12}>
