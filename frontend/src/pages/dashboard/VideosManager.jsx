@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -21,7 +21,7 @@ import {
   Alert,
   Chip,
   CircularProgress,
-  LinearProgress
+  InputAdornment
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,7 +29,8 @@ import {
   Delete as DeleteIcon,
   CloudUpload as UploadIcon,
   PlayCircleOutline as PlayIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { videosApi, uploadApi } from '../../services/api';
 
@@ -47,6 +48,46 @@ const INITIAL_FORM = {
   status: 'draft'
 };
 
+const normalizeYouTubeUrl = (raw) => (raw || '').trim();
+
+const getYouTubeVideoId = (rawUrl) => {
+  const urlStr = normalizeYouTubeUrl(rawUrl);
+  if (!urlStr) return null;
+
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      const id = u.pathname.split('/').filter(Boolean)[0];
+      return id || null;
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const v = u.searchParams.get('v');
+      if (v) return v;
+
+      const parts = u.pathname.split('/').filter(Boolean);
+      const embedIdx = parts.indexOf('embed');
+      if (embedIdx !== -1 && parts[embedIdx + 1]) return parts[embedIdx + 1];
+
+      const shortsIdx = parts.indexOf('shorts');
+      if (shortsIdx !== -1 && parts[shortsIdx + 1]) return parts[shortsIdx + 1];
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+};
+
+const getYouTubeEmbedUrl = (rawUrl) => {
+  const id = getYouTubeVideoId(rawUrl);
+  return id ? `https://www.youtube.com/embed/${id}` : null;
+};
+
+const isYouTubeUrl = (rawUrl) => Boolean(getYouTubeVideoId(rawUrl));
+
 const VideosManager = () => {
   const { t } = useTranslation();
 
@@ -57,13 +98,9 @@ const VideosManager = () => {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingThumb, setUploadingThumb] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
-
-  const videoInputRef = useRef(null);
 
   useEffect(() => {
     fetchVideos();
@@ -101,7 +138,6 @@ const VideosManager = () => {
     setDialogOpen(false);
     setEditingVideo(null);
     setError(null);
-    setUploadProgress(0);
   };
 
   const extractBlobName = (blobUrl) => {
@@ -126,38 +162,6 @@ const VideosManager = () => {
     }
   };
 
-  const handleVideoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const maxSize = 100 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError('Video file must be under 100MB');
-      return;
-    }
-
-    setUploadingVideo(true);
-    setUploadProgress(0);
-    setError(null);
-
-    try {
-      if (formData.videoUrl) await deleteBlobFromAzure(formData.videoUrl);
-
-      const formPayload = new FormData();
-      formPayload.append('file', file);
-
-      const response = await uploadApi.uploadFile(file);
-      setFormData(prev => ({ ...prev, videoUrl: response.data.blobUrl }));
-      setUploadProgress(100);
-    } catch (err) {
-      setError('Failed to upload video');
-      console.error('Video upload error:', err);
-    } finally {
-      setUploadingVideo(false);
-      if (videoInputRef.current) videoInputRef.current.value = '';
-    }
-  };
-
   const handleThumbnailUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -176,9 +180,7 @@ const VideosManager = () => {
   };
 
   const handleRemoveVideo = async () => {
-    await deleteBlobFromAzure(formData.videoUrl);
     setFormData(prev => ({ ...prev, videoUrl: '' }));
-    setUploadProgress(0);
   };
 
   const handleRemoveThumb = async () => {
@@ -193,8 +195,12 @@ const VideosManager = () => {
       setError('Title is required');
       return;
     }
-    if (!formData.videoUrl) {
-      setError('Please upload a video file');
+    if (!normalizeYouTubeUrl(formData.videoUrl)) {
+      setError('YouTube link is required');
+      return;
+    }
+    if (!isYouTubeUrl(formData.videoUrl)) {
+      setError('Please enter a valid YouTube URL');
       return;
     }
 
@@ -214,7 +220,7 @@ const VideosManager = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this video? This will also remove the file from storage.')) return;
+    if (!window.confirm('Are you sure you want to delete this video?')) return;
     try {
       await videosApi.delete(id);
       setSuccess('Video deleted successfully');
@@ -364,47 +370,47 @@ const VideosManager = () => {
             ))}
           </TextField>
 
-          {/* Video Upload */}
+          {/* YouTube Link */}
           <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Video File *</Typography>
-            {formData.videoUrl ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Chip
-                  icon={<PlayIcon />}
-                  label="Video uploaded"
-                  color="success"
-                  variant="outlined"
-                  onClick={() => handlePreview(formData.videoUrl)}
-                />
-                <IconButton size="small" color="error" onClick={handleRemoveVideo}>
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            ) : (
-              <Box>
-                <Button
-                  variant="outlined"
-                  component="label"
-                  startIcon={uploadingVideo ? <CircularProgress size={18} /> : <UploadIcon />}
-                  disabled={uploadingVideo}
-                >
-                  {uploadingVideo ? 'Uploading...' : 'Upload Video'}
-                  <input
-                    ref={videoInputRef}
-                    type="file"
-                    hidden
-                    accept="video/mp4,video/webm"
-                    onChange={handleVideoUpload}
-                  />
-                </Button>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  MP4 or WebM, max 100MB
-                </Typography>
-              </Box>
-            )}
-            {uploadingVideo && (
-              <LinearProgress variant="indeterminate" sx={{ mt: 1, borderRadius: 1 }} />
-            )}
+            <TextField
+              fullWidth
+              label="YouTube Link *"
+              value={formData.videoUrl}
+              onChange={(e) => setFormData(prev => ({ ...prev, videoUrl: e.target.value }))}
+              margin="normal"
+              required
+              placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX"
+              error={Boolean(formData.videoUrl) && !isYouTubeUrl(formData.videoUrl)}
+              helperText="Paste a YouTube video link (youtube.com or youtu.be)."
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    {isYouTubeUrl(formData.videoUrl) && (
+                      <>
+                        <IconButton size="small" onClick={() => handlePreview(formData.videoUrl)} title="Preview">
+                          <PlayIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={normalizeYouTubeUrl(formData.videoUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open in new tab"
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </>
+                    )}
+                    {Boolean(formData.videoUrl) && (
+                      <IconButton size="small" color="error" onClick={handleRemoveVideo} title="Clear">
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </InputAdornment>
+                )
+              }}
+            />
           </Box>
 
           {/* Thumbnail Upload */}
@@ -437,7 +443,7 @@ const VideosManager = () => {
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={uploadingVideo || uploadingThumb}
+            disabled={uploadingThumb}
           >
             {t('save')}
           </Button>
@@ -454,13 +460,29 @@ const VideosManager = () => {
         </DialogTitle>
         <DialogContent sx={{ p: 0 }}>
           {previewUrl && (
-            <Box
-              component="video"
-              controls
-              autoPlay
-              sx={{ width: '100%', maxHeight: '70vh', bgcolor: '#000' }}
-              src={previewUrl}
-            />
+            (() => {
+              const embed = getYouTubeEmbedUrl(previewUrl);
+              return embed ? (
+                <Box sx={{ position: 'relative', width: '100%', pt: '56.25%', bgcolor: '#000' }}>
+                  <Box
+                    component="iframe"
+                    src={embed}
+                    title="YouTube preview"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
+                  />
+                </Box>
+              ) : (
+                <Box
+                  component="video"
+                  controls
+                  autoPlay
+                  sx={{ width: '100%', maxHeight: '70vh', bgcolor: '#000' }}
+                  src={previewUrl}
+                />
+              );
+            })()
           )}
         </DialogContent>
       </Dialog>

@@ -57,6 +57,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
         shortId: 1,
         shortLinks: 1,
         slug: 1,
+        reporterName: 1,
         title: {
           $ifNull: [`$title.${lang}`, { $ifNull: ['$title.en', ''] }]
         },
@@ -575,7 +576,8 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
       summary: new Map(Object.entries(req.body.summary || {})),
       content: new Map(Object.entries(req.body.content || {})),
       author: req.user._id,
-      source: req.body.source || 'TaajaNews',
+      reporterName: req.body.reporterName || '',
+      source: req.body.source || 'Taaja News Network',
       sourceUrl: req.body.sourceUrl || ''
     };
 
@@ -624,7 +626,7 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
 router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
   try {
     const article = await Article.findById(req.params.id);
-    
+    console.log(article);
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
@@ -644,7 +646,7 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     }
 
     // If category changed, update ancestors
-    if (req.body.category && req.body.category !== article.category.toString()) {
+    if (req.body.category && article && article.category && req.body.category !== article.category.toString()) {
       const newCategory = await Category.findById(req.body.category);
       if (newCategory) {
         req.body.categoryAncestors = newCategory.ancestors.map(a => a._id);
@@ -653,6 +655,9 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 
     // Convert plain objects to Maps for multilingual fields
     const updateData = { ...req.body };
+    if (typeof updateData.reporterName === 'string') {
+      updateData.reporterName = updateData.reporterName.trim();
+    }
     if (updateData.title) {
       updateData.title = new Map(Object.entries(updateData.title));
     }
@@ -670,7 +675,7 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     }
 
     if (!updateData.source) {
-      updateData.source = 'TaajaNews';
+      updateData.source = 'Taaja News Network';
     }
 
     if (typeof updateData.youtubeUrl === 'string') {
@@ -850,7 +855,7 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     }
 
     const articles = await Article.find(query)
-      .select('title slug status publishedAt createdAt engagement author category source sourceUrl')
+      .select('title slug status publishedAt createdAt engagement author category source sourceUrl reporterName')
       .populate('author', 'name')
       .populate('category', 'name')
       .sort({ createdAt: -1 })

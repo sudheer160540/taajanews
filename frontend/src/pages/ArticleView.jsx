@@ -270,24 +270,18 @@ const ArticleView = () => {
           {article.title}
         </Typography>
 
-        <Typography variant="subtitle1" color="text.secondary" paragraph fontStyle="italic">
-          {article.summary}
+        <Typography
+          variant="subtitle1"
+          paragraph
+          sx={{
+            color: 'error.main',
+            fontStyle: 'italic',
+            fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+            fontSize: { xs: '1.15rem', sm: '1.3rem' }
+          }}
+        >
+          {`"${article.summary}"`}
         </Typography>
-
-        {/* Author and Meta */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Avatar src={article.author?.avatar} sx={{ bgcolor: 'primary.main' }}>
-            {article.author?.name?.[0]}
-          </Avatar>
-          <Box>
-            <Typography variant="subtitle2" fontWeight={600}>
-              {article.author?.name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(article.publishedAt)}
-            </Typography>
-          </Box>
-        </Box>
 
         {/* Stats and Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
@@ -367,6 +361,21 @@ const ArticleView = () => {
           ))}
         </Box>
       )}
+
+      {/* Reporter (end of story) */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 4 }}>
+        <Avatar src={article.author?.avatar} sx={{ bgcolor: 'primary.main' }}>
+          {article.author?.name?.[0]}
+        </Avatar>
+        <Box>
+          <Typography variant="subtitle2" fontWeight={600}>
+            {article.reporterName?.trim() ? article.reporterName : article.author?.name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {formatDate(article.publishedAt)}
+          </Typography>
+        </Box>
+      </Box>
 
       {/* Engagement Actions */}
       <Box sx={{ 

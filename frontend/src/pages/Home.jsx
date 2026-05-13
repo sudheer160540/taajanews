@@ -168,8 +168,11 @@ const Home = () => {
           {featured && article.summary && (
             <Typography
               variant="body2"
-              color="text.secondary"
               sx={{
+                color: 'error.main',
+                fontStyle: 'italic',
+                fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+                fontSize: { xs: '1.05rem', sm: '1.15rem' },
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 display: '-webkit-box',
@@ -178,7 +181,7 @@ const Home = () => {
                 mb: 1
               }}
             >
-              {article.summary}
+              {`"${article.summary}"`}
             </Typography>
           )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
