@@ -42,7 +42,7 @@ const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { canPublish } = useAuth();
+  const { canPublish, user } = useAuth();
   const isEditing = !!id;
 
   // Languages state
@@ -69,7 +69,8 @@ const ArticleEditor = () => {
     featuredImage: null,
     audio: {},
     source: 'TaajaNews',
-    sourceUrl: ''
+    sourceUrl: '',
+    youtubeUrl: ''
   });
   const [generateAudio, setGenerateAudio] = useState(false);
   
@@ -153,7 +154,8 @@ const ArticleEditor = () => {
           featuredImage: articleData.featuredImage || null,
           audio: audioObj,
           source: articleData.source || 'TaajaNews',
-          sourceUrl: articleData.sourceUrl || ''
+          sourceUrl: articleData.sourceUrl || '',
+          youtubeUrl: articleData.youtubeUrl || ''
         });
 
         // Set the location input display text
@@ -392,6 +394,35 @@ const ArticleEditor = () => {
     }
   };
 
+  // Validate that the URL is a well-formed YouTube link (allow empty since field is optional)
+  const isValidYoutubeUrl = (url) => {
+    if (!url) return true;
+    return /^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\/[^\s]+$/i.test(url.trim());
+  };
+
+  // Extract the YouTube video ID from common URL formats for embed preview
+  const getYoutubeEmbedId = (url) => {
+    if (!url) return null;
+    try {
+      const u = new URL(url.trim());
+      const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+      if (host === 'youtu.be') {
+        const id = u.pathname.split('/').filter(Boolean)[0];
+        return id || null;
+      }
+      if (host === 'youtube.com') {
+        if (u.pathname === '/watch') return u.searchParams.get('v');
+        const parts = u.pathname.split('/').filter(Boolean);
+        if (parts[0] === 'embed' || parts[0] === 'shorts' || parts[0] === 'v') {
+          return parts[1] || null;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   // saveMode: 'draft' | 'pending' | 'published'
   const handleSave = async (saveMode = 'draft') => {
     setError(null);
@@ -403,6 +434,11 @@ const ArticleEditor = () => {
     }
     if (!article.content[defaultLang]) {
       setError(`Content is required in the default language (${defaultLang})`);
+      return;
+    }
+
+    if (article.youtubeUrl && !isValidYoutubeUrl(article.youtubeUrl)) {
+      setError('Please enter a valid YouTube URL or leave it empty');
       return;
     }
 
@@ -430,7 +466,8 @@ const ArticleEditor = () => {
         isFeatured: article.isFeatured,
         isBreaking: article.isBreaking,
         source: article.source || 'TaajaNews',
-        sourceUrl: article.sourceUrl || ''
+        sourceUrl: article.sourceUrl || '',
+        youtubeUrl: (article.youtubeUrl || '').trim()
       };
 
       if (article.category) articleData.category = article.category;
@@ -468,6 +505,11 @@ const ArticleEditor = () => {
 
   const currentLang = languages[langTab]?.code || defaultLang;
 
+  // Reporters lose edit access on their own article once it has been published.
+  // Sub-Editor / Chief-Editor / Admin can still edit after publish.
+  const isReporterLockedOut =
+    isEditing && user?.role === 'reporter' && article.status === 'published';
+
   return (
     <Box>
       {/* Header */}
@@ -479,35 +521,45 @@ const ArticleEditor = () => {
           {isEditing ? t('editArticle') : t('createArticle')}
         </Typography>
         <Box sx={{ flexGrow: 1 }} />
-        <Button
-          variant="outlined"
-          startIcon={<SaveIcon />}
-          onClick={() => handleSave('draft')}
-          disabled={saving}
-        >
-          {t('save')} {t('draft')}
-        </Button>
-        <Button
-          variant="contained"
-          color="warning"
-          startIcon={<PublishIcon />}
-          onClick={() => handleSave('pending')}
-          disabled={saving}
-        >
-          {saving ? t('loading') : 'Submit for Review'}
-        </Button>
-        {canPublish && (
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<PublishIcon />}
-            onClick={() => handleSave('published')}
-            disabled={saving}
-          >
-            {saving ? t('loading') : 'Publish'}
-          </Button>
+        {!isReporterLockedOut && (
+          <>
+            <Button
+              variant="outlined"
+              startIcon={<SaveIcon />}
+              onClick={() => handleSave('draft')}
+              disabled={saving}
+            >
+              {t('save')} {t('draft')}
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<PublishIcon />}
+              onClick={() => handleSave('pending')}
+              disabled={saving}
+            >
+              {saving ? t('loading') : 'Submit for Review'}
+            </Button>
+            {canPublish && (
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<PublishIcon />}
+                onClick={() => handleSave('published')}
+                disabled={saving}
+              >
+                {saving ? t('loading') : 'Publish'}
+              </Button>
+            )}
+          </>
         )}
       </Box>
+
+      {isReporterLockedOut && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          This article has already been published. Reporters cannot edit a published article. Please contact a Sub-Editor or Chief Editor to make changes.
+        </Alert>
+      )}
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -561,6 +613,7 @@ const ArticleEditor = () => {
                   helperText={`${(article.title[currentLang] || '').length} / 200`}
                   error={(article.title[currentLang] || '').length >= 200}
                   inputProps={{ maxLength: 200 }}
+                  disabled={isReporterLockedOut}
                 />
                 <TextField
                   fullWidth
@@ -577,6 +630,7 @@ const ArticleEditor = () => {
                   helperText={`${(article.summary[currentLang] || '').length} / 500`}
                   error={(article.summary[currentLang] || '').length >= 500}
                   inputProps={{ maxLength: 500 }}
+                  disabled={isReporterLockedOut}
                 />
                 <TextField
                   fullWidth
@@ -593,6 +647,7 @@ const ArticleEditor = () => {
                   helperText={`${(article.content[currentLang] || '').length} / 10,000`}
                   error={(article.content[currentLang] || '').length >= 10000}
                   inputProps={{ maxLength: 10000 }}
+                  disabled={isReporterLockedOut}
                 />
               </Box>
 
@@ -609,27 +664,29 @@ const ArticleEditor = () => {
               )}
 
               {/* Translate Button + Audio Checkbox */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 2 }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={generateAudio}
-                      onChange={(e) => setGenerateAudio(e.target.checked)}
-                      size="small"
-                    />
-                  }
-                  label="Convert to Audio"
-                />
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
-                  onClick={handleTranslate}
-                  disabled={translating || saving}
-                >
-                  {translating ? 'Translating...' : 'Translate to All Languages'}
-                </Button>
-              </Box>
+              {!isReporterLockedOut && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={generateAudio}
+                        onChange={(e) => setGenerateAudio(e.target.checked)}
+                        size="small"
+                      />
+                    }
+                    label="Convert to Audio"
+                  />
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
+                    onClick={handleTranslate}
+                    disabled={translating || saving}
+                  >
+                    {translating ? 'Translating...' : 'Translate to All Languages'}
+                  </Button>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -649,12 +706,14 @@ const ArticleEditor = () => {
                     alt="Featured"
                     style={{ width: '100%', borderRadius: 8 }}
                   />
-                  <IconButton
-                    sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'white' }}
-                    onClick={() => handleChange('featuredImage', null)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  {!isReporterLockedOut && (
+                    <IconButton
+                      sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'white' }}
+                      onClick={() => handleChange('featuredImage', null)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
                 </Box>
               ) : (
                 <Button
@@ -662,7 +721,7 @@ const ArticleEditor = () => {
                   component="label"
                   fullWidth
                   startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
-                  disabled={uploading}
+                  disabled={uploading || isReporterLockedOut}
                 >
                   {uploading ? 'Uploading...' : 'Upload Image'}
                   <input
@@ -683,7 +742,7 @@ const ArticleEditor = () => {
                 Category & Location
               </Typography>
               
-              <FormControl fullWidth margin="normal">
+              <FormControl fullWidth margin="normal" disabled={isReporterLockedOut}>
                 <InputLabel>Category</InputLabel>
                 <Select
                   value={article.category}
@@ -706,6 +765,7 @@ const ArticleEditor = () => {
                 </Typography>
                 <MuiAutocomplete
                   freeSolo
+                  disabled={isReporterLockedOut}
                   options={locationSuggestions}
                   getOptionLabel={(option) => {
                     if (typeof option === 'string') return option;
@@ -741,7 +801,7 @@ const ArticleEditor = () => {
                         ),
                         endAdornment: (
                           <>
-                            {article.location && (
+                            {article.location && !isReporterLockedOut && (
                               <IconButton size="small" onClick={handleClearLocation}>
                                 <CloseIcon fontSize="small" />
                               </IconButton>
@@ -792,6 +852,7 @@ const ArticleEditor = () => {
                 onChange={(e) => handleChange('source', e.target.value)}
                 margin="dense"
                 placeholder="Taaja News"
+                disabled={isReporterLockedOut}
               />
               <TextField
                 fullWidth
@@ -802,7 +863,66 @@ const ArticleEditor = () => {
                 margin="dense"
                 placeholder="https://example.com/original-article"
                 type="url"
+                disabled={isReporterLockedOut}
               />
+            </CardContent>
+          </Card>
+
+          {/* YouTube Video (optional) */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                YouTube Video <Typography component="span" variant="caption" color="text.secondary">(optional)</Typography>
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="YouTube URL"
+                value={article.youtubeUrl}
+                onChange={(e) => handleChange('youtubeUrl', e.target.value)}
+                margin="dense"
+                placeholder="https://www.youtube.com/watch?v=VIDEO_ID"
+                type="url"
+                error={!!article.youtubeUrl && !isValidYoutubeUrl(article.youtubeUrl)}
+                helperText={
+                  article.youtubeUrl && !isValidYoutubeUrl(article.youtubeUrl)
+                    ? 'Enter a valid YouTube URL (youtube.com or youtu.be)'
+                    : 'Paste a YouTube video link to embed it with the article'
+                }
+                inputProps={{ maxLength: 500 }}
+                disabled={isReporterLockedOut}
+              />
+
+              {article.youtubeUrl && isValidYoutubeUrl(article.youtubeUrl) && getYoutubeEmbedId(article.youtubeUrl) && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    position: 'relative',
+                    width: '100%',
+                    pt: '56.25%',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    bgcolor: 'grey.100'
+                  }}
+                >
+                  <iframe
+                    title="YouTube preview"
+                    src={`https://www.youtube.com/embed/${getYoutubeEmbedId(article.youtubeUrl)}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: 0
+                    }}
+                    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    sandbox="allow-scripts allow-same-origin allow-presentation"
+                  />
+                </Box>
+              )}
             </CardContent>
           </Card>
 
@@ -819,15 +939,16 @@ const ArticleEditor = () => {
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
+                  disabled={isReporterLockedOut}
                 />
-                <Button onClick={handleAddTag}>Add</Button>
+                <Button onClick={handleAddTag} disabled={isReporterLockedOut}>Add</Button>
               </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {article.tags.map((tag) => (
                   <Chip
                     key={tag}
                     label={tag}
-                    onDelete={() => handleRemoveTag(tag)}
+                    onDelete={isReporterLockedOut ? undefined : () => handleRemoveTag(tag)}
                     size="small"
                   />
                 ))}

@@ -158,26 +158,89 @@ router.get('/yellow-pages/nearby', validate(schemas.nearbyYelloPage, 'query'), a
 });
 
 // @route   PUT /api/users/profile
-// @desc    Update current user's profile (name, avatar, bio)
+// @desc    Update current user's profile (name, email, phone, avatar,
+//          profilePhoto, bio). Email is uniqueness-checked. profilePhoto
+//          metadata (url, width, height, size, contentType) is also
+//          mirrored into the legacy `avatar` URL field for backward
+//          compatibility with existing clients.
 // @access  Private
 router.put('/profile', protect, validate(schemas.updateProfile), async (req, res) => {
   try {
-    const { name, avatar, bio } = req.body;
+    const { name, email, phone, avatar, bio, profilePhoto } = req.body;
 
     const updateData = {};
-    if (name) updateData.name = name;
-    if (avatar !== undefined) updateData.avatar = avatar;
+
+    if (name !== undefined) updateData.name = name;
     if (bio !== undefined) updateData.bio = bio;
+    if (avatar !== undefined) updateData.avatar = avatar || null;
+    if (phone !== undefined) updateData.phone = phone ? phone.trim() : null;
+
+    // Email change requires a uniqueness check against other users.
+    if (email && email.toLowerCase() !== (req.user.email || '').toLowerCase()) {
+      const existing = await User.findOne({
+        email: email.toLowerCase(),
+        _id: { $ne: req.user._id }
+      }).select('_id');
+
+      if (existing) {
+        // Generic message to avoid account enumeration on update flow.
+        return res.status(409).json({ error: 'This email is already in use' });
+      }
+      updateData.email = email.toLowerCase();
+    }
+
+    // Profile photo: explicit `null` clears it, otherwise replace with
+    // validated metadata. Mirror URL into `avatar` for legacy consumers.
+    if (profilePhoto !== undefined) {
+      if (profilePhoto === null) {
+        updateData.profilePhoto = {
+          url: null,
+          width: null,
+          height: null,
+          size: null,
+          contentType: null,
+          updatedAt: new Date()
+        };
+        if (avatar === undefined) updateData.avatar = null;
+      } else {
+        updateData.profilePhoto = {
+          url: profilePhoto.url,
+          width: profilePhoto.width,
+          height: profilePhoto.height,
+          size: profilePhoto.size,
+          contentType: profilePhoto.contentType,
+          updatedAt: new Date()
+        };
+        if (avatar === undefined) updateData.avatar = profilePhoto.url;
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No profile fields provided' });
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
       updateData,
-      { new: true, runValidators: true }
-    );
+      { new: true, runValidators: true, context: 'query' }
+    ).select('-password -refreshToken');
 
-    res.json({ user: user.toPublicJSON() });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      message: 'Profile updated',
+      user: user.toPublicJSON()
+    });
   } catch (error) {
     console.error('Update profile error:', error);
+
+    // Surface duplicate-key from a race condition as a 409
+    if (error && error.code === 11000) {
+      return res.status(409).json({ error: 'This email is already in use' });
+    }
+
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });

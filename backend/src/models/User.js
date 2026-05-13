@@ -45,6 +45,44 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // Profile photo with metadata (size, dimensions) for consistent profile pictures
+  // across the app. The `avatar` field above remains for backward compatibility
+  // and is kept in sync with `profilePhoto.url` on update.
+  profilePhoto: {
+    url: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: [2048, 'Profile photo URL is too long']
+    },
+    width: {
+      type: Number,
+      default: null,
+      min: [16, 'Profile photo width is too small'],
+      max: [4096, 'Profile photo width is too large']
+    },
+    height: {
+      type: Number,
+      default: null,
+      min: [16, 'Profile photo height is too small'],
+      max: [4096, 'Profile photo height is too large']
+    },
+    size: {
+      type: Number,
+      default: null,
+      min: [0, 'Profile photo size cannot be negative'],
+      max: [5 * 1024 * 1024, 'Profile photo size cannot exceed 5MB']
+    },
+    contentType: {
+      type: String,
+      default: null,
+      enum: ['image/jpeg', 'image/png', 'image/webp', null]
+    },
+    updatedAt: {
+      type: Date,
+      default: null
+    }
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -181,6 +219,16 @@ userSchema.methods.toPublicJSON = function() {
     authProvider: this.authProvider || 'local',
     role: this.role,
     avatar: this.avatar,
+    profilePhoto: this.profilePhoto && this.profilePhoto.url
+      ? {
+          url: this.profilePhoto.url,
+          width: this.profilePhoto.width || null,
+          height: this.profilePhoto.height || null,
+          size: this.profilePhoto.size || null,
+          contentType: this.profilePhoto.contentType || null,
+          updatedAt: this.profilePhoto.updatedAt || null
+        }
+      : null,
     bio: this.bio || null,
     preferences: this.preferences,
     isEnableYelloPage: this.isEnableYelloPage,

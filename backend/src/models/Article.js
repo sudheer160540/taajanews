@@ -113,6 +113,19 @@ const articleSchema = new mongoose.Schema({
     },
     duration: Number
   }],
+  // Optional YouTube video reference for the article (single embed)
+  youtubeUrl: {
+    type: String,
+    trim: true,
+    default: '',
+    validate: {
+      validator: function (v) {
+        if (!v) return true;
+        return /^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\/[^\s]+$/i.test(v);
+      },
+      message: 'youtubeUrl must be a valid YouTube URL'
+    }
+  },
   // Geospatial location for localized news (Google Maps Places data)
   location: {
     type: {

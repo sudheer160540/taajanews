@@ -50,10 +50,19 @@ const promotionSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
-  category: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    default: null
+  youtubeUrl: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: function (v) {
+        if (v == null || v === '') return true;
+        // Allow only HTTPS YouTube URLs from known hosts (allow-list)
+        // Prevents javascript:, data:, file:, and arbitrary domains
+        return /^https:\/\/(www\.youtube\.com\/(watch\?v=|embed\/|shorts\/)[A-Za-z0-9_-]{6,}(\S*)?|youtu\.be\/[A-Za-z0-9_-]{6,}(\S*)?)$/.test(v);
+      },
+      message: 'youtubeUrl must be a valid HTTPS YouTube URL'
+    }
   },
   priority: {
     type: Number,

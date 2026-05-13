@@ -1,10 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose');
 const Joi = require('joi');
 const Promotion = require('../models/Promotion');
 const { protect, adminOnly } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
+
+// Strict allow-list for YouTube URLs (HTTPS only, known hosts only)
+const youtubeUrlSchema = Joi.string()
+  .uri({ scheme: ['https'] })
+  .pattern(/^https:\/\/(www\.youtube\.com\/(watch\?v=|embed\/|shorts\/)[A-Za-z0-9_-]{6,}(\S*)?|youtu\.be\/[A-Za-z0-9_-]{6,}(\S*)?)$/)
+  .messages({
+    'string.pattern.base': 'youtubeUrl must be a valid HTTPS YouTube URL'
+  });
 
 const schemas = {
   createPromotion: Joi.object({
@@ -25,7 +32,7 @@ const schemas = {
     }).allow(null),
     status: Joi.string().valid('active', 'inactive').default('active'),
     link: Joi.string().uri().allow(null, ''),
-    category: Joi.string().hex().length(24).allow(null, ''),
+    youtubeUrl: youtubeUrlSchema.allow(null, ''),
     priority: Joi.number().integer().min(0).default(0),
     startDate: Joi.date().allow(null),
     endDate: Joi.date().allow(null)
@@ -49,7 +56,7 @@ const schemas = {
     }).allow(null),
     status: Joi.string().valid('active', 'inactive'),
     link: Joi.string().uri().allow(null, ''),
-    category: Joi.string().hex().length(24).allow(null, ''),
+    youtubeUrl: youtubeUrlSchema.allow(null, ''),
     priority: Joi.number().integer().min(0),
     startDate: Joi.date().allow(null),
     endDate: Joi.date().allow(null)
@@ -63,7 +70,6 @@ router.get('/feed', async (req, res) => {
   try {
     const {
       type,
-      category,
       lat,
       lng,
       radiusKM = 50,
@@ -108,7 +114,6 @@ router.get('/feed', async (req, res) => {
     // Build the main query: active + date valid
     const baseMatch = { status: 'active', ...dateFilter };
     if (type) baseMatch.type = type;
-    if (category) baseMatch.category = new mongoose.Types.ObjectId(category);
 
     if (lat && lng) {
       // Include: nearby promotions OR promotions without a real location (coordinates [0,0])
@@ -127,7 +132,6 @@ router.get('/feed', async (req, res) => {
     const total = await Promotion.countDocuments(baseMatch);
 
     const promotions = await Promotion.find(baseMatch)
-      .populate('category', 'name slug')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1, priority: -1 })
       .skip(skip)
@@ -164,7 +168,6 @@ router.get('/manage/list', protect, adminOnly, async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const [promotions, total] = await Promise.all([
       Promotion.find(query)
-        .populate('category', 'name slug')
         .populate('createdBy', 'name')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -194,7 +197,6 @@ router.get('/manage/list', protect, adminOnly, async (req, res) => {
 router.get('/:id', protect, adminOnly, async (req, res) => {
   try {
     const promotion = await Promotion.findById(req.params.id)
-      .populate('category', 'name slug')
       .populate('createdBy', 'name');
 
     if (!promotion) {
@@ -215,12 +217,11 @@ router.post('/', protect, adminOnly, validate(schemas.createPromotion), async (r
   try {
     const data = { ...req.body, createdBy: req.user._id };
 
-    if (data.category === '') data.category = null;
     if (data.link === '') data.link = null;
+    if (data.youtubeUrl === '') data.youtubeUrl = null;
 
     const promotion = await Promotion.create(data);
     await promotion.populate([
-      { path: 'category', select: 'name slug' },
       { path: 'createdBy', select: 'name' }
     ]);
 
@@ -240,15 +241,14 @@ router.post('/', protect, adminOnly, validate(schemas.createPromotion), async (r
 router.put('/:id', protect, adminOnly, validate(schemas.updatePromotion), async (req, res) => {
   try {
     const updates = { ...req.body };
-    if (updates.category === '') updates.category = null;
     if (updates.link === '') updates.link = null;
+    if (updates.youtubeUrl === '') updates.youtubeUrl = null;
 
     const promotion = await Promotion.findByIdAndUpdate(
       req.params.id,
       updates,
       { new: true, runValidators: true }
     )
-      .populate('category', 'name slug')
       .populate('createdBy', 'name');
 
     if (!promotion) {
