@@ -101,6 +101,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
         readingTime: 1,
         source: 1,
         sourceUrl: 1,
+        youtubeUrl: 1,
         isFeatured: 1,
         isBreaking: 1,
         publishedAt: 1,
@@ -403,7 +404,7 @@ router.get('/trending', async (req, res) => {
       status: 'published',
       publishedAt: { $gte: oneDayAgo }
     })
-      .select('title slug featuredImage engagement publishedAt author category')
+      .select('title slug featuredImage engagement publishedAt author category youtubeUrl')
       .populate('author', 'name avatar')
       .populate('category', 'name slug')
       .sort({ 'engagement.views': -1, 'engagement.likes': -1 })

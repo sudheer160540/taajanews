@@ -33,11 +33,13 @@ import {
   Visibility as ViewIcon,
   Send as SendIcon,
   NavigateNext as NavNextIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
+import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
 
 const ArticleView = () => {
   const { slug } = useParams();
@@ -54,6 +56,9 @@ const ArticleView = () => {
   const [engagement, setEngagement] = useState({ liked: false, disliked: false, bookmarked: false });
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  // Whether the user has tapped Play on the hero image. Reset on every
+  // new article so navigating between stories doesn't keep an old iframe.
+  const [playingVideo, setPlayingVideo] = useState(false);
 
   const sessionId = useRef(uuidv4());
 
@@ -63,6 +68,7 @@ const ArticleView = () => {
 
   const fetchArticle = async () => {
     setLoading(true);
+    setPlayingVideo(false);
     try {
       const response = await articlesApi.getBySlug(slug, lang);
       setArticle(response.data.article);
@@ -223,6 +229,13 @@ const ArticleView = () => {
     );
   }
 
+  // Resolve the YouTube embed id ONCE, and only from a trusted, validated
+  // helper. The raw `article.youtubeUrl` is never passed to iframe `src`.
+  const youtubeEmbedId = getYoutubeEmbedId(article.youtubeUrl);
+  const hasVideo = !!youtubeEmbedId;
+  const hasImage = !!article.featuredImage?.url;
+  const heroVisible = hasImage || (hasVideo && playingVideo);
+
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       {/* Breadcrumb */}
@@ -244,20 +257,77 @@ const ArticleView = () => {
         ))}
       </Breadcrumbs>
 
-      {/* Featured Image */}
-      {article.featuredImage?.url && (
+      {/* Hero: image with optional Play overlay, swapped for an embedded
+          YouTube player when the user taps Play. */}
+      {heroVisible && (
         <Box
-          component="img"
-          src={article.featuredImage.url}
-          alt={article.featuredImage.alt || article.title}
           sx={{
+            position: 'relative',
             width: '100%',
-            height: 400,
-            objectFit: 'cover',
+            mb: 3,
             borderRadius: 2,
-            mb: 3
+            overflow: 'hidden',
+            // 16:9 aspect ratio when the iframe is active; falls back to the
+            // image's natural-ish 400px height when only the photo is shown.
+            ...(playingVideo && hasVideo
+              ? { aspectRatio: '16 / 9', bgcolor: 'black' }
+              : { height: 400 })
           }}
-        />
+        >
+          {playingVideo && hasVideo ? (
+            <Box
+              component="iframe"
+              src={buildYoutubeEmbedUrl(youtubeEmbedId, { autoplay: true })}
+              title={article.title || 'YouTube video'}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                border: 0
+              }}
+            />
+          ) : (
+            <>
+              {hasImage && (
+                <Box
+                  component="img"
+                  src={article.featuredImage.url}
+                  alt={article.featuredImage.alt || article.title}
+                  sx={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block'
+                  }}
+                />
+              )}
+              {hasVideo && (
+                <IconButton
+                  aria-label={t('playVideo') || 'Play video'}
+                  onClick={() => setPlayingVideo(true)}
+                  sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    bgcolor: 'rgba(0,0,0,0.55)',
+                    color: 'white',
+                    width: 72,
+                    height: 72,
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.45)',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' }
+                  }}
+                >
+                  <PlayCircleFilledIcon sx={{ fontSize: 60 }} />
+                </IconButton>
+              )}
+            </>
+          )}
+        </Box>
       )}
 
       {/* Article Header */}
