@@ -7,6 +7,32 @@ const User = require('../models/User');
 const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
+const { notifyArticlePublished } = require('../utils/pushNotification');
+
+// Fire-and-forget push notification. NEVER blocks the HTTP response
+// and NEVER throws; FCM outages must not break the article API.
+//
+// `trigger` is a short label so the log line tells you which endpoint
+// caused the push (create / update / status-change).
+const firePublishedNotification = (article, trigger = 'unknown') => {
+  if (!article || article.status !== 'published') return;
+  const aid = String(article._id);
+  console.log(`[publish] articleId=${aid} trigger=${trigger} status=published → queuing push notification`);
+  setImmediate(() => {
+    notifyArticlePublished(article)
+      .then((result) => {
+        console.log(
+          `[publish] articleId=${aid} trigger=${trigger} push result: ` +
+          `delivered=${result.sent || 0} failed=${result.failed || 0} ` +
+          `removed=${result.removed || 0} ` +
+          `${result.skipped ? `skipped=${result.skipped}` : 'OK'}`
+        );
+      })
+      .catch((err) => {
+        console.error(`[publish] articleId=${aid} trigger=${trigger} background notify failed:`, err && err.message);
+      });
+  });
+};
 
 const toObjectId = (id) => {
   try { return new mongoose.Types.ObjectId(id); } catch { return null; }
@@ -598,6 +624,10 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
 
     const article = await Article.create(articleData);
 
+    // If the article was created directly as 'published' (e.g. by an
+    // admin), kick off the push notification fan-out.
+    firePublishedNotification(article, 'POST /articles');
+
     // Update category article count
     if (req.body.category) {
       await Category.findByIdAndUpdate(req.body.category, {
@@ -626,10 +656,10 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
 router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
   try {
     const article = await Article.findById(req.params.id);
-    console.log(article);
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
+    const previousStatus = article.status;
 
     // Check permission
     if (req.user.role === 'reporter' && 
@@ -703,6 +733,18 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    // Notify mobile clients ONLY on the non-published → published transition,
+    // so re-saves of an already-published article don't re-trigger pushes.
+    if (previousStatus !== 'published' && updatedArticle && updatedArticle.status === 'published') {
+      firePublishedNotification(updatedArticle, 'PUT /articles/:id');
+    } else if (updatedArticle && updatedArticle.status === 'published') {
+      // Helpful trace for re-saves: confirms why we did NOT send a push.
+      console.log(
+        `[publish] articleId=${updatedArticle._id} trigger=PUT /articles/:id status=published ` +
+        `(unchanged from previousStatus=${previousStatus}) → no push sent`
+      );
+    }
+
     res.json({
       message: 'Article updated',
       article: updatedArticle
@@ -731,6 +773,12 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
       return res.status(403).json({ error: 'Only Chief Editor or Admin can publish or archive articles' });
     }
 
+    // Read the prior status so we only fire a push on a true transition.
+    const prior = await Article.findById(req.params.id).select('status').lean();
+    if (!prior) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
     const article = await Article.findByIdAndUpdate(
       req.params.id,
       {
@@ -742,6 +790,10 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
 
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
+    }
+
+    if (prior.status !== 'published' && article.status === 'published') {
+      firePublishedNotification(article, 'PUT /articles/:id/status');
     }
 
     res.json({
