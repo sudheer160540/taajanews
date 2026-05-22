@@ -21,10 +21,45 @@ import {
   LocationOn as LocationIcon,
   AccessTime as TimeIcon,
   Visibility as ViewIcon,
-  AutoStories as ReadIcon
+  AutoStories as ReadIcon,
+  PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
 import { articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import { getYoutubeEmbedId } from '../utils/youtube';
+
+// Visual cue that an article has a YouTube video attached. The badge is
+// purely informational: it sits over the card image with `pointerEvents:
+// none` so the existing CardActionArea click (which navigates to the
+// article view, where the player lives) still wins.
+const PlayBadgeOverlay = () => (
+  <Box
+    aria-hidden
+    sx={{
+      position: 'absolute',
+      inset: 0,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      pointerEvents: 'none'
+    }}
+  >
+    <Box
+      sx={{
+        bgcolor: 'rgba(0,0,0,0.55)',
+        borderRadius: '50%',
+        width: 56,
+        height: 56,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.35)'
+      }}
+    >
+      <PlayCircleFilledIcon sx={{ fontSize: 48, color: 'white' }} />
+    </Box>
+  </Box>
+);
 
 const Home = () => {
   const { t, i18n } = useTranslation();
@@ -130,78 +165,85 @@ const Home = () => {
     });
   };
 
-  const ArticleCard = ({ article, featured = false }) => (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardActionArea onClick={() => navigate(`/article/${article.slug}`)}>
-        {article.featuredImage?.url && (
-          <CardMedia
-            component="img"
-            height={featured ? 200 : 140}
-            image={article.featuredImage.url}
-            alt={article.title}
-            sx={{ objectFit: 'cover' }}
-          />
-        )}
-        <CardContent sx={{ flexGrow: 1 }}>
-          {article.isBreaking && (
-            <Chip
-              label={t('breakingNews')}
-              color="error"
-              size="small"
-              sx={{ mb: 1 }}
-            />
+  const ArticleCard = ({ article, featured = false }) => {
+    const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
+    const hasImage = !!article.featuredImage?.url;
+    return (
+      <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <CardActionArea onClick={() => navigate(`/article/${article.slug}`)}>
+          {hasImage && (
+            <Box sx={{ position: 'relative' }}>
+              <CardMedia
+                component="img"
+                height={featured ? 200 : 140}
+                image={article.featuredImage.url}
+                alt={article.title}
+                sx={{ objectFit: 'cover' }}
+              />
+              {hasVideo && <PlayBadgeOverlay />}
+            </Box>
           )}
-          <Typography
-            variant={featured ? 'h6' : 'subtitle1'}
-            fontWeight={600}
-            gutterBottom
-            sx={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical'
-            }}
-          >
-            {article.title}
-          </Typography>
-          {featured && article.summary && (
+          <CardContent sx={{ flexGrow: 1 }}>
+            {article.isBreaking && (
+              <Chip
+                label={t('breakingNews')}
+                color="error"
+                size="small"
+                sx={{ mb: 1 }}
+              />
+            )}
             <Typography
-              variant="body2"
+              variant={featured ? 'h6' : 'subtitle1'}
+              fontWeight={600}
+              gutterBottom
               sx={{
-                color: 'error.main',
-                fontStyle: 'italic',
-                fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
-                fontSize: { xs: '1.05rem', sm: '1.15rem' },
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 display: '-webkit-box',
                 WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                mb: 1
+                WebkitBoxOrient: 'vertical'
               }}
             >
-              {`"${article.summary}"`}
+              {article.title}
             </Typography>
-          )}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <TimeIcon fontSize="small" color="action" />
-              <Typography variant="caption" color="text.secondary">
-                {article.readingTime} {t('minRead')}
+            {featured && article.summary && (
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'error.main',
+                  fontStyle: 'italic',
+                  fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+                  fontSize: { xs: '1.05rem', sm: '1.15rem' },
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  mb: 1
+                }}
+              >
+                {`"${article.summary}"`}
               </Typography>
+            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <TimeIcon fontSize="small" color="action" />
+                <Typography variant="caption" color="text.secondary">
+                  {article.readingTime} {t('minRead')}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <ViewIcon fontSize="small" color="action" />
+                <Typography variant="caption" color="text.secondary">
+                  {article.engagement?.views || 0}
+                </Typography>
+              </Box>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <ViewIcon fontSize="small" color="action" />
-              <Typography variant="caption" color="text.secondary">
-                {article.engagement?.views || 0}
-              </Typography>
-            </Box>
-          </Box>
-        </CardContent>
-      </CardActionArea>
-    </Card>
-  );
+          </CardContent>
+        </CardActionArea>
+      </Card>
+    );
+  };
 
   const SkeletonCard = ({ featured = false }) => (
     <Card sx={{ height: '100%' }}>
@@ -228,32 +270,48 @@ const Home = () => {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
-              {trendingArticles.map((article) => (
-                <Card
-                  key={article._id}
-                  sx={{ minWidth: 280, maxWidth: 280, cursor: 'pointer' }}
-                  onClick={() => navigate(`/article/${article.slug}`)}
-                >
-                  <CardContent sx={{ p: 2 }}>
-                    <Typography
-                      variant="subtitle2"
-                      fontWeight={600}
-                      sx={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical'
-                      }}
-                    >
-                      {article.title}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {formatDate(article.publishedAt)}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              ))}
+              {trendingArticles.map((article) => {
+                const trendingHasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
+                const trendingHasImage = !!article.featuredImage?.url;
+                return (
+                  <Card
+                    key={article._id}
+                    sx={{ minWidth: 280, maxWidth: 280, cursor: 'pointer' }}
+                    onClick={() => navigate(`/article/${article.slug}`)}
+                  >
+                    {trendingHasImage && (
+                      <Box sx={{ position: 'relative' }}>
+                        <CardMedia
+                          component="img"
+                          height={140}
+                          image={article.featuredImage.url}
+                          alt={article.title}
+                          sx={{ objectFit: 'cover' }}
+                        />
+                        {trendingHasVideo && <PlayBadgeOverlay />}
+                      </Box>
+                    )}
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography
+                        variant="subtitle2"
+                        fontWeight={600}
+                        sx={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical'
+                        }}
+                      >
+                        {article.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDate(article.publishedAt)}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </Box>
           </Container>
         </Box>
