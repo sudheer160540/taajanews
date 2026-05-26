@@ -3,6 +3,10 @@ const SourceArticle = require('../models/SourceArticle');
 const Article = require('../models/Article');
 const User = require('../models/User');
 const { buildSourceArticleMultilingual } = require('../utils/translateService');
+const {
+  notifySourceArticleProcessedTelegram,
+  notifySourceArticleFailedTelegram
+} = require('../utils/telegramNotification');
 const { ensureArticleIdentity } = require('../utils/articleIdentity');
 const { nanoid } = require('nanoid');
 const languageCache = require('../utils/languageCache');
@@ -45,8 +49,8 @@ async function markSourceComplete(sourceDoc, articleId) {
 }
 
 /**
- * Generate title, summary (300–500 chars), and content (≤1000 words) in te/en/hi.
- * Anchor language from source config; no double translation of source language.
+ * Generate title, Super Lead (summary), and Detailed Story (content) in te/en/hi
+ * per Taaja News editorial rules. Anchor language from TELUGU_SOURCES / detect.
  */
 async function buildMultilingualFields(sourceDoc) {
   const { title, summary, content } = await buildSourceArticleMultilingual({
@@ -182,6 +186,9 @@ async function processNewSourceArticles() {
         `[source-cron] OK ${label} → article ${article._id} ` +
         `articleId=${article.articleId} slug=${article.slug}`
       );
+      notifySourceArticleProcessedTelegram(article, sourceDoc).catch((tgErr) => {
+        console.error(`[source-cron] Telegram notify failed for ${label}:`, tgErr.message);
+      });
     } catch (err) {
       const message =
         err?.message ||
@@ -191,6 +198,9 @@ async function processNewSourceArticles() {
       summary.failed++;
       summary.errors.push({ source: label, error: message });
       console.error(`[source-cron] FAIL ${label}:`, message);
+      notifySourceArticleFailedTelegram(sourceDoc, message).catch((tgErr) => {
+        console.error(`[source-cron] Telegram fail-notify error for ${label}:`, tgErr.message);
+      });
     }
   }
 
