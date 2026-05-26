@@ -10,6 +10,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const languageCache = require('../utils/languageCache');
 const { processNewSourceArticles } = require('../jobs/sourceArticleProcessor');
+const { notifySourceBatchSummaryTelegram } = require('../utils/telegramNotification');
 
 const REQUIRED_ENV = ['MONGODB_URL', 'OPEN_API_KEY', 'AUTOMATION_AUTHOR_ID'];
 
@@ -31,6 +32,8 @@ async function main() {
     await languageCache.initializeCache();
 
     const result = await processNewSourceArticles();
+
+    await notifySourceBatchSummaryTelegram(result);
 
     console.log('[source-cron] Done:', JSON.stringify(result));
     process.exitCode = result.failed > 0 && result.succeeded === 0 ? 1 : 0;

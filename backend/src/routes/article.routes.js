@@ -8,28 +8,50 @@ const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, adminOnly } = req
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
 const { notifyArticlePublished } = require('../utils/pushNotification');
+const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
 
-// Fire-and-forget push notification. NEVER blocks the HTTP response
-// and NEVER throws; FCM outages must not break the article API.
-//
-// `trigger` is a short label so the log line tells you which endpoint
-// caused the push (create / update / status-change).
+// Fire-and-forget mobile push (FCM) + Telegram. NEVER blocks the HTTP response
+// and NEVER throws; notification outages must not break the article API.
 const firePublishedNotification = (article, trigger = 'unknown') => {
   if (!article || article.status !== 'published') return;
   const aid = String(article._id);
-  console.log(`[publish] articleId=${aid} trigger=${trigger} status=published → queuing push notification`);
+  console.log(
+    `[publish] articleId=${aid} trigger=${trigger} status=published → queuing FCM + Telegram`
+  );
   setImmediate(() => {
-    notifyArticlePublished(article)
-      .then((result) => {
-        console.log(
-          `[publish] articleId=${aid} trigger=${trigger} push result: ` +
-          `delivered=${result.sent || 0} failed=${result.failed || 0} ` +
-          `removed=${result.removed || 0} ` +
-          `${result.skipped ? `skipped=${result.skipped}` : 'OK'}`
-        );
-      })
-      .catch((err) => {
-        console.error(`[publish] articleId=${aid} trigger=${trigger} background notify failed:`, err && err.message);
+    Promise.allSettled([
+      notifyArticlePublished(article),
+      notifyArticlePublishedTelegram(article)
+    ])
+      .then(([fcmOutcome, tgOutcome]) => {
+        if (fcmOutcome.status === 'fulfilled') {
+          const result = fcmOutcome.value;
+          console.log(
+            `[publish] articleId=${aid} trigger=${trigger} FCM: ` +
+            `delivered=${result.sent || 0} failed=${result.failed || 0} ` +
+            `removed=${result.removed || 0} ` +
+            `${result.skipped ? `skipped=${result.skipped}` : 'OK'}`
+          );
+        } else {
+          console.error(
+            `[publish] articleId=${aid} trigger=${trigger} FCM error:`,
+            fcmOutcome.reason && fcmOutcome.reason.message
+          );
+        }
+
+        if (tgOutcome.status === 'fulfilled') {
+          const tg = tgOutcome.value;
+          console.log(
+            `[publish] articleId=${aid} trigger=${trigger} Telegram: ` +
+            `sent=${tg.sent || 0} failed=${tg.failed || 0} ` +
+            `${tg.skipped ? `skipped=${tg.skipped}` : 'OK'}`
+          );
+        } else {
+          console.error(
+            `[publish] articleId=${aid} trigger=${trigger} Telegram error:`,
+            tgOutcome.reason && tgOutcome.reason.message
+          );
+        }
       });
   });
 };
