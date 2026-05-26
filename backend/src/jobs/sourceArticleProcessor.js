@@ -2,13 +2,12 @@ const mongoose = require('mongoose');
 const SourceArticle = require('../models/SourceArticle');
 const Article = require('../models/Article');
 const User = require('../models/User');
-const { ALL_LANG_CODES, twoStepTranslateField } = require('../utils/translateService');
+const { buildSourceArticleMultilingual } = require('../utils/translateService');
 const { ensureArticleIdentity } = require('../utils/articleIdentity');
 const { nanoid } = require('nanoid');
 const languageCache = require('../utils/languageCache');
 
-// Hint for ingest (Eenadu = Telugu); auto-detect still runs if content is en/hi
-const SOURCE_LANG_HINT = 'te';
+// Hint removed — anchor language resolved via TELUGU_SOURCES / ENGLISH_SOURCES / detect
 const DEFAULT_FEATURED_IMAGE_URL =
   'https://taajanews.blob.core.windows.net/images/default_breaking_news.png';
 
@@ -46,27 +45,20 @@ async function markSourceComplete(sourceDoc, articleId) {
 }
 
 /**
- * Translate title and contentText from Telugu into te/en/hi Maps.
+ * Generate title, summary (300–500 chars), and content (≤1000 words) in te/en/hi.
+ * Anchor language from source config; no double translation of source language.
  */
 async function buildMultilingualFields(sourceDoc) {
-  const titleText = (sourceDoc.title || '').trim();
-  const contentText = (sourceDoc.contentText || '').trim();
-
-  if (!titleText) {
-    throw new Error('Source article has no title');
-  }
-  if (!contentText) {
-    throw new Error('Source article has no contentText');
-  }
-
-  // te | en | hi → English first → then Telugu + Hindi from English
-  const titleTranslated = await twoStepTranslateField(titleText, SOURCE_LANG_HINT, ALL_LANG_CODES);
-  const contentTranslated = await twoStepTranslateField(contentText, SOURCE_LANG_HINT, ALL_LANG_CODES);
+  const { title, summary, content } = await buildSourceArticleMultilingual({
+    title: sourceDoc.title,
+    contentText: sourceDoc.contentText,
+    source: sourceDoc.source
+  });
 
   return {
-    title: toMap(titleTranslated),
-    summary: toMap(contentTranslated),
-    content: toMap(contentTranslated)
+    title: toMap(title),
+    summary: toMap(summary),
+    content: toMap(content)
   };
 }
 

@@ -167,6 +167,181 @@ async function twoStepTranslateField(text, sourceLangHint, allLangs = ALL_LANG_C
   return result;
 }
 
+// ── Source article ingest: config + smart summary/translation ─────────────
+
+const parseSourceSet = (envKey) => {
+  const raw = process.env[envKey] || '';
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+};
+
+const getTeluguSourceSet = () => parseSourceSet('TELUGU_SOURCES');
+const getEnglishSourceSet = () => parseSourceSet('ENGLISH_SOURCES');
+
+const getSummaryCharLimits = () => {
+  const min = Math.max(1, parseInt(process.env.SOURCE_SUMMARY_MIN_CHARS, 10) || 300);
+  const max = Math.max(min, parseInt(process.env.SOURCE_SUMMARY_MAX_CHARS, 10) || 500);
+  return { min, max };
+};
+
+const getContentMaxWords = () =>
+  Math.max(1, parseInt(process.env.SOURCE_CONTENT_MAX_WORDS, 10) || 1000);
+
+/**
+ * Resolve anchor language for a scraped source article.
+ * Telugu/English source lists take precedence; otherwise script detection.
+ */
+const resolveAnchorLanguage = (sourceName, contentText) => {
+  const source = String(sourceName || '').trim().toLowerCase();
+  if (getTeluguSourceSet().has(source)) return 'te';
+  if (getEnglishSourceSet().has(source)) return 'en';
+  return detectSourceLanguage(contentText);
+};
+
+const truncateAtSentence = (text, maxChars) => {
+  const trimmed = String(text || '').trim();
+  if (trimmed.length <= maxChars) return trimmed;
+
+  const cut = trimmed.slice(0, maxChars);
+  const punctMatch = cut.match(/^(.*[.!?।])\s*/);
+  if (punctMatch && punctMatch[1].length >= maxChars * 0.5) {
+    return punctMatch[1].trim();
+  }
+  return cut.trim();
+};
+
+const truncateToWordCount = (text, maxWords) => {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return words.join(' ');
+  return words.slice(0, maxWords).join(' ');
+};
+
+const parseJsonObject = (raw) => {
+  const stripped = String(raw || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return JSON.parse(stripped);
+};
+
+/**
+ * OpenAI: condense raw article into summary (300–500 chars) + body (≤1000 words)
+ * in the anchor language. Sarvam cannot summarize; this step always uses OpenAI.
+ */
+async function generateSummaryAndContent(rawText, anchorLang) {
+  const trimmed = String(rawText || '').trim();
+  if (!trimmed) {
+    throw new Error('Cannot generate summary/content from empty source text');
+  }
+  if (!ALL_LANG_CODES.includes(anchorLang)) {
+    throw new Error(`Unsupported anchor language: ${anchorLang}`);
+  }
+
+  const { min: summaryMin, max: summaryMax } = getSummaryCharLimits();
+  const maxWords = getContentMaxWords();
+  const languageName = SUPPORTED_LANGUAGES[anchorLang];
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a professional news editor for Taaja News. Produce factual, journalistic ' +
+          'summaries and condensed article bodies. Never invent facts, names, dates, or quotes ' +
+          'not present in the source. Return ONLY valid JSON with no markdown fences.'
+      },
+      {
+        role: 'user',
+        content:
+          `Read the following news article and produce two fields in ${languageName}:\n\n` +
+          `1) "summary" — ${summaryMin} to ${summaryMax} characters, complete sentences, key facts only\n` +
+          `2) "content" — at most ${maxWords} words, condensed full story preserving names, dates, places, and important quotes\n\n` +
+          `Return ONLY this JSON shape: {"summary":"...","content":"..."}\n\n` +
+          `Source article:\n\n${trimmed}`
+      }
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' }
+  });
+
+  const responseText = completion.choices[0]?.message?.content?.trim();
+  if (!responseText) {
+    throw new Error('OpenAI returned empty summary/content generation response');
+  }
+
+  let parsed;
+  try {
+    parsed = parseJsonObject(responseText);
+  } catch {
+    throw new Error('Failed to parse summary/content JSON from OpenAI');
+  }
+
+  let summary = String(parsed.summary || '').trim();
+  let content = String(parsed.content || '').trim();
+
+  if (!summary) throw new Error('Generated summary is empty');
+  if (!content) throw new Error('Generated content is empty');
+
+  if (summary.length > summaryMax) {
+    summary = truncateAtSentence(summary, summaryMax);
+  }
+  content = truncateToWordCount(content, maxWords);
+
+  return { summary, content };
+}
+
+/**
+ * Expand text to te/en/hi without re-translating the anchor language.
+ */
+async function toTrilingual(text, anchorLang) {
+  const trimmed = String(text || '').trim();
+  const result = { te: '', en: '', hi: '' };
+  if (!trimmed) return result;
+
+  if (!ALL_LANG_CODES.includes(anchorLang)) {
+    throw new Error(`Unsupported anchor language: ${anchorLang}`);
+  }
+
+  result[anchorLang] = trimmed;
+
+  const others = ALL_LANG_CODES.filter((lang) => lang !== anchorLang);
+  const pairs = await Promise.all(
+    others.map(async (lang) => [lang, await translateField(trimmed, anchorLang, lang)])
+  );
+  for (const [lang, translated] of pairs) {
+    result[lang] = translated;
+  }
+
+  return result;
+}
+
+/**
+ * Build title, summary, and content maps for source-article → Article conversion.
+ */
+async function buildSourceArticleMultilingual({ title, contentText, source }) {
+  const titleTrimmed = String(title || '').trim();
+  const contentTrimmed = String(contentText || '').trim();
+
+  if (!titleTrimmed) throw new Error('Source article has no title');
+  if (!contentTrimmed) throw new Error('Source article has no contentText');
+
+  const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
+  const { summary, content } = await generateSummaryAndContent(contentTrimmed, anchorLang);
+
+  const [titleMap, summaryMap, contentMap] = await Promise.all([
+    toTrilingual(titleTrimmed, anchorLang),
+    toTrilingual(summary, anchorLang),
+    toTrilingual(content, anchorLang)
+  ]);
+
+  return { title: titleMap, summary: summaryMap, content: contentMap, anchorLang };
+}
+
 module.exports = {
   SUPPORTED_LANGUAGES,
   ALL_LANG_CODES,
@@ -175,5 +350,11 @@ module.exports = {
   translateField,
   twoStepTranslateField,
   openaiTranslate,
-  sarvamTranslate
+  sarvamTranslate,
+  getTeluguSourceSet,
+  getEnglishSourceSet,
+  resolveAnchorLanguage,
+  generateSummaryAndContent,
+  toTrilingual,
+  buildSourceArticleMultilingual
 };
