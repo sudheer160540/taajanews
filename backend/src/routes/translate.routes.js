@@ -1,20 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { protect } = require('../middleware/auth');
 const { audioContainerClient } = require('../config/azure');
-
-const openai = new OpenAI({
-  apiKey: process.env.OPEN_API_KEY
-});
-
-const SUPPORTED_LANGUAGES = {
-  te: 'Telugu',
-  en: 'English',
-  hi: 'Hindi'
-};
+const {
+  SUPPORTED_LANGUAGES,
+  chunkText,
+  twoStepTranslateField
+} = require('../utils/translateService');
 
 const SARVAM_LANG_CODES = {
   te: 'te-IN',
@@ -23,109 +17,7 @@ const SARVAM_LANG_CODES = {
 };
 
 const SARVAM_API_URL = 'https://api.sarvam.ai';
-const SARVAM_TRANSLATE_LIMIT = 1000;
 const SARVAM_TTS_LIMIT = 2500;
-
-function chunkText(text, maxLen) {
-  if (!text || text.length <= maxLen) return [text];
-
-  const chunks = [];
-  const sentences = text.split(/(?<=[.!?।\n])\s*/);
-  let current = '';
-
-  for (const sentence of sentences) {
-    if (sentence.length > maxLen) {
-      if (current) { chunks.push(current); current = ''; }
-      for (let i = 0; i < sentence.length; i += maxLen) {
-        chunks.push(sentence.slice(i, i + maxLen));
-      }
-    } else if ((current + ' ' + sentence).trim().length > maxLen) {
-      if (current) chunks.push(current);
-      current = sentence;
-    } else {
-      current = current ? current + ' ' + sentence : sentence;
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-async function sarvamTranslate(text, sourceLang, targetLang) {
-  if (!text || !text.trim()) return '';
-
-  const chunks = chunkText(text, SARVAM_TRANSLATE_LIMIT);
-  const translated = [];
-
-  for (const chunk of chunks) {
-    if (!chunk || !chunk.trim()) { translated.push(''); continue; }
-
-    const { data } = await axios.post(`${SARVAM_API_URL}/translate`, {
-      input: chunk,
-      source_language_code: SARVAM_LANG_CODES[sourceLang],
-      target_language_code: SARVAM_LANG_CODES[targetLang],
-      model: 'mayura:v1'
-    }, {
-      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY }
-    });
-
-    translated.push(data.translated_text || '');
-  }
-
-  return translated.join(' ');
-}
-
-async function openaiTranslate(text, targetLangName) {
-  if (!text || !text.trim()) return '';
-
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.'
-      },
-      {
-        role: 'user',
-        content: `Translate the following text to ${targetLangName}:\n\n${text}`
-      }
-    ],
-    temperature: 0.3
-  });
-
-  return completion.choices[0]?.message?.content?.trim() || '';
-}
-
-async function translateField(text, sourceLang, targetLang) {
-  const useSarvam = process.env.TRANSLATE_TYPE === 'sarvam';
-
-  if (useSarvam) {
-    return sarvamTranslate(text, sourceLang, targetLang);
-  }
-  return openaiTranslate(text, SUPPORTED_LANGUAGES[targetLang]);
-}
-
-async function twoStepTranslateField(text, sourceLang, allLangs) {
-  const result = {};
-  result[sourceLang] = text;
-
-  const targetLangs = allLangs.filter(l => l !== sourceLang);
-
-  if (sourceLang !== 'en') {
-    const englishText = await translateField(text, sourceLang, 'en');
-    result['en'] = englishText;
-
-    const otherLangs = targetLangs.filter(l => l !== 'en');
-    for (const lang of otherLangs) {
-      result[lang] = await translateField(englishText, 'en', lang);
-    }
-  } else {
-    for (const lang of targetLangs) {
-      result[lang] = await translateField(text, 'en', lang);
-    }
-  }
-
-  return result;
-}
 
 async function generateTTSForLanguage(text, langCode) {
   if (!text || !text.trim()) return null;

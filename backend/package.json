@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "process-source-articles": "node src/scripts/processSourceArticles.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.17.0",
