@@ -20,13 +20,17 @@ const ingestSourceArticlesSchema = Joi.alternatives().try(
   Joi.object({
     items: Joi.array().items(sourceArticleItemSchema).min(1).max(500).required()
   }),
+  Joi.object({
+    articles: Joi.array().items(sourceArticleItemSchema).min(1).max(500).required()
+  }),
   sourceArticleItemSchema
 );
 
 const normalizeItems = (body) => {
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.items)) return body.items;
-  if (body && typeof body === 'object') return [body];
+  if (body && Array.isArray(body.articles)) return body.articles;
+  if (body && typeof body === 'object' && (body.source || body.sourceId || body.url)) return [body];
   return null;
 };
 
@@ -64,10 +68,13 @@ const toUpsertOp = (item) => {
 };
 
 // @route   POST /api/source-articles
-// @desc    Ingest articles from external sources (array or single object).
+// @desc    Ingest articles from external sources. Body may be:
+//          - [ { source, sourceId, url, title, ... }, ... ]
+//          - { items: [ ... ] } or { articles: [ ... ] }  (same as GET list shape)
+//          - { source, sourceId, url, title, ... }  (single article)
 //          Upserts on unique (source, sourceId). Default status is "New".
 // @access  Public (automation / scraper)
-router.post('/', validate(ingestSourceArticlesSchema), async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const items = normalizeItems(req.body);
     if (!items || items.length === 0) {
