@@ -11,9 +11,9 @@ import {
 } from '@mui/icons-material';
 
 const FeatureCard = ({ icon, title, desc }) => (
-  <Paper elevation={1} sx={{ p: 2.5, height: '100%', borderTop: '3px solid #B80000', borderRadius: 2 }}>
+  <Paper elevation={1} sx={{ p: 2.5, height: '100%', borderTop: '3px solid', borderColor: 'secondary.main', borderRadius: 2 }}>
     <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, gap: 1 }}>
-      <Box sx={{ color: '#B80000' }}>{icon}</Box>
+      <Box sx={{ color: 'secondary.main' }}>{icon}</Box>
       <Typography variant="subtitle2" fontWeight={700}>{title}</Typography>
     </Box>
     <Typography variant="body2" color="text.secondary">{desc}</Typography>
@@ -72,7 +72,7 @@ const AboutUs = () => {
       {/* Hero Banner */}
       <Box
         sx={{
-          background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)',
+          background: 'linear-gradient(135deg, #4875BC 0%, #FF1424 100%)',
           color: 'white',
           py: { xs: 5, md: 8 },
           px: 2,
@@ -97,7 +97,7 @@ const AboutUs = () => {
 
       <Container maxWidth="md" sx={{ py: 5 }}>
         {/* About Intro */}
-        <Typography variant="h5" fontWeight={800} gutterBottom sx={{ color: '#B80000' }}>
+        <Typography variant="h5" fontWeight={800} gutterBottom sx={{ color: 'secondary.main' }}>
           Experience News Like Never Before with TAAJA News – Global to Local.
         </Typography>
         <Typography variant="body1" color="text.secondary" paragraph>
@@ -140,12 +140,13 @@ const AboutUs = () => {
             textAlign: 'center',
             py: 4,
             px: 3,
-            bgcolor: '#fff8f8',
+            bgcolor: '#f0f4fb',
             borderRadius: 2,
-            border: '1px solid #f5c6c6',
+            border: '1px solid',
+            borderColor: 'primary.light',
           }}
         >
-          <Typography variant="h6" fontWeight={700} color="#B80000" gutterBottom>
+          <Typography variant="h6" fontWeight={700} sx={{ color: 'secondary.main' }} gutterBottom>
             Stay ahead of the world with TAAJA News.
           </Typography>
           <Typography variant="body2" color="text.secondary">

@@ -224,7 +224,7 @@ const Onboarding = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)',
+        background: 'linear-gradient(135deg, #4875BC 0%, #FF1424 100%)',
         py: 4
       }}
     >

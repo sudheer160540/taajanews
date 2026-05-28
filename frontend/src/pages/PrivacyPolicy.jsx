@@ -2,7 +2,7 @@ import { Box, Container, Typography, Divider, List, ListItem, ListItemText } fro
 
 const Section = ({ number, title, children }) => (
   <Box sx={{ mb: 3 }}>
-    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: '#B80000' }}>
+    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'secondary.main' }}>
       {number}. {title}
     </Typography>
     {children}
@@ -34,7 +34,7 @@ const BulletList = ({ items }) => (
 const PrivacyPolicy = () => {
   return (
     <Container maxWidth="md" sx={{ py: 5 }}>
-      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: '#B80000' }}>
+      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: 'secondary.main' }}>
         TAAJA NEWS – PRIVACY POLICY
       </Typography>
       <Typography variant="body2" color="text.secondary" align="center" gutterBottom>
@@ -163,7 +163,7 @@ const PrivacyPolicy = () => {
       <Divider sx={{ my: 3 }} />
       <Typography variant="body2" color="text.secondary" align="center">
         For any privacy-related concerns, contact us at{' '}
-        <Box component="a" href="mailto:support@taajanews.net" sx={{ color: '#B80000', fontWeight: 600 }}>
+        <Box component="a" href="mailto:support@taajanews.net" sx={{ color: 'secondary.main', fontWeight: 600 }}>
           support@taajanews.net
         </Box>
       </Typography>

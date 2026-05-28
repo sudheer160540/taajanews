@@ -22,6 +22,7 @@ const videoRoutes = require('./routes/video.routes');
 const fcmTokenRoutes = require('./routes/fcmToken.routes');
 const accountDeletionRoutes = require('./routes/accountDeletion.routes');
 const sourceArticleRoutes = require('./routes/sourceArticle.routes');
+const seoRoutes = require('./routes/seo.routes');
 
 // Import utilities
 const languageCache = require('./utils/languageCache');
@@ -60,6 +61,9 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// SEO (sitemap for search engines — submit URL in Google Search Console)
+app.use('/', seoRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

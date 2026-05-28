@@ -2,7 +2,7 @@ import { Box, Container, Typography, Divider, List, ListItem, ListItemText } fro
 
 const Section = ({ number, title, children }) => (
   <Box sx={{ mb: 3 }}>
-    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: '#B80000' }}>
+    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'secondary.main' }}>
       {number}. {title}
     </Typography>
     {children}
@@ -38,7 +38,7 @@ const NumberedList = ({ items }) => (
 const EditorialPolicy = () => {
   return (
     <Container maxWidth="md" sx={{ py: 5 }}>
-      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: '#B80000' }}>
+      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: 'secondary.main' }}>
         TAAJA NEWS – EDITORIAL POLICY
       </Typography>
       <Typography variant="body2" color="text.secondary" align="center" gutterBottom>
@@ -94,7 +94,7 @@ const EditorialPolicy = () => {
         </Typography>
         <Typography variant="body2" sx={{ mt: 1 }}>
           📧 Email:{' '}
-          <Box component="a" href="mailto:editor@taajanews.net" sx={{ color: '#B80000', fontWeight: 600 }}>
+          <Box component="a" href="mailto:editor@taajanews.net" sx={{ color: 'secondary.main', fontWeight: 600 }}>
             editor@taajanews.net
           </Box>
         </Typography>

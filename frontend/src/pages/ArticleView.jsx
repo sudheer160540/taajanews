@@ -40,6 +40,8 @@ import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
 import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
+import Seo from '../components/Seo';
+import { buildNewsArticleJsonLd, truncate, toAbsoluteUrl } from '../utils/seo';
 
 const ArticleView = () => {
   const { slug } = useParams();
@@ -236,8 +238,34 @@ const ArticleView = () => {
   const hasImage = !!article.featuredImage?.url;
   const heroVisible = hasImage || (hasVideo && playingVideo);
 
+  const seoDescription = truncate(article.summary || article.content, 160);
+  const seoImage = article.featuredImage?.url || null;
+  const authorName = article.reporterName || article.author?.name || 'Taaja News';
+  const categoryName =
+    typeof article.category?.name === 'string'
+      ? article.category.name
+      : article.category?.name?.[lang] || article.category?.name?.en;
+
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
+      <Seo
+        title={article.title}
+        description={seoDescription}
+        path={`/article/${article.slug}`}
+        image={seoImage}
+        type="article"
+        lang={lang}
+        jsonLd={buildNewsArticleJsonLd({
+          title: article.title,
+          description: seoDescription,
+          url: toAbsoluteUrl(`/article/${article.slug}`),
+          image: seoImage ? toAbsoluteUrl(seoImage) : undefined,
+          datePublished: article.publishedAt,
+          dateModified: article.updatedAt || article.publishedAt,
+          authorName,
+          categoryName
+        })}
+      />
       {/* Breadcrumb */}
       <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
         <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>

@@ -45,7 +45,7 @@ const LoadingScreen = () => (
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)'
+      background: 'linear-gradient(135deg, #4875BC 0%, #FF1424 100%)'
     }}
   >
     <CircularProgress sx={{ color: 'white' }} size={48} />

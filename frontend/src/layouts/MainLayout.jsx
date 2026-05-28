@@ -7,14 +7,14 @@ import {
   Typography,
   IconButton,
   Box,
-  ListItemText,
   Divider,
   Avatar,
   Menu,
   MenuItem,
   Chip,
   Tab,
-  Tabs
+  Tabs,
+  Tooltip
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -22,7 +22,6 @@ import {
   Logout as LogoutIcon,
   Dashboard as DashboardIcon,
   LocationOn as LocationIcon,
-  Language as LanguageIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -38,7 +37,6 @@ const MainLayout = () => {
   const { city, area, clearLocation } = useLocation();
 
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
-  const [langMenuAnchor, setLangMenuAnchor] = useState(null);
   const [languages, setLanguages] = useState([]);
   const [currentLang, setCurrentLang] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -90,7 +88,25 @@ const MainLayout = () => {
 
   const handleLanguageSelect = (langCode) => {
     i18n.changeLanguage(langCode);
-    setLangMenuAnchor(null);
+  };
+
+  const getLangIconSrc = (lang) => lang?.icon || lang?.flag || lang?.flagUrl || null;
+
+  /** Short labels when no icon URL (code → display) */
+  const LANG_SHORT_LABELS = {
+    te: 'తె',
+    en: 'En',
+    hi: 'हि'
+  };
+
+  const getLangInitial = (lang) => {
+    const code = lang?.code?.toLowerCase()?.split('-')[0];
+    if (code && LANG_SHORT_LABELS[code]) {
+      return LANG_SHORT_LABELS[code];
+    }
+    const label = lang?.nativeName || lang?.name || lang?.code || '';
+    const chars = [...String(label).trim()];
+    return chars.slice(0, 2).join('') || lang?.code?.[0]?.toUpperCase() || '?';
   };
 
   const handleLogout = async () => {
@@ -121,10 +137,12 @@ const MainLayout = () => {
       onClick={() => navigate('/onboarding')}
       onDelete={city ? clearLocation : undefined}
       sx={{
-        bgcolor: 'rgba(255,255,255,0.2)',
-        color: 'white',
-        '& .MuiChip-icon': { color: 'white' },
-        '& .MuiChip-deleteIcon': { color: 'rgba(255,255,255,0.7)' }
+        bgcolor: 'rgba(72, 117, 188, 0.08)',
+        color: 'primary.main',
+        border: '1px solid',
+        borderColor: 'primary.light',
+        '& .MuiChip-icon': { color: 'primary.main' },
+        '& .MuiChip-deleteIcon': { color: 'primary.main', opacity: 0.7 }
       }}
     />
   );
@@ -132,59 +150,95 @@ const MainLayout = () => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* Top AppBar */}
-      <AppBar position="sticky" elevation={1}>
-        <Toolbar>
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          bgcolor: '#fff',
+          color: 'primary.main',
+          borderBottom: '1px solid',
+          borderColor: 'divider'
+        }}
+      >
+        <Toolbar sx={{ color: 'primary.main' }}>
           <Box
-            sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', mr: 2 }}
+            sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', mr: 2, color: 'primary.main' }}
             onClick={() => navigate('/')}
           >
             <Box
               component="img"
               src="/logo.png"
               alt="Taaja News"
-              sx={{ width: 32, height: 32, borderRadius: '50%', mr: 1, objectFit: 'cover' }}
+              sx={{ width: 100, height: 80, borderRadius: '50%', objectFit: 'cover' }}
             />
-            <Typography variant="h6" fontWeight={700} noWrap sx={{ display: { xs: 'none', sm: 'block' } }}>
-              {t('appName')}
-            </Typography>
           </Box>
 
           <Box sx={{ flexGrow: 1 }} />
 
           {locationDisplay}
 
-          <Chip
-            icon={<LanguageIcon fontSize="small" />}
-            label={currentLang?.nativeName || i18n.language.toUpperCase()}
-            size="small"
-            onClick={(e) => setLangMenuAnchor(e.currentTarget)}
-            sx={{
-              ml: 1,
-              bgcolor: 'rgba(255,255,255,0.2)',
-              color: 'white',
-              '& .MuiChip-icon': { color: 'white' },
-              cursor: 'pointer'
-            }}
-          />
-          <Menu
-            anchorEl={langMenuAnchor}
-            open={Boolean(langMenuAnchor)}
-            onClose={() => setLangMenuAnchor(null)}
-          >
-            {languages.map((lang) => (
-              <MenuItem
-                key={lang.code}
-                selected={i18n.language === lang.code}
-                onClick={() => handleLanguageSelect(lang.code)}
-              >
-                <ListItemText primary={lang.nativeName} secondary={lang.name} />
-              </MenuItem>
-            ))}
-          </Menu>
+          {languages.length > 0 && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                ml: 1
+              }}
+              role="group"
+              aria-label="Language"
+            >
+              {languages.map((lang) => {
+                const selected = i18n.language === lang.code;
+                const iconSrc = getLangIconSrc(lang);
+                const shortLabel = iconSrc ? '' : getLangInitial(lang);
+                const label = lang.nativeName || lang.name || lang.code;
+                const isWideLabel = shortLabel.length > 1;
+
+                return (
+                  <Tooltip key={lang.code} title={label} arrow>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleLanguageSelect(lang.code)}
+                      aria-label={label}
+                      aria-pressed={selected}
+                      sx={{
+                        minWidth: isWideLabel ? 36 : 32,
+                        width: isWideLabel ? 'auto' : 32,
+                        height: 32,
+                        px: isWideLabel ? 0.5 : 0,
+                        border: '2px solid',
+                        borderColor: selected ? 'primary.main' : 'primary.light',
+                        bgcolor: selected ? 'rgba(72, 117, 188, 0.15)' : 'transparent',
+                        color: 'primary.main',
+                        fontSize: isWideLabel ? '0.7rem' : '0.8rem',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        '&:hover': {
+                          bgcolor: 'rgba(72, 117, 188, 0.1)'
+                        }
+                      }}
+                    >
+                      {iconSrc ? (
+                        <Box
+                          component="img"
+                          src={iconSrc}
+                          alt=""
+                          sx={{ width: 20, height: 20, objectFit: 'contain', borderRadius: '50%' }}
+                        />
+                      ) : (
+                        shortLabel
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                );
+              })}
+            </Box>
+          )}
 
           {isAuthenticated ? (
             <>
-              <IconButton color="inherit" onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ ml: 0.5 }}>
+              <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ ml: 0.5, color: 'primary.main' }}>
                 <Avatar src={user?.avatar} sx={{ width: 30, height: 30, bgcolor: 'secondary.main', fontSize: 14 }}>
                   {user?.name?.[0]}
                 </Avatar>
@@ -215,7 +269,7 @@ const MainLayout = () => {
               </Menu>
             </>
           ) : (
-            <IconButton color="inherit" onClick={() => navigate('/auth/login')} sx={{ ml: 0.5 }}>
+            <IconButton onClick={() => navigate('/auth/login')} sx={{ ml: 0.5, color: 'primary.main' }}>
               <PersonIcon />
             </IconButton>
           )}
@@ -223,7 +277,7 @@ const MainLayout = () => {
 
         {/* Category Tabs Bar */}
         {categories.length > 0 && (
-          <Box sx={{ bgcolor: 'primary.dark' }}>
+          <Box sx={{ bgcolor: '#fff', borderTop: '1px solid', borderColor: 'divider' }}>
             <Tabs
               value={activeCategorySlug || false}
               variant="scrollable"
@@ -232,7 +286,7 @@ const MainLayout = () => {
               sx={{
                 minHeight: 36,
                 '& .MuiTab-root': {
-                  color: 'rgba(255,255,255,0.7)',
+                  color: 'text.secondary',
                   minHeight: 36,
                   py: 0,
                   px: 2,
@@ -240,9 +294,9 @@ const MainLayout = () => {
                   textTransform: 'none',
                   fontWeight: 500
                 },
-                '& .Mui-selected': { color: '#fff', fontWeight: 700 },
-                '& .MuiTabs-indicator': { backgroundColor: '#fff' },
-                '& .MuiTabs-scrollButtons': { color: 'rgba(255,255,255,0.7)' }
+                '& .Mui-selected': { color: 'primary.main', fontWeight: 700 },
+                '& .MuiTabs-indicator': { backgroundColor: 'primary.main' },
+                '& .MuiTabs-scrollButtons': { color: 'primary.main' }
               }}
             >
               <Tab value="all" label={currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All'} onClick={() => handleCategoryClick('all')}/>
