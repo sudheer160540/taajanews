@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -17,14 +18,16 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <GoogleOAuthProvider clientId={googleClientId}>
       <BrowserRouter>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <AuthProvider>
-            <LocationProvider>
-              <App />
-            </LocationProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <HelmetProvider>
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <AuthProvider>
+              <LocationProvider>
+                <App />
+              </LocationProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </HelmetProvider>
       </BrowserRouter>
     </GoogleOAuthProvider>
   </React.StrictMode>

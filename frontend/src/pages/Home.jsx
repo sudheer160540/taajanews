@@ -27,6 +27,8 @@ import {
 import { articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 import { getYoutubeEmbedId } from '../utils/youtube';
+import Seo from '../components/Seo';
+import { buildWebSiteJsonLd } from '../utils/seo';
 
 // Visual cue that an article has a YouTube video attached. The badge is
 // purely informational: it sits over the card image with `pointerEvents:
@@ -257,8 +259,29 @@ const Home = () => {
     </Card>
   );
 
+  const homeSeoTitle =
+    lang === 'te'
+      ? 'తాజా వార్తలు — బ్రేకింగ్ & లోకల్ న్యూస్'
+      : lang === 'hi'
+        ? 'ताज़ा खबरें — ब्रेकिंग और स्थानीय समाचार'
+        : 'Latest News — Breaking & Local Headlines';
+
+  const homeSeoDescription =
+    lang === 'te'
+      ? 'తెలుగు, హిందీ, ఇంగ్లీష్‌లో తాజా వార్తలు. ఆంధ్రప్రదేశ్, తెలంగాణ మరియు భారతదేశం బ్రేకింగ్ న్యూస్ — Taaja News.'
+      : lang === 'hi'
+        ? 'ताज़ा खबरें तेलुगु, हिंदी और अंग्रेज़ी में। आंध्र प्रदेश, तेलंगाना और भारत की ब्रेकिंग न्यूज़ — Taaja News.'
+        : 'Latest breaking news in Telugu, Hindi and English. Local headlines from Andhra Pradesh, Telangana and across India.';
+
   return (
     <Box sx={{ pb: 4 }}>
+      <Seo
+        title={homeSeoTitle}
+        description={homeSeoDescription}
+        path="/"
+        lang={lang}
+        jsonLd={buildWebSiteJsonLd()}
+      />
       {/* Trending Section */}
       {trendingArticles.length > 0 && (
         <Box sx={{ bgcolor: 'primary.dark', color: 'white', py: 2, mb: 3 }}>

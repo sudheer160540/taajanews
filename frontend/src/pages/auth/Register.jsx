@@ -91,7 +91,7 @@ const Register = () => {
         minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
-        background: 'linear-gradient(135deg, #B80000 0%, #D43333 100%)',
+        background: 'linear-gradient(135deg, #4875BC 0%, #FF1424 100%)',
         py: 4
       }}
     >
@@ -224,7 +224,7 @@ const Register = () => {
 
             <Typography textAlign="center" variant="body2">
               {t('hasAccount')}{' '}
-              <Link to="/auth/login" style={{ color: '#B80000' }}>
+              <Link to="/auth/login" style={{ color: '#4875BC' }}>
                 {t('login')}
               </Link>
             </Typography>

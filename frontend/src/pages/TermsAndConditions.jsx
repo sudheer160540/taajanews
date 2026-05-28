@@ -2,7 +2,7 @@ import { Box, Container, Typography, Divider, List, ListItem, ListItemText } fro
 
 const Section = ({ number, title, children }) => (
   <Box sx={{ mb: 3 }}>
-    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: '#B80000' }}>
+    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'secondary.main' }}>
       {number}. {title}
     </Typography>
     {children}
@@ -22,7 +22,7 @@ const BulletList = ({ items }) => (
 const TermsAndConditions = () => {
   return (
     <Container maxWidth="md" sx={{ py: 5 }}>
-      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: '#B80000' }}>
+      <Typography variant="h4" fontWeight={800} gutterBottom align="center" sx={{ color: 'secondary.main' }}>
         TAAJA NEWS – TERMS &amp; CONDITIONS
       </Typography>
       <Typography variant="body2" color="text.secondary" align="center" gutterBottom>
@@ -78,7 +78,7 @@ const TermsAndConditions = () => {
       <Section number={8} title="Grievance Redressal">
         <Typography variant="body2" gutterBottom>
           In compliance with Indian IT Rules, any complaints regarding content should be directed to our Grievance Officer at:{' '}
-          <Box component="a" href="mailto:taajanews.net@gmail.com" sx={{ color: '#B80000', fontWeight: 600 }}>
+          <Box component="a" href="mailto:taajanews.net@gmail.com" sx={{ color: 'secondary.main', fontWeight: 600 }}>
             taajanews.net@gmail.com
           </Box>
         </Typography>

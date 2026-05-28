@@ -23,8 +23,8 @@ const Footer = () => {
         mt: 'auto',
       }}
     >
-      {/* Red brand bar — mirrors BBC header style */}
-      <Box sx={{ bgcolor: '#B80000', py: 1.5, px: { xs: 2, md: 4 } }}>
+      {/* Brand bar — blue + red gradient */}
+      <Box sx={{ background: 'linear-gradient(90deg, #4875BC 0%, #FF1424 100%)', py: 1.5, px: { xs: 2, md: 4 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box
             component="img"

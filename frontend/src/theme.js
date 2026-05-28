@@ -1,18 +1,26 @@
 import { createTheme, responsiveFontSizes } from '@mui/material/styles';
+import {
+  BRAND_BLUE,
+  BRAND_BLUE_LIGHT,
+  BRAND_BLUE_DARK,
+  BRAND_RED,
+  BRAND_RED_LIGHT,
+  BRAND_RED_DARK
+} from './brandColors';
 
 let theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#B80000',
-      light: '#D43333',
-      dark: '#8B0000',
+      main: BRAND_BLUE,
+      light: BRAND_BLUE_LIGHT,
+      dark: BRAND_BLUE_DARK,
       contrastText: '#ffffff',
     },
     secondary: {
-      main: '#FF6B35',
-      light: '#FF8F66',
-      dark: '#CC5529',
+      main: BRAND_RED,
+      light: BRAND_RED_LIGHT,
+      dark: BRAND_RED_DARK,
       contrastText: '#ffffff',
     },
     error: {
@@ -25,7 +33,7 @@ let theme = createTheme({
       main: '#2e7d32',
     },
     info: {
-      main: '#0288d1',
+      main: BRAND_BLUE,
     },
     background: {
       default: '#f5f5f5',

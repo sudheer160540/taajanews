@@ -18,6 +18,8 @@ import {
 import { NavigateNext as NavNextIcon, AccessTime as TimeIcon } from '@mui/icons-material';
 import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import Seo from '../components/Seo';
+import { truncate } from '../utils/seo';
 
 const CategoryView = () => {
   const { slug } = useParams();
@@ -109,8 +111,29 @@ const CategoryView = () => {
     );
   }
 
+  const categoryName =
+    (typeof category.name === 'string' ? category.name : null) ||
+    category.name?.[lang] ||
+    category.name?.en ||
+    category.name?.te ||
+    slug;
+  const categoryDescRaw =
+    typeof category.description === 'string'
+      ? category.description
+      : category.description?.[lang] || category.description?.en || '';
+  const categoryDescription = truncate(
+    categoryDescRaw || `${categoryName} news — latest articles on Taaja News`,
+    160
+  );
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Seo
+        title={`${categoryName} News`}
+        description={categoryDescription}
+        path={`/category/${slug}`}
+        lang={lang}
+      />
       {/* Breadcrumb */}
       <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 3 }}>
         <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>

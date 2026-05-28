@@ -20,7 +20,7 @@ import { useNavigate } from 'react-router-dom';
 const ContactUs = () => {
   const navigate = useNavigate();
 
-  const ContactCard = ({ icon, title, items, color = '#B80000' }) => (
+  const ContactCard = ({ icon, title, items, color = '#4875BC' }) => (
     <Card
       elevation={3}
       sx={{
@@ -89,7 +89,7 @@ const ContactUs = () => {
       {/* Hero Banner */}
       <Box
         sx={{
-          bgcolor: '#B80000',
+          background: 'linear-gradient(135deg, #4875BC 0%, #FF1424 100%)',
           color: '#fff',
           py: { xs: 5, md: 7 },
           textAlign: 'center',
@@ -109,8 +109,8 @@ const ContactUs = () => {
         <Card elevation={4} sx={{ borderRadius: 3, mb: 5, p: { xs: 2, md: 4 } }}>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-              <CampaignIcon sx={{ color: '#B80000', fontSize: 32 }} />
-              <Typography variant="h5" fontWeight={700} sx={{ color: '#B80000' }}>
+              <CampaignIcon sx={{ color: 'primary.main', fontSize: 32 }} />
+              <Typography variant="h5" fontWeight={700} sx={{ color: 'secondary.main' }}>
                 Our Commitment to You
               </Typography>
             </Box>
@@ -125,8 +125,9 @@ const ContactUs = () => {
               sx={{
                 mt: 3,
                 p: 2.5,
-                bgcolor: '#fff5f5',
-                borderLeft: '4px solid #B80000',
+                bgcolor: '#f0f4fb',
+                borderLeft: '4px solid',
+                borderLeftColor: 'primary.main',
                 borderRadius: 1,
               }}
             >
@@ -150,7 +151,7 @@ const ContactUs = () => {
             <ContactCard
               icon={<FeedbackIcon />}
               title="Contact for Feedback"
-              color="#B80000"
+              color="#FF1424"
               items={[
                 {
                   icon: <EmailIcon fontSize="small" />,
@@ -199,11 +200,11 @@ const ContactUs = () => {
             size="large"
             onClick={() => navigate(-1)}
             sx={{
-              borderColor: '#B80000',
-              color: '#B80000',
+              borderColor: 'primary.main',
+              color: 'primary.main',
               fontWeight: 600,
               px: 4,
-              '&:hover': { bgcolor: '#B80000', color: '#fff' },
+              '&:hover': { bgcolor: 'primary.main', color: '#fff' },
             }}
           >
             ← Go Back
