@@ -6,21 +6,19 @@ import {
   Container,
   Typography,
   Grid,
-  Card,
-  CardContent,
-  CardMedia,
-  CardActionArea,
   Chip,
   Skeleton,
   IconButton,
   Button,
-  Divider
+  Paper,
+  CardActionArea
 } from '@mui/material';
 import {
   TrendingUp as TrendingIcon,
   LocationOn as LocationIcon,
   AccessTime as TimeIcon,
   Visibility as ViewIcon,
+  BookmarkBorder as BookmarkIcon,
   AutoStories as ReadIcon,
   PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
@@ -30,10 +28,9 @@ import { getYoutubeEmbedId } from '../utils/youtube';
 import Seo from '../components/Seo';
 import { buildWebSiteJsonLd } from '../utils/seo';
 
-// Visual cue that an article has a YouTube video attached. The badge is
-// purely informational: it sits over the card image with `pointerEvents:
-// none` so the existing CardActionArea click (which navigates to the
-// article view, where the player lives) still wins.
+const IMAGE_PLACEHOLDER =
+  'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="240"%3E%3Crect fill="%23e8eef7" width="400" height="240"/%3E%3C/svg%3E';
+
 const PlayBadgeOverlay = () => (
   <Box
     aria-hidden
@@ -50,16 +47,387 @@ const PlayBadgeOverlay = () => (
       sx={{
         bgcolor: 'rgba(0,0,0,0.55)',
         borderRadius: '50%',
-        width: 56,
-        height: 56,
+        width: 48,
+        height: 48,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.35)'
+        justifyContent: 'center'
       }}
     >
-      <PlayCircleFilledIcon sx={{ fontSize: 48, color: 'white' }} />
+      <PlayCircleFilledIcon sx={{ fontSize: 40, color: 'white' }} />
     </Box>
+  </Box>
+);
+
+/** One overlay tag only: featured story, breaking, or category — never two. */
+const getSingleArticleTag = (article, t, { preferFeatured = false } = {}) => {
+  if (preferFeatured || article.isFeatured) {
+    return { label: t('featuredStory'), bg: '#F5B800', color: '#1a1a1a' };
+  }
+  if (article.isBreaking) {
+    return { label: t('breakingNews'), bg: 'secondary.main', color: '#fff' };
+  }
+  if (article.category?.name) {
+    const catColor = article.category.color || '#4875BC';
+    return { label: article.category.name, bg: catColor, color: '#fff' };
+  }
+  return null;
+};
+
+const formatTimeAgo = (dateString, t) => {
+  if (!dateString) return '';
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return `1 ${t('minsAgo')}`;
+  if (mins < 60) return `${mins} ${t('minsAgo')}`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ${t('hoursAgo')}`;
+  const days = Math.floor(hrs / 24);
+  return `${days} ${t('daysAgo')}`;
+};
+
+const ArticleMetaRow = ({ article, t }) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <TimeIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.85 }} />
+      <Typography variant="caption" sx={{ color: 'inherit', opacity: 0.9 }}>
+        {formatTimeAgo(article.publishedAt, t)}
+      </Typography>
+    </Box>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <ViewIcon sx={{ fontSize: 14, color: 'inherit', opacity: 0.85 }} />
+      <Typography variant="caption" sx={{ color: 'inherit', opacity: 0.9 }}>
+        {article.engagement?.views ?? 0}
+      </Typography>
+    </Box>
+  </Box>
+);
+
+const CategoryTag = ({ tag }) => {
+  if (!tag) return null;
+  return (
+    <Chip
+      label={tag.label}
+      size="small"
+      sx={{
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        zIndex: 2,
+        height: 24,
+        fontSize: '0.7rem',
+        fontWeight: 700,
+        bgcolor: tag.bg,
+        color: tag.color,
+        '& .MuiChip-label': { px: 1 }
+      }}
+    />
+  );
+};
+
+const HeroFeaturedCard = ({ article, onNavigate, t }) => {
+  const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
+  const imageUrl = article.featuredImage?.url || IMAGE_PLACEHOLDER;
+  const tag = getSingleArticleTag(article, t, { preferFeatured: true });
+
+  return (
+    <CardActionArea
+      onClick={() => onNavigate(article.slug)}
+      sx={{
+        position: 'relative',
+        borderRadius: 2,
+        overflow: 'hidden',
+        display: 'block',
+        height: { xs: 280, sm: 340, md: 400 },
+        boxShadow: '0 4px 16px rgba(72, 117, 188, 0.15)'
+      }}
+    >
+      <Box
+        component="img"
+        src={imageUrl}
+        alt={article.title}
+        sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+      />
+      {hasVideo && <PlayBadgeOverlay />}
+      <CategoryTag tag={tag} />
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 45%, transparent 70%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          p: 2
+        }}
+      >
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{
+            color: '#fff',
+            mb: 0.75,
+            lineHeight: 1.35,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}
+        >
+          {article.title}
+        </Typography>
+        {article.summary && (
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'rgba(255,255,255,0.9)',
+              mb: 1,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
+            }}
+          >
+            {article.summary}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#fff' }}>
+          <ArticleMetaRow article={article} t={t} />
+          <BookmarkIcon sx={{ fontSize: 20, opacity: 0.9 }} />
+        </Box>
+      </Box>
+    </CardActionArea>
+  );
+};
+
+const HeroSideCard = ({ article, onNavigate, t }) => {
+  const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
+  const imageUrl = article.featuredImage?.url || IMAGE_PLACEHOLDER;
+  const tag = getSingleArticleTag(article, t);
+
+  return (
+    <CardActionArea
+      onClick={() => onNavigate(article.slug)}
+      sx={{
+        position: 'relative',
+        borderRadius: 2,
+        overflow: 'hidden',
+        display: 'block',
+        height: { xs: 180, md: 192 },
+        boxShadow: '0 2px 10px rgba(0,0,0,0.08)',
+        flex: 1
+      }}
+    >
+      <Box
+        component="img"
+        src={imageUrl}
+        alt={article.title}
+        sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+      {hasVideo && <PlayBadgeOverlay />}
+      <CategoryTag tag={tag} />
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 55%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          p: 1.5
+        }}
+      >
+        <Typography
+          variant="subtitle2"
+          fontWeight={700}
+          sx={{
+            color: '#fff',
+            lineHeight: 1.35,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}
+        >
+          {article.title}
+        </Typography>
+      </Box>
+    </CardActionArea>
+  );
+};
+
+const ArticleListRow = ({ article, onNavigate, t }) => {
+  const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
+  const imageUrl = article.featuredImage?.url || IMAGE_PLACEHOLDER;
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        display: 'flex',
+        gap: 2,
+        p: 1.5,
+        mb: 1.5,
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: '#fff',
+        transition: 'box-shadow 0.2s',
+        '&:hover': { boxShadow: '0 4px 12px rgba(72, 117, 188, 0.12)' }
+      }}
+    >
+      <CardActionArea
+        onClick={() => onNavigate(article.slug)}
+        sx={{
+          width: { xs: 100, sm: 140 },
+          minWidth: { xs: 100, sm: 140 },
+          height: { xs: 72, sm: 96 },
+          borderRadius: 1.5,
+          overflow: 'hidden',
+          flexShrink: 0
+        }}
+      >
+        <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+          <Box
+            component="img"
+            src={imageUrl}
+            alt=""
+            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          {hasVideo && <PlayBadgeOverlay />}
+        </Box>
+      </CardActionArea>
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <Typography
+          component="button"
+          onClick={() => onNavigate(article.slug)}
+          variant="subtitle1"
+          fontWeight={700}
+          sx={{
+            textAlign: 'left',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            color: 'text.primary',
+            p: 0,
+            mb: 0.5,
+            lineHeight: 1.4,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            '&:hover': { color: 'primary.main' }
+          }}
+        >
+          {article.title}
+        </Typography>
+        {article.summary && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mb: 1,
+              display: { xs: 'none', sm: '-webkit-box' },
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
+            }}
+          >
+            {article.summary}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ color: 'text.secondary' }}>
+            <ArticleMetaRow article={article} t={t} />
+          </Box>
+          <IconButton size="small" sx={{ color: 'primary.main' }} aria-label={t('bookmark')}>
+            <BookmarkIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      </Box>
+    </Paper>
+  );
+};
+
+const TrendingListItem = ({ article, rank, onNavigate, t }) => {
+  const imageUrl = article.featuredImage?.url;
+
+  return (
+    <Box
+      onClick={() => onNavigate(article.slug)}
+      sx={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 1.5,
+        py: 1.5,
+        cursor: 'pointer',
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        '&:last-child': { borderBottom: 'none' }
+      }}
+    >
+      <Box
+        sx={{
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          bgcolor: 'secondary.main',
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 700,
+          fontSize: '0.85rem',
+          flexShrink: 0
+        }}
+      >
+        {rank}
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          variant="body2"
+          fontWeight={600}
+          sx={{
+            lineHeight: 1.4,
+            mb: 0.5,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            '&:hover': { color: 'primary.main' }
+          }}
+        >
+          {article.title}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {formatTimeAgo(article.publishedAt, t)}
+        </Typography>
+      </Box>
+      {imageUrl && (
+        <Box
+          component="img"
+          src={imageUrl}
+          alt=""
+          sx={{
+            width: 56,
+            height: 56,
+            borderRadius: 1,
+            objectFit: 'cover',
+            flexShrink: 0,
+            display: { xs: 'none', sm: 'block' }
+          }}
+        />
+      )}
+    </Box>
+  );
+};
+
+const SectionTitle = ({ children }) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+    <Box sx={{ width: 4, height: 28, bgcolor: 'primary.main', borderRadius: 1 }} />
+    <Typography variant="h5" fontWeight={700} color="primary.main">
+      {children}
+    </Typography>
   </Box>
 );
 
@@ -75,6 +443,8 @@ const Home = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, hasMore: false });
 
+  const goToArticle = (slug) => navigate(`/article/${slug}`);
+
   const getDisplayName = (item) => {
     if (!item) return '';
     if (typeof item.name === 'string') return item.name;
@@ -86,7 +456,6 @@ const Home = () => {
 
   const getLocationCoords = () => {
     if (coordinates) return coordinates;
-
     if (area?.center?.coordinates) {
       return { lng: area.center.coordinates[0], lat: area.center.coordinates[1] };
     }
@@ -147,7 +516,6 @@ const Home = () => {
         feedParams.longitude = loc.lng;
         feedParams.radiusKM = 50;
       }
-
       const articlesRes = await articlesApi.getFeed(feedParams);
       setArticles((prev) => [...prev, ...articlesRes.data.articles]);
       setPagination(articlesRes.data.pagination);
@@ -158,106 +526,9 @@ const Home = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
-
-  const ArticleCard = ({ article, featured = false }) => {
-    const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
-    const hasImage = !!article.featuredImage?.url;
-    return (
-      <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <CardActionArea onClick={() => navigate(`/article/${article.slug}`)}>
-          {hasImage && (
-            <Box sx={{ position: 'relative' }}>
-              <CardMedia
-                component="img"
-                height={featured ? 200 : 140}
-                image={article.featuredImage.url}
-                alt={article.title}
-                sx={{ objectFit: 'cover' }}
-              />
-              {hasVideo && <PlayBadgeOverlay />}
-            </Box>
-          )}
-          <CardContent sx={{ flexGrow: 1 }}>
-            {article.isBreaking && (
-              <Chip
-                label={t('breakingNews')}
-                color="error"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-            )}
-            <Typography
-              variant={featured ? 'h6' : 'subtitle1'}
-              fontWeight={600}
-              gutterBottom
-              sx={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical'
-              }}
-            >
-              {article.title}
-            </Typography>
-            {featured && article.summary && (
-              <Typography
-                variant="body2"
-                sx={{
-                  color: 'error.main',
-                  fontStyle: 'italic',
-                  fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
-                  fontSize: { xs: '1.05rem', sm: '1.15rem' },
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  mb: 1
-                }}
-              >
-                {`"${article.summary}"`}
-              </Typography>
-            )}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <TimeIcon fontSize="small" color="action" />
-                <Typography variant="caption" color="text.secondary">
-                  {article.readingTime} {t('minRead')}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <ViewIcon fontSize="small" color="action" />
-                <Typography variant="caption" color="text.secondary">
-                  {article.engagement?.views || 0}
-                </Typography>
-              </Box>
-            </Box>
-          </CardContent>
-        </CardActionArea>
-      </Card>
-    );
-  };
-
-  const SkeletonCard = ({ featured = false }) => (
-    <Card sx={{ height: '100%' }}>
-      <Skeleton variant="rectangular" height={featured ? 200 : 140} />
-      <CardContent>
-        <Skeleton variant="text" width="30%" height={24} />
-        <Skeleton variant="text" width="100%" height={32} />
-        <Skeleton variant="text" width="80%" height={32} />
-        {featured && <Skeleton variant="text" width="60%" />}
-      </CardContent>
-    </Card>
-  );
+  const heroArticle = articles[0];
+  const sideArticles = articles.slice(1, 3);
+  const listArticles = articles.slice(3);
 
   const homeSeoTitle =
     lang === 'te'
@@ -274,7 +545,7 @@ const Home = () => {
         : 'Latest breaking news in Telugu, Hindi and English. Local headlines from Andhra Pradesh, Telangana and across India.';
 
   return (
-    <Box sx={{ pb: 4 }}>
+    <Box sx={{ bgcolor: '#f8f9fc', pb: 4, minHeight: '100%' }}>
       <Seo
         title={homeSeoTitle}
         description={homeSeoDescription}
@@ -282,158 +553,137 @@ const Home = () => {
         lang={lang}
         jsonLd={buildWebSiteJsonLd()}
       />
-      {/* Trending Section */}
-      {trendingArticles.length > 0 && (
-        <Box sx={{ bgcolor: 'primary.dark', color: 'white', py: 2, mb: 3 }}>
-          <Container>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <TrendingIcon />
-              <Typography variant="h6" fontWeight={600}>
-                {t('trending')}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
-              {trendingArticles.map((article) => {
-                const trendingHasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
-                const trendingHasImage = !!article.featuredImage?.url;
-                return (
-                  <Card
-                    key={article._id}
-                    sx={{ minWidth: 280, maxWidth: 280, cursor: 'pointer' }}
-                    onClick={() => navigate(`/article/${article.slug}`)}
-                  >
-                    {trendingHasImage && (
-                      <Box sx={{ position: 'relative' }}>
-                        <CardMedia
-                          component="img"
-                          height={140}
-                          image={article.featuredImage.url}
-                          alt={article.title}
-                          sx={{ objectFit: 'cover' }}
-                        />
-                        {trendingHasVideo && <PlayBadgeOverlay />}
-                      </Box>
-                    )}
-                    <CardContent sx={{ p: 2 }}>
-                      <Typography
-                        variant="subtitle2"
-                        fontWeight={600}
-                        sx={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical'
-                        }}
-                      >
-                        {article.title}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatDate(article.publishedAt)}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </Box>
-          </Container>
-        </Box>
-      )}
 
-      <Container>
-        {/* Location Indicator */}
+      <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 } }}>
         {city && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <LocationIcon color="primary" fontSize="small" />
             <Typography variant="body2" color="text.secondary">
-              {t('latestNews')} {lang === 'hi' ? 'से' : lang === 'te' ? 'నుండి' : 'from'}{' '}
-              <strong>
-                {area ? getDisplayName(area) : getDisplayName(city)}
-              </strong>
+              {t('latestNews')}{' '}
+              {lang === 'hi' ? '—' : lang === 'te' ? '—' : '—'}{' '}
+              <strong>{area ? getDisplayName(area) : getDisplayName(city)}</strong>
             </Typography>
           </Box>
         )}
 
-        {/* Articles Grid */}
-        <Grid container spacing={3}>
-          {loading ? (
-            <>
+        {/* Featured hero grid */}
+        {loading ? (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={8}>
+              <Skeleton variant="rounded" sx={{ height: { xs: 280, md: 400 } }} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
+                <Skeleton variant="rounded" height={192} />
+                <Skeleton variant="rounded" height={192} />
+              </Box>
+            </Grid>
+          </Grid>
+        ) : articles.length > 0 ? (
+          <Grid container spacing={2} sx={{ mb: { xs: 3, md: 4 } }}>
+            {heroArticle && (
               <Grid item xs={12} md={8}>
-                <SkeletonCard featured />
+                <HeroFeaturedCard article={heroArticle} onNavigate={goToArticle} t={t} />
               </Grid>
+            )}
+            {sideArticles.length > 0 && (
               <Grid item xs={12} md={4}>
-                <Grid container spacing={2}>
-                  {[1, 2].map((i) => (
-                    <Grid item xs={12} key={i}>
-                      <SkeletonCard />
-                    </Grid>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'row', md: 'column' },
+                    gap: 2,
+                    height: { md: heroArticle ? 400 : 'auto' }
+                  }}
+                >
+                  {sideArticles.map((article) => (
+                    <HeroSideCard key={article._id} article={article} onNavigate={goToArticle} t={t} />
                   ))}
-                </Grid>
+                </Box>
               </Grid>
-              {[1, 2, 3, 4].map((i) => (
-                <Grid item xs={12} sm={6} md={3} key={i}>
-                  <SkeletonCard />
-                </Grid>
-              ))}
-            </>
-          ) : articles.length === 0 ? (
-            <Grid item xs={12}>
+            )}
+          </Grid>
+        ) : null}
+
+        {/* Feed + trending sidebar */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} lg={8}>
+            <SectionTitle>{t('latestNews')}</SectionTitle>
+
+            {loading ? (
+              <>
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} variant="rounded" height={110} sx={{ mb: 1.5 }} />
+                ))}
+              </>
+            ) : articles.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 8 }}>
                 <Typography variant="h6" color="text.secondary">
                   {t('noResults')}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {lang === 'hi' 
-                    ? 'इस क्षेत्र में अभी कोई समाचार नहीं है' 
-                    : 'No news available for this area yet'}
-                </Typography>
               </Box>
-            </Grid>
-          ) : (
-            <>
-              {/* Featured Article */}
-              {articles[0] && (
-                <Grid item xs={12} md={8}>
-                  <ArticleCard article={articles[0]} featured />
-                </Grid>
-              )}
-
-              {/* Side articles */}
-              <Grid item xs={12} md={4}>
-                <Grid container spacing={2}>
-                  {articles.slice(1, 3).map((article) => (
-                    <Grid item xs={12} key={article._id}>
-                      <ArticleCard article={article} />
-                    </Grid>
-                  ))}
-                </Grid>
-              </Grid>
-
-              {/* Rest of articles */}
-              {articles.slice(3).map((article) => (
-                <Grid item xs={12} sm={6} md={3} key={article._id}>
-                  <ArticleCard article={article} />
-                </Grid>
-              ))}
-
-              {/* View More Button */}
-              {pagination.hasMore && (
-                <Grid item xs={12}>
+            ) : (
+              <>
+                {listArticles.map((article) => (
+                  <ArticleListRow key={article._id} article={article} onNavigate={goToArticle} t={t} />
+                ))}
+                {pagination.hasMore && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
                     <Button
                       variant="outlined"
+                      color="primary"
                       size="large"
                       onClick={fetchMore}
                       disabled={loadingMore}
                       startIcon={loadingMore ? null : <ReadIcon />}
                     >
-                      {loadingMore ? t('loading') || 'Loading...' : t('viewMore') || 'View More'}
+                      {loadingMore ? t('loading') || 'Loading...' : t('readMore')}
                     </Button>
                   </Box>
-                </Grid>
+                )}
+              </>
+            )}
+          </Grid>
+
+          <Grid item xs={12} lg={4}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: '#fff',
+                position: { lg: 'sticky' },
+                top: { lg: 88 }
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <TrendingIcon sx={{ color: 'secondary.main' }} />
+                <Typography variant="h6" fontWeight={700} color="primary.main">
+                  {t('trendingNews')}
+                </Typography>
+              </Box>
+
+              {loading ? (
+                [1, 2, 3].map((i) => <Skeleton key={i} height={72} sx={{ my: 1 }} />)
+              ) : trendingArticles.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('noResults')}
+                </Typography>
+              ) : (
+                trendingArticles.map((article, index) => (
+                  <TrendingListItem
+                    key={article._id}
+                    article={article}
+                    rank={index + 1}
+                    onNavigate={goToArticle}
+                    t={t}
+                  />
+                ))
               )}
-            </>
-          )}
+            </Paper>
+          </Grid>
         </Grid>
       </Container>
     </Box>
