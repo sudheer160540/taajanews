@@ -53,7 +53,7 @@ async function markSourceComplete(sourceDoc, articleId) {
  * per Taaja News editorial rules. Anchor language from TELUGU_SOURCES / detect.
  */
 async function buildMultilingualFields(sourceDoc) {
-  const { title, summary, content } = await buildSourceArticleMultilingual({
+  const { title, summary, content, tags } = await buildSourceArticleMultilingual({
     title: sourceDoc.title,
     contentText: sourceDoc.contentText,
     source: sourceDoc.source
@@ -62,7 +62,8 @@ async function buildMultilingualFields(sourceDoc) {
   return {
     title: toMap(title),
     summary: toMap(summary),
-    content: toMap(content)
+    content: toMap(content),
+    tags: Array.isArray(tags) ? tags : []
   };
 }
 
@@ -102,7 +103,7 @@ const buildShortLinks = async (title, content) => {
 };
 
 async function createArticleFromSource(sourceDoc, authorId) {
-  const { title, summary, content } = await buildMultilingualFields(sourceDoc);
+  const { title, summary, content, tags } = await buildMultilingualFields(sourceDoc);
 
   // Dynamic identity: TJ-{nanoid}, shortId, slug from English headline (create only if missing)
   const { articleId, shortId, slug } = await ensureArticleIdentity(title, {});
@@ -126,7 +127,7 @@ async function createArticleFromSource(sourceDoc, authorId) {
       alt: 'default_breaking_news',
       caption: new Map()
     },
-    tags: [],
+    tags: tags || [],
     isFeatured: false,
     isBreaking: false,
     youtubeUrl: '',

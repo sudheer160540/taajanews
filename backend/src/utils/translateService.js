@@ -36,27 +36,91 @@ const SARVAM_TRANSLATE_LIMIT = 1000;
  */
 const NEWS_EDITORIAL_CORE_RULES = `
 EDITORIAL STANDARDS (apply to every language output):
-- The story has two parts: (1) "Super Lead" — brief lead summary; (2) "Detailed Story" — full report with sub-headings.
+- The story has two parts: (1) "Super Lead" — brief lead summary; (2) "Detailed Story" — full report.
+- Sub-headings are OPTIONAL. Add a sub-heading ONLY when the story is long and clearly covers multiple distinct points that benefit from separation. Short or single-topic stories must have NO sub-headings at all — write them as plain paragraphs only.
 - Inverted Pyramid: most critical and latest facts first; least important details last.
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
 - Honorifics/titles/suffixes are forbidden (e.g. Garu, Sri/Mr/श्री, Smt/Mrs/श्रीमति).
 - Do not use the word "and" or its equivalents (Telugu మరియు, Hindi और); use a comma (,) instead.
 - When a single digit appears, follow it with the written word in brackets (e.g. 5 (five), 9 (nine)).
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
-- Read the source first, then rewrite in fresh vocabulary and new sentence structures — zero plagiarism; do not copy phrases from the source.
+- Write without plagiarism: read the source first, then rewrite entirely in fresh vocabulary and new sentence structures. Do NOT copy phrases or sentences from the source.
 - Do not invent facts, names, dates, places, or quotes not supported by the source.
+
+FORMATTING (STRICT — plain text only):
+- Output PLAIN TEXT. NEVER use Markdown or any formatting symbols: no #, ##, ###, *, **, _, backticks, >, or bullet characters anywhere.
+- For the Detailed Story, start a new paragraph every four to five sentences (depending on the need). Keep paragraphs readable — never write one long block of text.
+- If (and only if) a sub-heading is genuinely needed, write it as a short plain-text line on its own, with ONE blank line before it and ONE blank line after it, and no symbol prefix. Do not force sub-headings onto short stories.
+- Separate paragraphs with a single blank line. Do not use more than one blank line in a row.
+- Do not use repeated punctuation such as ".." or "...". End sentences with a single period.
 `.trim();
 
 const buildNewsGenerationSystemPrompt = () =>
   `You are a senior news editor for Taaja News. You rewrite scraped articles into publish-ready copy.
 ${NEWS_EDITORIAL_CORE_RULES}
-Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). No markdown code fences.`;
+Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
   `You are a professional news translator for Taaja News. Translate the following ${fieldLabel} into ${targetLangName}.
 ${NEWS_EDITORIAL_CORE_RULES}
-Preserve the inverted-pyramid structure, sub-headings in the Detailed Story (use plain lines ending with a colon or short ALL-CAPS labels), and factual meaning.
-Return ONLY the translated text in ${targetLangName}, nothing else.`;
+Preserve the inverted-pyramid structure and factual meaning. Keep the same paragraph and sub-heading structure as the source: if the source has sub-headings, keep them as plain-text lines on their own with a blank line before and after; if it has none, do NOT add any.
+Return ONLY the translated text in ${targetLangName} as PLAIN TEXT, nothing else.`;
+
+/**
+ * Strip Markdown / stray formatting from AI-generated news text and normalize
+ * spacing. Sub-headings are kept on their own line with a blank line before and
+ * after so the body reads cleanly without "###", "**", or "..".
+ */
+function cleanNewsText(input) {
+  let text = String(input || '');
+  if (!text.trim()) return '';
+
+  // Normalize line endings, drop code fences.
+  text = text.replace(/\r\n?/g, '\n');
+  text = text.replace(/```[a-zA-Z0-9]*\n?/g, '').replace(/```/g, '');
+
+  const lines = text.split('\n');
+  const out = [];
+
+  for (const rawLine of lines) {
+    let line = rawLine.trim();
+
+    // Heading line: leading #'s (and optional trailing #'s). Keep the text only.
+    let isHeading = false;
+    const headingMatch = line.match(/^#{1,6}\s*(.+?)\s*#*$/);
+    if (headingMatch) {
+      line = headingMatch[1].trim();
+      isHeading = true;
+    }
+
+    // Remove paired emphasis/code markers, keeping the inner text.
+    line = line
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/`([^`]*)`/g, '$1');
+
+    // Remove markdown bullet / blockquote prefixes.
+    line = line.replace(/^\s*(?:[-•>]|\*)\s+/, '');
+
+    // Strip any leftover stray markdown symbols.
+    line = line.replace(/[*`#]+/g, '');
+
+    // Collapse repeated dots and excess inline whitespace.
+    line = line.replace(/\.{2,}/g, '.').replace(/[ \t]{2,}/g, ' ').trim();
+
+    if (isHeading && line) {
+      if (out.length && out[out.length - 1] !== '') out.push('');
+      out.push(line);
+      out.push('');
+    } else {
+      out.push(line);
+    }
+  }
+
+  // Collapse 3+ newlines down to a single blank line.
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
 function chunkText(text, maxLen) {
   if (!text || text.length <= maxLen) return [text];
@@ -271,9 +335,25 @@ const truncateAtSentence = (text, maxChars) => {
 };
 
 const truncateToWordCount = (text, maxWords) => {
-  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
-  if (words.length <= maxWords) return words.join(' ');
-  return words.slice(0, maxWords).join(' ');
+  const str = String(text || '').trim();
+  if (!str) return '';
+
+  const words = str.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return str; // keep paragraph/heading line breaks
+
+  // Walk the original string so newlines and spacing are preserved on truncation.
+  const wordRe = /\S+\s*/g;
+  let count = 0;
+  let end = str.length;
+  let match;
+  while ((match = wordRe.exec(str)) !== null) {
+    count++;
+    if (count === maxWords) {
+      end = wordRe.lastIndex;
+      break;
+    }
+  }
+  return str.slice(0, end).trim();
 };
 
 const parseJsonObject = (raw) => {
@@ -315,7 +395,9 @@ async function generateSummaryAndContent(rawText, anchorLang) {
           `2) "content" — DETAILED STORY:\n` +
           `   - ${detailed.minWords} to ${detailed.maxWords} words.\n` +
           `   - Same 5W-1H and inverted pyramid; include background/context so readers understand linked past events.\n` +
-          `   - Engaging, not overly terse; include sub-headings (short labels on their own line) to improve readability.\n` +
+          `   - Engaging, not overly terse. Write without plagiarism (fresh wording, do not copy source phrases).\n` +
+          `   - Start a new paragraph every four to five sentences (depending on the need); never write one long block.\n` +
+          `   - Add a sub-heading (a short plain-text label on its own line) ONLY if the story is long and covers multiple distinct points; for short or single-topic stories use plain paragraphs with NO sub-headings.\n` +
           `   - When one event follows another, briefly explain prior context.\n\n` +
           `Return ONLY: {"summary":"...","content":"..."}\n\n` +
           `Source article:\n\n${trimmed}`
@@ -337,15 +419,84 @@ async function generateSummaryAndContent(rawText, anchorLang) {
     throw new Error('Failed to parse summary/content JSON from OpenAI');
   }
 
-  let summary = String(parsed.summary || '').trim();
-  let content = String(parsed.content || '').trim();
+  let summary = cleanNewsText(parsed.summary);
+  let content = cleanNewsText(parsed.content);
 
   if (!summary) throw new Error('Generated Super Lead (summary) is empty');
   if (!content) throw new Error('Generated Detailed Story (content) is empty');
 
-  content = truncateToWordCount(content, detailed.maxWords);
+  content = cleanNewsText(truncateToWordCount(content, detailed.maxWords));
 
   return { summary, content };
+}
+
+/** Convert a free-form tag into a lowercase, hyphenated slug (e.g. "HITEC City" → "hitec-city"). */
+const slugifyTag = (raw) =>
+  String(raw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '') // keep letters/numbers (any script), spaces, hyphens
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/**
+ * Generate 4–5 concise topic tags (lowercase slugs) from article text using OpenAI.
+ * Tags cover key people, places, organizations, and topics. Returns [] on failure
+ * so tag generation never blocks article creation.
+ */
+async function generateTags(text, { min = 4, max = 5 } = {}) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return [];
+
+  try {
+    const completion = await getOpenAI().chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a news SEO editor. Extract concise topic tags from an article: key people, places, organizations, and themes. ' +
+            'Tags must be in lowercase English, 1 to 3 words each. ' +
+            'Return ONLY valid JSON: {"tags": ["tag one", "tag two", ...]}. No markdown.'
+        },
+        {
+          role: 'user',
+          content:
+            `Generate ${min} to ${max} relevant tags for the following article. ` +
+            `Return ONLY {"tags": [...]}.\n\n${trimmed}`
+        }
+      ],
+      temperature: 0.3,
+      response_format: { type: 'json_object' }
+    });
+
+    const responseText = completion.choices[0]?.message?.content?.trim();
+    if (!responseText) return [];
+
+    let parsed;
+    try {
+      parsed = parseJsonObject(responseText);
+    } catch {
+      return [];
+    }
+
+    const rawTags = Array.isArray(parsed?.tags) ? parsed.tags : [];
+    const seen = new Set();
+    const tags = [];
+    for (const raw of rawTags) {
+      const slug = slugifyTag(raw);
+      if (slug && !seen.has(slug)) {
+        seen.add(slug);
+        tags.push(slug);
+      }
+      if (tags.length >= max) break;
+    }
+    return tags;
+  } catch (err) {
+    console.error('[translate] Tag generation failed:', err.message);
+    return [];
+  }
 }
 
 /**
@@ -353,7 +504,14 @@ async function generateSummaryAndContent(rawText, anchorLang) {
  * @param {'title'|'summary'|'content'} [fieldType]
  */
 async function toTrilingual(text, anchorLang, fieldType = 'content') {
-  const trimmed = String(text || '').trim();
+  // Titles are single-line; keep them clean but without forced heading spacing.
+  const isTitle = fieldType === 'title';
+  const clean = (value) => {
+    const cleaned = cleanNewsText(value);
+    return isTitle ? cleaned.replace(/\s*\n\s*/g, ' ').trim() : cleaned;
+  };
+
+  const trimmed = clean(text);
   const result = { te: '', en: '', hi: '' };
   if (!trimmed) return result;
 
@@ -368,7 +526,7 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
   const pairs = await Promise.all(
     others.map(async (lang) => [
       lang,
-      await translateField(trimmed, anchorLang, lang, translateOptions)
+      clean(await translateField(trimmed, anchorLang, lang, translateOptions))
     ])
   );
   for (const [lang, translated] of pairs) {
@@ -397,13 +555,24 @@ async function buildSourceArticleMultilingual({ title, contentText, source }) {
     toTrilingual(content, anchorLang, 'content')
   ]);
 
-  return { title: titleMap, summary: summaryMap, content: contentMap, anchorLang };
+  // Generate tags from English text when available (slugs read best in English),
+  // falling back to the anchor-language headline + story.
+  const tagSourceText = [
+    titleMap.en || titleMap[anchorLang],
+    contentMap.en || contentMap[anchorLang]
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const tags = await generateTags(tagSourceText);
+
+  return { title: titleMap, summary: summaryMap, content: contentMap, tags, anchorLang };
 }
 
 module.exports = {
   SUPPORTED_LANGUAGES,
   ALL_LANG_CODES,
   chunkText,
+  cleanNewsText,
   detectSourceLanguage,
   translateField,
   twoStepTranslateField,
@@ -413,6 +582,8 @@ module.exports = {
   getEnglishSourceSet,
   resolveAnchorLanguage,
   generateSummaryAndContent,
+  generateTags,
+  slugifyTag,
   toTrilingual,
   buildSourceArticleMultilingual,
   NEWS_EDITORIAL_CORE_RULES,
