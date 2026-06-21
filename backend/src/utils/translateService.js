@@ -42,7 +42,7 @@ EDITORIAL STANDARDS (apply to every language output):
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
 - Honorifics/titles/suffixes are forbidden (e.g. Garu, Sri/Mr/श्री, Smt/Mrs/श्रीमति).
 - Do not use the word "and" or its equivalents (Telugu మరియు, Hindi और); use a comma (,) instead.
-- When a single digit appears, follow it with the written word in brackets (e.g. 5 (five), 9 (nine)).
+- Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number, and do not repeat the number in words in any language.
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
 - Write without plagiarism: read the source first, then rewrite entirely in fresh vocabulary and new sentence structures. Do NOT copy phrases or sentences from the source.
 - Do not invent facts, names, dates, places, or quotes not supported by the source.
