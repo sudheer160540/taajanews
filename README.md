@@ -16,6 +16,7 @@ A comprehensive full-stack news application built with the MERN stack, featuring
 ## Tech Stack
 
 ### Backend
+
 - Node.js + Express.js
 - MongoDB + Mongoose
 - JWT Authentication
@@ -23,6 +24,7 @@ A comprehensive full-stack news application built with the MERN stack, featuring
 - Joi Validation
 
 ### Frontend
+
 - React 18 + Vite
 - Material UI (MUI) v5
 - React Router v6
@@ -66,6 +68,7 @@ taaja_news/
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js >= 18.0.0
 - MongoDB (Atlas or local)
 - Azure Storage Account (for media uploads)
@@ -73,12 +76,14 @@ taaja_news/
 ### Installation
 
 1. Clone the repository
+
 ```bash
 git clone <repository-url>
 cd taaja_news
 ```
 
 2. Install dependencies
+
 ```bash
 npm run install:all
 # or manually:
@@ -90,6 +95,7 @@ cd ../frontend && npm install
 3. Configure environment variables
 
 Create `backend/.env` file:
+
 ```env
 # Database
 MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net/taajanews
@@ -110,16 +116,19 @@ FRONTEND_URL=http://localhost:5173
 ```
 
 4. Seed the database
+
 ```bash
 npm run seed
 ```
 
 This creates:
+
 - Admin user: `admin@taajanews.com` / `admin123`
 - Reporter user: `reporter@taajanews.com` / `reporter123`
 - Categories, cities, areas, and sample articles
 
 5. Start development servers
+
 ```bash
 npm run dev
 ```
@@ -129,12 +138,14 @@ The backend runs on `http://localhost:5000` and frontend on `http://localhost:51
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Get current user
 
 ### Articles
+
 - `GET /api/articles` - Get published articles (with filtering)
 - `GET /api/articles/slug/:slug` - Get article by slug
 - `GET /api/articles/trending` - Get trending articles
@@ -143,15 +154,18 @@ The backend runs on `http://localhost:5000` and frontend on `http://localhost:51
 - `PUT /api/articles/:id` - Update article (Reporter+)
 
 ### Categories
+
 - `GET /api/categories` - Get all categories
 - `GET /api/categories/tree` - Get category hierarchy
 
 ### Locations
+
 - `GET /api/locations/cities` - Get all cities
 - `GET /api/locations/areas` - Get areas (by city)
 - `GET /api/locations/cities/nearby` - Find nearby cities
 
 ### Engagement
+
 - `POST /api/engagement/view/:articleId` - Record view
 - `POST /api/engagement/like/:articleId` - Like/unlike
 - `POST /api/engagement/bookmark/:articleId` - Bookmark
@@ -159,16 +173,20 @@ The backend runs on `http://localhost:5000` and frontend on `http://localhost:51
 - `POST /api/engagement/comments/:articleId` - Add comment
 
 ### Upload
+
 - `POST /api/upload/sas-token` - Get SAS token for upload
 - `POST /api/upload/sas-tokens` - Batch SAS tokens
 
 ## Key Features Explained
 
 ### Page-Flip Reader
+
 The application uses `react-pageflip` to create an immersive newspaper-like reading experience. Articles are split into pages with realistic 3D page-turn animations.
 
 ### Multilingual Content
+
 All content (articles, categories, locations) is stored with both English and Hindi translations:
+
 ```javascript
 {
   title: {
@@ -179,20 +197,25 @@ All content (articles, categories, locations) is stored with both English and Hi
 ```
 
 ### Geospatial Queries
+
 MongoDB 2dsphere indexes enable location-based news filtering:
+
 ```javascript
-Article.findNearby([longitude, latitude], maxDistanceMeters)
+Article.findNearby([longitude, latitude], maxDistanceMeters);
 ```
 
 ### Atomic Engagement
+
 View counts and likes use MongoDB's atomic `$inc` operator to prevent race conditions:
+
 ```javascript
-Article.findByIdAndUpdate(id, { $inc: { 'engagement.likes': 1 } })
+Article.findByIdAndUpdate(id, { $inc: { "engagement.likes": 1 } });
 ```
 
 ## Deployment
 
 ### Azure Deployment (Recommended)
+
 1. Create Azure Container Apps for frontend and backend
 2. Set up MongoDB Atlas cluster
 3. Configure Azure Blob Storage
@@ -200,6 +223,7 @@ Article.findByIdAndUpdate(id, { $inc: { 'engagement.likes': 1 } })
 5. Deploy using Azure Developer CLI (`azd`)
 
 ### Manual Deployment
+
 1. Build frontend: `cd frontend && npm run build`
 2. Serve static files from `frontend/dist`
 3. Run backend: `cd backend && npm start`
@@ -215,6 +239,8 @@ Article.findByIdAndUpdate(id, { $inc: { 'engagement.likes': 1 } })
 ## License
 
 MIT License - See LICENSE file for details.
+
+Adding Whatsapp conersion
 
 ---
 
