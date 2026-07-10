@@ -21,7 +21,11 @@ import {
   CircularProgress,
   FormControlLabel,
   Checkbox,
-  Autocomplete as MuiAutocomplete
+  Autocomplete as MuiAutocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -32,9 +36,10 @@ import {
   Star as StarIcon,
   Translate as TranslateIcon,
   LocationOn as LocationIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  AutoAwesome as AutoAwesomeIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, uploadApi, translateApi } from '../../services/api';
+import { articlesApi, categoriesApi, uploadApi, translateApi, paraphraseApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -85,6 +90,17 @@ const ArticleEditor = () => {
   const [tagInput, setTagInput] = useState('');
   const [uploading, setUploading] = useState(false);
   const [translating, setTranslating] = useState(false);
+
+  // AI paraphrase wizard (Claude): 0 = paste, 1 = edit + photo, 2 = preview
+  const [paraphraseOpen, setParaphraseOpen] = useState(false);
+  const [paraphraseStep, setParaphraseStep] = useState(0);
+  const [paraphraseInput, setParaphraseInput] = useState('');
+  const [paraphrasing, setParaphrasing] = useState(false);
+  const [paraphraseError, setParaphraseError] = useState(null);
+  const [paraphraseDraft, setParaphraseDraft] = useState(null);
+  const [paraphraseLangTab, setParaphraseLangTab] = useState(0);
+  const [paraphraseImage, setParaphraseImage] = useState(null);
+  const [paraphraseUploadingImage, setParaphraseUploadingImage] = useState(false);
 
   useEffect(() => {
     initializeEditor();
@@ -408,6 +424,89 @@ const ArticleEditor = () => {
     }
   };
 
+  const PARAPHRASE_LANGS = ['te', 'hi', 'en'];
+  const PARAPHRASE_LANG_LABELS = { te: 'Telugu', hi: 'Hindi', en: 'English' };
+
+  const openParaphraseDialog = () => {
+    setParaphraseStep(0);
+    setParaphraseInput('');
+    setParaphraseError(null);
+    setParaphraseDraft(null);
+    setParaphraseLangTab(0);
+    setParaphraseImage(null);
+    setParaphraseOpen(true);
+  };
+
+  // Step 1 -> 2: generate, then move to the edit + photo step
+  const handleGenerateParaphrase = async () => {
+    if (!paraphraseInput.trim()) {
+      setParaphraseError('Paste an article to paraphrase first');
+      return;
+    }
+    setParaphrasing(true);
+    setParaphraseError(null);
+    try {
+      const response = await paraphraseApi.paraphrase(paraphraseInput.trim());
+      setParaphraseDraft(response.data.paraphrased);
+      setParaphraseLangTab(0);
+      setParaphraseStep(1);
+    } catch (err) {
+      setParaphraseError(err?.response?.data?.error || 'Failed to paraphrase text');
+    } finally {
+      setParaphrasing(false);
+    }
+  };
+
+  const handleParaphraseFieldChange = (lang, field, value) => {
+    setParaphraseDraft(prev => ({
+      ...prev,
+      [lang]: { ...prev[lang], [field]: value }
+    }));
+  };
+
+  // Reuses the same Azure-blob upload endpoint as the Featured Image field
+  const handleParaphraseImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setParaphraseUploadingImage(true);
+    setParaphraseError(null);
+    try {
+      const response = await uploadApi.uploadFile(file);
+      setParaphraseImage({ url: response.data.blobUrl, alt: file.name });
+    } catch (err) {
+      setParaphraseError(err?.response?.data?.error || 'Failed to upload photo');
+    } finally {
+      setParaphraseUploadingImage(false);
+    }
+  };
+
+  // Step 2 -> 3: preview step just switches panels, content is already in paraphraseDraft
+  const handlePreviewParaphrase = () => setParaphraseStep(2);
+
+  // Final step: writes Title/Summary/Content for every language + the photo into the real article form
+  const handleApplyParaphrase = () => {
+    if (!paraphraseDraft) return;
+    setArticle(prev => {
+      const updated = { title: { ...prev.title }, summary: { ...prev.summary }, content: { ...prev.content } };
+      PARAPHRASE_LANGS.forEach(lang => {
+        const segment = paraphraseDraft[lang];
+        if (!segment) return;
+        updated.title[lang] = segment.heading;
+        updated.summary[lang] = segment.superlead;
+        updated.content[lang] = segment.fullNews;
+      });
+      return {
+        ...prev,
+        ...updated,
+        featuredImage: paraphraseImage || prev.featuredImage
+      };
+    });
+
+    setSuccess('AI paraphrase applied to Title, Summary, Content and Featured Image');
+    setParaphraseOpen(false);
+  };
+
   // Validate that the URL is a well-formed YouTube link (allow empty since field is optional)
   const isValidYoutubeUrl = (url) => {
     if (!url) return true;
@@ -541,6 +640,15 @@ const ArticleEditor = () => {
         <Box sx={{ flexGrow: 1 }} />
         {!isReporterLockedOut && (
           <>
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={openParaphraseDialog}
+              disabled={saving}
+            >
+              Paraphrase with AI
+            </Button>
             <Button
               variant="outlined"
               startIcon={<SaveIcon />}
@@ -1006,6 +1114,166 @@ const ArticleEditor = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* AI Paraphrase Wizard (Claude): paste -> edit + photo -> preview -> apply */}
+      <Dialog open={paraphraseOpen} onClose={() => setParaphraseOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Paraphrase with AI
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Step {paraphraseStep + 1} of 3 — {['Paste article', 'Edit & add photo', 'Preview'][paraphraseStep]}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {paraphraseError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setParaphraseError(null)}>
+              {paraphraseError}
+            </Alert>
+          )}
+
+          {/* Step 1: paste */}
+          {paraphraseStep === 0 && (
+            <TextField
+              fullWidth
+              multiline
+              rows={10}
+              label="Paste the source article text"
+              value={paraphraseInput}
+              onChange={(e) => setParaphraseInput(e.target.value)}
+              disabled={paraphrasing}
+            />
+          )}
+
+          {/* Step 2: edit fields per language + photo */}
+          {paraphraseStep === 1 && paraphraseDraft && (
+            <Box>
+              <Tabs value={paraphraseLangTab} onChange={(_, v) => setParaphraseLangTab(v)} sx={{ mb: 2 }}>
+                {PARAPHRASE_LANGS.map(lang => (
+                  <Tab key={lang} label={PARAPHRASE_LANG_LABELS[lang]} />
+                ))}
+              </Tabs>
+
+              {(() => {
+                const lang = PARAPHRASE_LANGS[paraphraseLangTab];
+                const segment = paraphraseDraft[lang] || { heading: '', superlead: '', fullNews: '' };
+                return (
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="Heading"
+                      value={segment.heading}
+                      onChange={(e) => handleParaphraseFieldChange(lang, 'heading', e.target.value)}
+                      margin="dense"
+                      inputProps={{ maxLength: 200 }}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Superlead"
+                      value={segment.superlead}
+                      onChange={(e) => handleParaphraseFieldChange(lang, 'superlead', e.target.value)}
+                      margin="dense"
+                      multiline
+                      rows={2}
+                      inputProps={{ maxLength: 500 }}
+                      helperText={`${segment.superlead.length} / 500`}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Full Story"
+                      value={segment.fullNews}
+                      onChange={(e) => handleParaphraseFieldChange(lang, 'fullNews', e.target.value)}
+                      margin="dense"
+                      multiline
+                      rows={8}
+                      inputProps={{ maxLength: 10000 }}
+                    />
+                  </Box>
+                );
+              })()}
+
+              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Photo (used as Featured Image)</Typography>
+              {paraphraseImage ? (
+                <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                  <img src={paraphraseImage.url} alt="" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
+                  <IconButton
+                    size="small"
+                    sx={{ position: 'absolute', top: 4, right: 4, bgcolor: 'white' }}
+                    onClick={() => setParaphraseImage(null)}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ) : (
+                <Button
+                  variant="outlined"
+                  component="label"
+                  startIcon={paraphraseUploadingImage ? <CircularProgress size={20} /> : <UploadIcon />}
+                  disabled={paraphraseUploadingImage}
+                >
+                  {paraphraseUploadingImage ? 'Uploading...' : 'Add Photo'}
+                  <input type="file" hidden accept="image/*" onChange={handleParaphraseImageUpload} />
+                </Button>
+              )}
+            </Box>
+          )}
+
+          {/* Step 3: preview */}
+          {paraphraseStep === 2 && paraphraseDraft && (
+            <Box>
+              <Tabs value={paraphraseLangTab} onChange={(_, v) => setParaphraseLangTab(v)} sx={{ mb: 2 }}>
+                {PARAPHRASE_LANGS.map(lang => (
+                  <Tab key={lang} label={PARAPHRASE_LANG_LABELS[lang]} />
+                ))}
+              </Tabs>
+              {(() => {
+                const lang = PARAPHRASE_LANGS[paraphraseLangTab];
+                const segment = paraphraseDraft[lang] || { heading: '', superlead: '', fullNews: '' };
+                return (
+                  <Box>
+                    <Typography variant="h5" fontWeight={700} gutterBottom>{segment.heading}</Typography>
+                    {paraphraseImage && (
+                      <img
+                        src={paraphraseImage.url}
+                        alt=""
+                        style={{ width: '100%', maxHeight: 300, objectFit: 'cover', borderRadius: 8, marginBottom: 16 }}
+                      />
+                    )}
+                    <Typography variant="subtitle1" color="text.secondary" gutterBottom>{segment.superlead}</Typography>
+                    <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>{segment.fullNews}</Typography>
+                  </Box>
+                );
+              })()}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setParaphraseOpen(false)} disabled={paraphrasing}>Cancel</Button>
+
+          {paraphraseStep === 0 && (
+            <Button
+              variant="contained"
+              startIcon={paraphrasing ? <CircularProgress size={20} /> : <AutoAwesomeIcon />}
+              onClick={handleGenerateParaphrase}
+              disabled={paraphrasing}
+            >
+              {paraphrasing ? 'Paraphrasing...' : 'Paraphrase'}
+            </Button>
+          )}
+
+          {paraphraseStep === 1 && (
+            <>
+              <Button onClick={() => setParaphraseStep(0)}>Back</Button>
+              <Button variant="contained" onClick={handlePreviewParaphrase}>Final Preview</Button>
+            </>
+          )}
+
+          {paraphraseStep === 2 && (
+            <>
+              <Button onClick={() => setParaphraseStep(1)}>Back to Edit</Button>
+              <Button variant="contained" onClick={handleApplyParaphrase}>Apply to Article</Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

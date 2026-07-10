@@ -139,6 +139,10 @@ export const translateApi = {
   translate: (data) => api.post('/translate', data)
 };
 
+export const paraphraseApi = {
+  paraphrase: (text) => api.post('/paraphrase', { text })
+};
+
 export const promotionsApi = {
   getAll: (params) => api.get('/promotions/manage/list', { params }),
   getById: (id) => api.get(`/promotions/${id}`),

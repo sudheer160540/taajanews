@@ -634,16 +634,21 @@ const seedDatabase = async () => {
   }
 };
 
-// Run seeding
-const runSeed = async () => {
-  await connectDB();
-  await seedDatabase();
-  await mongoose.connection.close();
-  console.log('\nDatabase connection closed');
-  process.exit(0);
-};
+module.exports = { seedDatabase };
 
-runSeed().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+// Run seeding (only when invoked directly, e.g. `npm run seed` — not when
+// required as a module by config/db.js's in-memory-Mongo fallback)
+if (require.main === module) {
+  const runSeed = async () => {
+    await connectDB();
+    await seedDatabase();
+    await mongoose.connection.close();
+    console.log('\nDatabase connection closed');
+    process.exit(0);
+  };
+
+  runSeed().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}
