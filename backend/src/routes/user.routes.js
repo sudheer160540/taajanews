@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
-const { protect, adminOnly, authorize } = require('../middleware/auth');
+const { protect, adminOnly, authorize, reporterOrAdmin } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
 // ─────────────────────────────────────────────
@@ -50,6 +50,32 @@ router.get('/', protect, adminOnly, async (req, res) => {
 // ─────────────────────────────────────────────
 //  STATIC PATHS  (must come before /:id)
 // ─────────────────────────────────────────────
+
+// Active editorial accounts available for article attribution.
+router.get('/article-authors', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const search = String(req.query.search || '').trim();
+    const query = { role: { $ne: 'user' }, isActive: true };
+
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { name: new RegExp(escapedSearch, 'i') },
+        { email: new RegExp(escapedSearch, 'i') }
+      ];
+    }
+
+    const users = await User.find(query)
+      .select('name email avatar role')
+      .sort({ name: 1 })
+      .lean();
+
+    res.json({ users });
+  } catch (error) {
+    console.error('Get article authors error:', error);
+    res.status(500).json({ error: 'Failed to fetch article authors' });
+  }
+});
 
 // @route   GET /api/users/reporters
 // @desc    Get all reporters

@@ -126,6 +126,7 @@ export const authApi = {
 
 export const usersApi = {
   getAll: (params) => api.get('/users', { params }),
+  getArticleAuthors: (params) => api.get('/users/article-authors', { params }),
   updateProfile: (data) => api.put('/users/profile', data),
   updatePreferences: (data) => api.put('/users/preferences', data),
   updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),

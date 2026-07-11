@@ -30,22 +30,82 @@ const SARVAM_LANG_CODES = {
 const SARVAM_API_URL = 'https://api.sarvam.ai';
 const SARVAM_TRANSLATE_LIMIT = 1000;
 
+// Google Gemini (Generative Language API). Model is configurable via GEMINI_MODEL.
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const getGeminiModel = () => process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Retry an async API call on rate limits (429), transient 5xx, and network
+ * errors, using exponential backoff and honoring a Retry-After header.
+ */
+async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API request' } = {}) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.response?.status;
+      // A per-day quota (limit resets in hours) will not recover via short backoff,
+      // so don't waste retries on it.
+      const bodyStr = JSON.stringify(err?.response?.data || '');
+      const isPerDayQuota = status === 429 && /PerDay|limit:\s*0/.test(bodyStr);
+      const isRetriable =
+        !isPerDayQuota &&
+        (status === 429 ||
+          (typeof status === 'number' && status >= 500 && status < 600) ||
+          ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(err?.code));
+
+      if (!isRetriable || attempt >= retries) throw err;
+
+      const retryAfterSec = Number(err?.response?.headers?.['retry-after']);
+      const delay =
+        Number.isFinite(retryAfterSec) && retryAfterSec > 0
+          ? retryAfterSec * 1000
+          : baseDelayMs * 2 ** attempt;
+
+      attempt += 1;
+      console.warn(`[translate] ${label} failed (${status || err?.code}); retry ${attempt}/${retries} in ${delay}ms`);
+      await sleep(delay);
+    }
+  }
+}
+
 /**
  * Taaja News editorial standards (Super Lead + Detailed Story).
  * Used for source-article generation and news-mode translation.
  */
+const NEWS_EDITORIAL_PERSONA =
+  'You are a highly creative, professional, elite Short-News Journalist for the TAAJA News App. ' +
+  'You transform raw news data, scraped feeds, or breaking items into professional short news stories. ' +
+  'You write with a neutral, journalistic, professional tone, completely avoiding sensationalism while keeping the content highly engaging.';
+
 const NEWS_EDITORIAL_CORE_RULES = `
 EDITORIAL STANDARDS (apply to every language output):
 - The story has two parts: (1) "Super Lead" — brief lead summary; (2) "Detailed Story" — full report.
 - Sub-headings are OPTIONAL. Add a sub-heading ONLY when the story is long and clearly covers multiple distinct points that benefit from separation. Short or single-topic stories must have NO sub-headings at all — write them as plain paragraphs only.
 - Inverted Pyramid: most critical and latest facts first; least important details last.
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
-- Honorifics/titles/suffixes are forbidden (e.g. Garu, Sri/Mr/श्री, Smt/Mrs/श्रीमति).
-- Do not use the word "and" or its equivalents (Telugu మరియు, Hindi और); use a comma (,) instead.
-- Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number, and do not repeat the number in words in any language.
+- Complete plagiarism-free rewrite: read the source fully, then narrate a brand-new story. Do NOT reuse the source's sentence structure or vocabulary. Ensure zero lexical overlap while keeping 100% factual accuracy. No copy-pasting of sentences.
+- Use ACTIVE VOICE.
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
-- Write without plagiarism: read the source first, then rewrite entirely in fresh vocabulary and new sentence structures. Do NOT copy phrases or sentences from the source.
+- NEVER use the word "and" (or "మరియు" / "और" / "maruyu") anywhere in any language. Always use a comma (,) to separate items, ideas, or clauses.
+- No honorifics, titles, or suffixes next to names of politicians, celebrities, or any individuals (e.g. NEVER use Garu, Sri, Mr., Mrs., श्री, श्रीमति, Honorable, or official titles like Minister). Use direct names only.
+- Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number, and do not repeat the number in words in any language.
 - Do not invent facts, names, dates, places, or quotes not supported by the source.
+
+CHARACTER & SPACE CONSTRAINTS:
+- The Super Lead is strictly restricted to 500 characters. To keep within this limit in English, always use short forms: "CPS" (Contributory Pension Scheme), "Govt." (Government), "EHS" (Employees Health Scheme), "DA" (Dearness Allowance).
+
+LANGUAGE & TRANSLATION SPECIFICS:
+- Telugu: always refer to and compare animals/birds using the feminine gender (జంతువులు/పక్షులను ఆడ జాతిగా, స్త్రీలింగంలో సంబోధించాలి).
+- Hindi: instead of the word "maruyu"/"और", always use a comma (,).
+- Hindi specific spellings (use exactly):
+  * Racha Konda → "राचाकोंडा" (never रचाकोंडा)
+  * Kothagudem → "कोत्तागुडेम"
+  * Jadcharla → "जडचर्ला" (never जर्चरला)
+  * Bandi Sanjay → "Bandi Sanjay (बंडिि संजय)" (never बंदी संजय)
 
 FORMATTING (STRICT — plain text only):
 - Output PLAIN TEXT. NEVER use Markdown or any formatting symbols: no #, ##, ###, *, **, _, backticks, >, or bullet characters anywhere.
@@ -56,12 +116,13 @@ FORMATTING (STRICT — plain text only):
 `.trim();
 
 const buildNewsGenerationSystemPrompt = () =>
-  `You are a senior news editor for Taaja News. You rewrite scraped articles into publish-ready copy.
+  `${NEWS_EDITORIAL_PERSONA}
 ${NEWS_EDITORIAL_CORE_RULES}
 Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
-  `You are a professional news translator for Taaja News. Translate the following ${fieldLabel} into ${targetLangName}.
+  `${NEWS_EDITORIAL_PERSONA}
+Translate/adapt the following ${fieldLabel} into ${targetLangName}, applying ALL rules below to the ${targetLangName} output.
 ${NEWS_EDITORIAL_CORE_RULES}
 Preserve the inverted-pyramid structure and factual meaning. Keep the same paragraph and sub-heading structure as the source: if the source has sub-headings, keep them as plain-text lines on their own with a blank line before and after; if it has none, do NOT add any.
 Return ONLY the translated text in ${targetLangName} as PLAIN TEXT, nothing else.`;
@@ -210,16 +271,103 @@ async function openaiTranslate(text, targetLangName, options = {}) {
 }
 
 /**
+ * Low-level Gemini call. Sends a system instruction + user prompt and returns
+ * the model's text output. Set `json: true` to request a JSON response.
+ */
+async function geminiGenerateText(systemContent, userContent, { temperature = 0.3, json = false } = {}) {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured');
+  }
+
+  const generationConfig = { temperature };
+  if (json) generationConfig.responseMimeType = 'application/json';
+
+  const model = getGeminiModel();
+  let data;
+  try {
+    ({ data } = await withRetry(
+      () =>
+        axios.post(
+          `${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`,
+          {
+            systemInstruction: { parts: [{ text: systemContent }] },
+            contents: [{ role: 'user', parts: [{ text: userContent }] }],
+            generationConfig
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY
+            },
+            timeout: 60000
+          }
+        ),
+      { label: `Gemini ${model}` }
+    ));
+  } catch (err) {
+    // Surface the real Gemini reason (e.g. quota exhausted) instead of a generic
+    // "Request failed with status code 429".
+    const apiMsg = err?.response?.data?.error?.message;
+    if (apiMsg) {
+      throw new Error(`Gemini API error (${err.response.status}, model ${model}): ${apiMsg}`);
+    }
+    throw err;
+  }
+
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  return parts.map((p) => p?.text || '').join('').trim();
+}
+
+/** True when the active translation/generation provider is Gemini. */
+const isGeminiProvider = () => (process.env.TRANSLATE_TYPE || '').toLowerCase() === 'gemini';
+
+/**
+ * Translate/adapt text with Google Gemini, applying the same news editorial
+ * prompts as the OpenAI path so all rules carry over.
+ *
+ * @param {string} text
+ * @param {string} targetLangName - e.g. "Telugu", "English", "Hindi"
+ * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
+ */
+async function geminiTranslate(text, targetLangName, options = {}) {
+  if (!text || !text.trim()) return '';
+
+  const mode = options.mode || 'plain';
+  const fieldType = options.fieldType || 'content';
+  const fieldLabels = {
+    title: 'headline',
+    summary: 'Super Lead section',
+    content: 'Detailed Story section'
+  };
+  const fieldLabel = fieldLabels[fieldType] || 'text';
+
+  const systemContent =
+    mode === 'news'
+      ? buildNewsTranslationSystemPrompt(targetLangName, fieldLabel)
+      : 'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.';
+
+  const userContent =
+    mode === 'news'
+      ? `Translate this ${fieldLabel} to ${targetLangName}:\n\n${text}`
+      : `Translate the following text to ${targetLangName}:\n\n${text}`;
+
+  return geminiGenerateText(systemContent, userContent, { temperature: 0.3 });
+}
+
+/**
  * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
  */
 async function translateField(text, sourceLang, targetLang, options = {}) {
   if (!text || !String(text).trim()) return '';
   if (sourceLang === targetLang) return String(text).trim();
 
-  const useSarvam = process.env.TRANSLATE_TYPE === 'sarvam';
+  const translateType = (process.env.TRANSLATE_TYPE || '').toLowerCase();
 
-  if (useSarvam) {
+  if (translateType === 'sarvam') {
     return sarvamTranslate(text, sourceLang, targetLang);
+  }
+  if (translateType === 'gemini') {
+    return geminiTranslate(text, SUPPORTED_LANGUAGES[targetLang], options);
   }
   return openaiTranslate(text, SUPPORTED_LANGUAGES[targetLang], options);
 }
@@ -523,14 +671,10 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
 
   const others = ALL_LANG_CODES.filter((lang) => lang !== anchorLang);
   const translateOptions = { mode: 'news', fieldType };
-  const pairs = await Promise.all(
-    others.map(async (lang) => [
-      lang,
-      clean(await translateField(trimmed, anchorLang, lang, translateOptions))
-    ])
-  );
-  for (const [lang, translated] of pairs) {
-    result[lang] = translated;
+
+  // Sequential (not parallel) to avoid bursting provider rate limits (e.g. Gemini 429).
+  for (const lang of others) {
+    result[lang] = clean(await translateField(trimmed, anchorLang, lang, translateOptions));
   }
 
   return result;
@@ -549,11 +693,10 @@ async function buildSourceArticleMultilingual({ title, contentText, source }) {
   const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
   const { summary, content } = await generateSummaryAndContent(contentTrimmed, anchorLang);
 
-  const [titleMap, summaryMap, contentMap] = await Promise.all([
-    toTrilingual(titleTrimmed, anchorLang, 'title'),
-    toTrilingual(summary, anchorLang, 'summary'),
-    toTrilingual(content, anchorLang, 'content')
-  ]);
+  // Sequential to keep provider request bursts low (avoids 429 rate limits).
+  const titleMap = await toTrilingual(titleTrimmed, anchorLang, 'title');
+  const summaryMap = await toTrilingual(summary, anchorLang, 'summary');
+  const contentMap = await toTrilingual(content, anchorLang, 'content');
 
   // Generate tags from English text when available (slugs read best in English),
   // falling back to the anchor-language headline + story.
@@ -578,6 +721,7 @@ module.exports = {
   twoStepTranslateField,
   openaiTranslate,
   sarvamTranslate,
+  geminiTranslate,
   getTeluguSourceSet,
   getEnglishSourceSet,
   resolveAnchorLanguage,

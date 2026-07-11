@@ -34,7 +34,7 @@ import {
   LocationOn as LocationIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, uploadApi, translateApi } from '../../services/api';
+import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -60,6 +60,7 @@ const ArticleEditor = () => {
     title: {},
     summary: {},
     content: {},
+    author: user?._id || '',
     category: '',
     location: null,
     tags: [],
@@ -76,6 +77,8 @@ const ArticleEditor = () => {
   const [generateAudio, setGenerateAudio] = useState(false);
   
   const [categories, setCategories] = useState([]);
+  const [articleAuthors, setArticleAuthors] = useState([]);
+  const [authorsLoading, setAuthorsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -111,13 +114,19 @@ const ArticleEditor = () => {
           ...prev,
           title: { ...emptyMultilingual },
           summary: { ...emptyMultilingual },
-          content: { ...emptyMultilingual }
+          content: { ...emptyMultilingual },
+          author: prev.author || user?._id || ''
         }));
       }
 
       // Fetch categories
       const categoriesRes = await categoriesApi.getAll({ active: 'true', raw: 'true' });
       setCategories(categoriesRes.data.categories);
+
+      setAuthorsLoading(true);
+      const authorsRes = await usersApi.getArticleAuthors();
+      setArticleAuthors(authorsRes.data.users || []);
+      setAuthorsLoading(false);
 
       // Fetch article if editing
       if (isEditing) {
@@ -147,6 +156,7 @@ const ArticleEditor = () => {
           title: convertField(articleData.title),
           summary: convertField(articleData.summary),
           content: convertField(articleData.content),
+          author: articleData.author?._id || articleData.author || user?._id || '',
           category: articleData.category?._id || articleData.category || '',
           location: loc && loc.formattedAddress ? loc : null,
           tags: articleData.tags || [],
@@ -171,6 +181,7 @@ const ArticleEditor = () => {
       setErrorDetails([]);
       console.error(err);
     } finally {
+      setAuthorsLoading(false);
       setLoading(false);
     }
   };
@@ -478,6 +489,7 @@ const ArticleEditor = () => {
         title: cleanMultilingual(article.title),
         summary: cleanMultilingual(article.summary),
         content: cleanMultilingual(article.content),
+        author: article.author || user?._id,
         tags: article.tags,
         status: targetStatus,
         isFeatured: article.isFeatured,
@@ -884,14 +896,36 @@ const ArticleEditor = () => {
               <Typography variant="subtitle1" fontWeight={600} gutterBottom>
                 Source
               </Typography>
-              <TextField
-                fullWidth
-                size="small"
-                label="Reporter Name"
-                value={article.reporterName}
-                onChange={(e) => handleChange('reporterName', e.target.value)}
-                margin="dense"
-                placeholder="Enter reporter name (manual)"
+              <MuiAutocomplete
+                options={articleAuthors}
+                loading={authorsLoading}
+                disabled={isReporterLockedOut}
+                value={articleAuthors.find(author => author._id === article.author) || null}
+                isOptionEqualToValue={(option, value) => option._id === value._id}
+                getOptionLabel={(option) => `${option.name} — ${option.email} (${option.role})`}
+                onChange={(_, selectedAuthor) => {
+                  handleChange('author', selectedAuthor?._id || user?._id || '');
+                  handleChange('reporterName', '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    size="small"
+                    label="Source Reporter"
+                    margin="dense"
+                    placeholder="Search by name, email, or role"
+                    InputProps={{
+                      ...params.InputProps,
+                      endAdornment: (
+                        <>
+                          {authorsLoading ? <CircularProgress size={18} /> : null}
+                          {params.InputProps.endAdornment}
+                        </>
+                      )
+                    }}
+                  />
+                )}
               />
               <TextField
                 fullWidth

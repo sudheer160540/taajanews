@@ -329,10 +329,19 @@ router.get('/', optionalAuth, async (req, res) => {
     const query = { status: 'published' };
     
     if (category) {
-      // Include articles from this category and all descendants
+      const categoryIds = [...new Set(
+        String(category)
+          .split(',')
+          .map(id => id.trim())
+          .filter(Boolean)
+      )]
+        .map(toObjectId)
+        .filter(Boolean);
+
+      // Include articles from any requested category and all descendants.
       query.$or = [
-        { category },
-        { categoryAncestors: category }
+        { category: { $in: categoryIds } },
+        { categoryAncestors: { $in: categoryIds } }
       ];
     }
     if (city) query['location.city'] = city;
@@ -593,6 +602,8 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
   try {
     const article = await Article.findById(req.params.id)
       .populate('author', 'name avatar')
+      .populate('createdBy', 'name avatar')
+      .populate('updatedBy', 'name avatar')
       .populate('category', 'name slug');
 
     if (!article) {
@@ -600,8 +611,9 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
     }
 
     // Check permission - reporters can only view their own articles
-    if (req.user.role === 'reporter' && 
-        article.author._id.toString() !== req.user._id.toString()) {
+    const ownerId = article.createdBy?._id || article.author?._id;
+    if (req.user.role === 'reporter' &&
+        ownerId?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to view this article' });
     }
 
@@ -618,13 +630,28 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
 // @access  Private/Reporter
 router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), async (req, res) => {
   try {
+    let authorId = req.user._id;
+    if (req.body.author) {
+      const selectedAuthor = await User.findOne({
+        _id: req.body.author,
+        role: { $ne: 'user' },
+        isActive: true
+      }).select('_id');
+      if (!selectedAuthor) {
+        return res.status(400).json({ error: 'Selected author is not an active editorial user' });
+      }
+      authorId = selectedAuthor._id;
+    }
+
     // Convert plain objects to Maps for multilingual fields
     const articleData = {
       ...req.body,
       title: new Map(Object.entries(req.body.title || {})),
       summary: new Map(Object.entries(req.body.summary || {})),
       content: new Map(Object.entries(req.body.content || {})),
-      author: req.user._id,
+      author: authorId,
+      createdBy: req.user._id,
+      updatedBy: req.user._id,
       reporterName: req.body.reporterName || '',
       source: req.body.source || 'Taaja News Network',
       sourceUrl: req.body.sourceUrl || ''
@@ -659,7 +686,7 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
     }
 
     // Update reporter article count
-    await require('../models/User').findByIdAndUpdate(req.user._id, {
+    await User.findByIdAndUpdate(authorId, {
       $inc: { articlesCount: 1 }
     });
 
@@ -685,8 +712,9 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     const previousStatus = article.status;
 
     // Check permission
-    if (req.user.role === 'reporter' && 
-        article.author.toString() !== req.user._id.toString()) {
+    const ownerId = article.createdBy || article.author;
+    if (req.user.role === 'reporter' &&
+        ownerId?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to update this article' });
     }
 
@@ -708,6 +736,23 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 
     // Convert plain objects to Maps for multilingual fields
     const updateData = { ...req.body };
+    delete updateData.createdBy;
+    delete updateData.updatedBy;
+    updateData.updatedBy = req.user._id;
+
+    if (updateData.author) {
+      const selectedAuthor = await User.findOne({
+        _id: updateData.author,
+        role: { $ne: 'user' },
+        isActive: true
+      }).select('_id');
+      if (!selectedAuthor) {
+        return res.status(400).json({ error: 'Selected author is not an active editorial user' });
+      }
+      updateData.author = selectedAuthor._id;
+    } else {
+      delete updateData.author;
+    }
     if (typeof updateData.reporterName === 'string') {
       updateData.reporterName = updateData.reporterName.trim();
     }
@@ -806,7 +851,8 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
       req.params.id,
       {
         status,
-        publishedAt: status === 'published' ? new Date() : undefined
+        publishedAt: status === 'published' ? new Date() : undefined,
+        updatedBy: req.user._id
       },
       { new: true }
     );
@@ -836,7 +882,7 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
     const article = await Article.findByIdAndUpdate(
       req.params.id,
-      { status: 'archived' },
+      { status: 'archived', updatedBy: req.user._id },
       { new: true }
     );
 
@@ -858,7 +904,10 @@ router.get('/manage/stats', protect, reporterOrAdmin, async (req, res) => {
   try {
     const match = {};
     if (req.user.role === 'reporter') {
-      match.author = req.user._id;
+      match.$or = [
+        { createdBy: req.user._id },
+        { createdBy: { $exists: false }, author: req.user._id }
+      ];
     }
 
     const [result] = await Article.aggregate([
@@ -912,7 +961,10 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     
     // Reporters can only see their own articles
     if (req.user.role === 'reporter') {
-      query.author = req.user._id;
+      query.$or = [
+        { createdBy: req.user._id },
+        { createdBy: { $exists: false }, author: req.user._id }
+      ];
     }
     
     if (status) query.status = status;
