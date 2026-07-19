@@ -148,6 +148,15 @@ export const promotionsApi = {
   delete: (id) => api.delete(`/promotions/${id}`)
 };
 
+export const epapersApi = {
+  getFeed: (params) => api.get('/epapers/feed', { params }),
+  getAll: (params) => api.get('/epapers/manage/list', { params }),
+  getById: (id) => api.get(`/epapers/${id}`),
+  create: (data) => api.post('/epapers', data),
+  update: (id, data) => api.put(`/epapers/${id}`, data),
+  delete: (id) => api.delete(`/epapers/${id}`)
+};
+
 export const videosApi = {
   getAll: (params) => api.get('/videos', { params }),
   getPublic: (params) => api.get('/videos/public', { params }),

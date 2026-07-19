@@ -29,6 +29,7 @@ import {
   Logout as LogoutIcon,
   Add as AddIcon,
   Campaign as CampaignIcon,
+  PictureAsPdf as EPaperIcon,
   VideoLibrary as VideoIcon,
   AccountCircle as AccountCircleIcon
 } from '@mui/icons-material';
@@ -58,6 +59,7 @@ const DashboardLayout = () => {
     { path: '/dashboard/users', label: t('manageUsers'), icon: <PeopleIcon /> },
     { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
     { path: '/dashboard/promotions', label: 'Promotions', icon: <CampaignIcon /> },
+    { path: '/dashboard/epapers', label: 'E-Papers', icon: <EPaperIcon /> },
     { path: '/dashboard/videos', label: 'Videos', icon: <VideoIcon /> },
   ];
 

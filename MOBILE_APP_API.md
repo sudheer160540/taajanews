@@ -1133,6 +1133,66 @@ GET /api/promotions/feed?category=697ba9f11b749e103d435727&page=2
 
 ---
 
+## E-Papers (Digital Newspaper PDFs)
+
+### `GET /api/epapers/feed`
+
+Returns **active** e-paper editions only, sorted by edition date (newest first). Use this endpoint in the mobile app — do not use the dashboard manage endpoints.
+
+**Auth:** None
+
+| Parameter | Type   | Default | Description                          |
+|-----------|--------|---------|--------------------------------------|
+| `area`    | string | —       | Filter by area `_id` (optional)      |
+| `limit`   | number | `20`    | Page size (max 100)                  |
+| `page`    | number | `1`     | Page number                          |
+
+**Examples:**
+
+```
+GET /api/epapers/feed
+GET /api/epapers/feed?area=697ba9f11b749e103d435727&page=1&limit=10
+```
+
+**Response:**
+
+```json
+{
+  "epapers": [
+    {
+      "_id": "69a84d5076bb023c508cdd80",
+      "title": "Hyderabad Edition - March 19, 2026",
+      "date": "2026-03-19T00:00:00.000Z",
+      "pdfUrl": "https://taajanews.blob.core.windows.net/images/1740000000000-epapers/uuid.pdf",
+      "area": {
+        "_id": "697ba9f11b749e103d435727",
+        "name": { "en": "Secunderabad", "te": "సికింద్రాబాద్" },
+        "slug": "secunderabad",
+        "city": "697ba9f11b749e103d435700"
+      },
+      "createdAt": "2026-03-19T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "pages": 1,
+    "hasMore": false,
+    "hasNextPage": false,
+    "hasPrevPage": false
+  }
+}
+```
+
+**Flutter integration notes:**
+- Only `status: active` e-papers are returned
+- Open `pdfUrl` in an in-app PDF viewer or external browser
+- Filter by user's selected area using the `area` query param
+- Dashboard CRUD is at `/api/epapers/manage/list` (admin auth required) — not for mobile
+
+---
+
 # Quick Reference — All Mobile App APIs
 
 ## Public (No Auth)
@@ -1150,8 +1210,9 @@ GET /api/promotions/feed?category=697ba9f11b749e103d435727&page=2
 | 9 | GET    | `/api/articles/feed`                  | News feed               |
 | 10| GET    | `/api/articles/s/:shortId`            | Article by short link   |
 | 11| GET    | `/api/promotions/feed`                | Promotion feed          |
-| 12| POST   | `/api/engagement/view/:articleId`     | Record view             |
-| 13| GET    | `/api/engagement/comments/:articleId` | Get comments            |
+| 12| GET    | `/api/epapers/feed`                   | E-paper feed (active)   |
+| 13| POST   | `/api/engagement/view/:articleId`     | Record view             |
+| 14| GET    | `/api/engagement/comments/:articleId` | Get comments            |
 
 ## Private (Auth Required — pass `Authorization: Bearer <accessToken>`)
 
