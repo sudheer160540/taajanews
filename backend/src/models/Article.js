@@ -73,12 +73,12 @@ const articleSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Created by is required']
+    default: null
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Updated by is required']
+    default: null
   },
   reporterName: {
     type: String,
