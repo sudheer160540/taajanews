@@ -126,6 +126,7 @@ export const authApi = {
 
 export const usersApi = {
   getAll: (params) => api.get('/users', { params }),
+  getArticleAuthors: (params) => api.get('/users/article-authors', { params }),
   updateProfile: (data) => api.put('/users/profile', data),
   updatePreferences: (data) => api.put('/users/preferences', data),
   updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),
@@ -145,6 +146,15 @@ export const promotionsApi = {
   create: (data) => api.post('/promotions', data),
   update: (id, data) => api.put(`/promotions/${id}`, data),
   delete: (id) => api.delete(`/promotions/${id}`)
+};
+
+export const epapersApi = {
+  getFeed: (params) => api.get('/epapers/feed', { params }),
+  getAll: (params) => api.get('/epapers/manage/list', { params }),
+  getById: (id) => api.get(`/epapers/${id}`),
+  create: (data) => api.post('/epapers', data),
+  update: (id, data) => api.put(`/epapers/${id}`, data),
+  delete: (id) => api.delete(`/epapers/${id}`)
 };
 
 export const videosApi = {

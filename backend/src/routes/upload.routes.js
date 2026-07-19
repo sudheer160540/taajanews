@@ -5,14 +5,22 @@ const multer = require('multer');
 const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../config/azure');
 const { protect, reporterOrAdmin } = require('../middleware/auth');
 
-// Configure multer for memory storage
+// Configure multer for memory storage (50MB for e-paper PDFs)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'video/mp4',
+      'video/webm',
+      'application/pdf'
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -20,6 +28,12 @@ const upload = multer({
     }
   }
 });
+
+const getUploadFolder = (mimetype) => {
+  if (mimetype.startsWith('video')) return 'videos';
+  if (mimetype === 'application/pdf') return 'epapers';
+  return 'images';
+};
 
 // @route   POST /api/upload/file
 // @desc    Upload file through backend (bypasses CORS)
@@ -33,7 +47,7 @@ router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req
     const file = req.file;
     const extension = file.originalname.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;
-    const folder = file.mimetype.startsWith('video') ? 'videos' : 'images';
+    const folder = getUploadFolder(file.mimetype);
     const blobName = `${Date.now()}-${folder}/${uniqueFilename}`;
 
     // Upload to Azure
@@ -75,7 +89,8 @@ router.post('/sas-token', protect, reporterOrAdmin, async (req, res) => {
       'image/gif',
       'image/webp',
       'video/mp4',
-      'video/webm'
+      'video/webm',
+      'application/pdf'
     ];
 
     if (contentType && !allowedTypes.includes(contentType)) {
@@ -88,7 +103,11 @@ router.post('/sas-token', protect, reporterOrAdmin, async (req, res) => {
     // Generate unique filename
     const extension = filename.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;
-    const folder = contentType?.startsWith('video') ? 'videos' : 'images';
+    const folder = contentType?.startsWith('video')
+      ? 'videos'
+      : contentType === 'application/pdf'
+        ? 'epapers'
+        : 'images';
     const blobName = `${folder}/${uniqueFilename}`;
 
     const uploadData = getUploadUrl(blobName);
@@ -126,7 +145,8 @@ router.post('/sas-tokens', protect, reporterOrAdmin, async (req, res) => {
       'image/gif',
       'image/webp',
       'video/mp4',
-      'video/webm'
+      'video/webm',
+      'application/pdf'
     ];
 
     const uploadUrls = files.map((file, index) => {
@@ -142,7 +162,11 @@ router.post('/sas-tokens', protect, reporterOrAdmin, async (req, res) => {
 
       const extension = filename.split('.').pop();
       const uniqueFilename = `${uuidv4()}.${extension}`;
-      const folder = contentType?.startsWith('video') ? 'videos' : 'images';
+      const folder = contentType?.startsWith('video')
+      ? 'videos'
+      : contentType === 'application/pdf'
+        ? 'epapers'
+        : 'images';
       const blobName = `${folder}/${uniqueFilename}`;
 
       const uploadData = getUploadUrl(blobName);

@@ -70,6 +70,16 @@ const articleSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Author is required']
   },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Created by is required']
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Updated by is required']
+  },
   reporterName: {
     type: String,
     trim: true,
@@ -234,6 +244,7 @@ articleSchema.index({ status: 1, publishedAt: -1 });
 articleSchema.index({ category: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ categoryAncestors: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ author: 1, status: 1 });
+articleSchema.index({ createdBy: 1, status: 1 });
 articleSchema.index({ 'location.city': 1, status: 1, publishedAt: -1 });
 articleSchema.index({ tags: 1 });
 articleSchema.index({ isFeatured: 1, status: 1, publishedAt: -1 });

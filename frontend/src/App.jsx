@@ -35,6 +35,7 @@ import UsersManager from './pages/dashboard/UsersManager';
 import LocationsManager from './pages/dashboard/LocationsManager';
 import LanguagesManager from './pages/dashboard/LanguagesManager';
 import PromotionsManager from './pages/dashboard/PromotionsManager';
+import EPaperManager from './pages/dashboard/EPaperManager';
 import VideosManager from './pages/dashboard/VideosManager';
 import Profile from './pages/dashboard/Profile';
 
@@ -64,11 +65,11 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
   }
 
   if (requireReporter && !isReporter) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (requireAdmin && !isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -133,7 +134,9 @@ function App() {
         <Route path="locations" element={<ProtectedRoute requireAdmin><LocationsManager /></ProtectedRoute>} />
         <Route path="languages" element={<ProtectedRoute requireAdmin><LanguagesManager /></ProtectedRoute>} />
         <Route path="promotions" element={<ProtectedRoute requireAdmin><PromotionsManager /></ProtectedRoute>} />
+        <Route path="epapers" element={<EPaperManager />} />
         <Route path="videos" element={<ProtectedRoute requireAdmin><VideosManager /></ProtectedRoute>} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
 
       {/* Catch all — go to home feed */}

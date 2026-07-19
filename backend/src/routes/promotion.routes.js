@@ -113,7 +113,7 @@ router.get('/feed', async (req, res) => {
 
     // Build the main query: active + date valid
     const baseMatch = { status: 'active', ...dateFilter };
-    if (type) baseMatch.type = type;
+    // if (type) baseMatch.type = type;
 
     if (lat && lng) {
       // Include: nearby promotions OR promotions without a real location (coordinates [0,0])
@@ -133,7 +133,7 @@ router.get('/feed', async (req, res) => {
 
     const promotions = await Promotion.find(baseMatch)
       .populate('createdBy', 'name')
-      .sort({ createdAt: -1, priority: -1 })
+      .sort({ priority: -1 })
       .skip(skip)
       .limit(pageLimit)
       .lean();

@@ -182,6 +182,7 @@ const schemas = {
       Joi.string().max(10000)
     ).required(),
     category: Joi.string().hex().length(24).allow(null, ''),
+    author: Joi.string().hex().length(24).allow(null, ''),
     featuredImage: Joi.object({
       url: Joi.string().uri(),
       caption: Joi.object().pattern(
