@@ -21,8 +21,8 @@ import {
   Visibility,
   VisibilityOff
 } from '@mui/icons-material';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../../contexts/AuthContext';
+import GoogleSignInButton from '../../components/GoogleSignInButton';
 
 const Register = () => {
   const { t } = useTranslation();
@@ -117,16 +117,11 @@ const Register = () => {
               </Alert>
             )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google sign-in failed')}
-                width="100%"
-                text="signup_with"
-                shape="rectangular"
-                size="large"
-              />
-            </Box>
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onLoadingChange={setLoading}
+              text="signup_with"
+            />
 
             <Divider sx={{ my: 2 }}>or</Divider>
 

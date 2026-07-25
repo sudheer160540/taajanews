@@ -5,7 +5,14 @@ const User = require('../models/User');
 const { protect, generateToken, generateAccessToken, createRefreshToken, setTokenCookie, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client();
+
+/** Comma-separated Web OAuth client IDs (web + mobile if needed). */
+const getGoogleClientIds = () =>
+  (process.env.GOOGLE_CLIENT_ID || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
 
 // @route   POST /api/auth/register
 // @desc    Register a new user
@@ -160,9 +167,14 @@ router.post('/google', validate(schemas.googleAuth), async (req, res) => {
   try {
     const { idToken, role } = req.body;
 
+    const clientIds = getGoogleClientIds();
+    if (!clientIds.length) {
+      return res.status(503).json({ error: 'Google Sign-In is not configured on the server' });
+    }
+
     const ticket = await googleClient.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID
+      audience: clientIds.length === 1 ? clientIds[0] : clientIds
     });
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
