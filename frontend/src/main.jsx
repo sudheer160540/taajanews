@@ -9,10 +9,18 @@ import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { LocationProvider } from './contexts/LocationContext';
 import theme from './theme';
+import { getGoogleClientId, isGoogleAuthConfigured } from './config/googleAuth';
 import './i18n';
 import './index.css';
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const googleClientId = getGoogleClientId();
+
+if (!isGoogleAuthConfigured()) {
+  console.warn(
+    '[Taaja News] VITE_GOOGLE_CLIENT_ID is missing. Google Sign-In will be disabled. ' +
+      'Create a Web application OAuth client in Google Cloud Console.'
+  );
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
