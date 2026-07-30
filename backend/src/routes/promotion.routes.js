@@ -78,6 +78,14 @@ router.get('/feed', async (req, res) => {
     } = req.query;
 
     const now = new Date();
+    // Compare by calendar date only (ignore time-of-day). Promotions store dates
+    // at midnight UTC, so a promo ending "today" must stay active for the whole day.
+    const startOfToday = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0
+    ));
+    const endOfToday = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999
+    ));
     const pageNum = Math.max(Number(page) || 1, 1);
     const pageLimit = Math.min(Number(limit) || 20, 100);
     const skip = (pageNum - 1) * pageLimit;
@@ -85,9 +93,9 @@ router.get('/feed', async (req, res) => {
     const dateFilter = {
       $or: [
         { startDate: null, endDate: null },
-        { startDate: { $lte: now }, endDate: null },
-        { startDate: null, endDate: { $gte: now } },
-        { startDate: { $lte: now }, endDate: { $gte: now } }
+        { startDate: { $lte: endOfToday }, endDate: null },
+        { startDate: null, endDate: { $gte: startOfToday } },
+        { startDate: { $lte: endOfToday }, endDate: { $gte: startOfToday } }
       ]
     };
 
