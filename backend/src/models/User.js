@@ -131,6 +131,21 @@ const userSchema = new mongoose.Schema({
     type: String,
     select: false
   },
+  passwordResetToken: {
+    type: String,
+    select: false
+  },
+  passwordResetExpires: {
+    type: Date,
+    select: false
+  },
+  // Number of failed OTP verification attempts for the current reset request.
+  // Used to lock out brute-force guessing of the 6-digit code.
+  passwordResetAttempts: {
+    type: Number,
+    default: 0,
+    select: false
+  },
 
   // Yellow Page fields
   isEnableYelloPage: {

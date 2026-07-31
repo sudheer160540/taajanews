@@ -25,6 +25,7 @@ import ContactUs from './pages/ContactUs';
 // Auth pages
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
 
 // Dashboard pages
 import Dashboard from './pages/dashboard/Dashboard';
@@ -90,6 +91,7 @@ function App() {
       {/* Auth routes */}
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/register" element={<Register />} />
+      <Route path="/auth/forgot-password" element={<ForgotPassword />} />
 
       {/* Public routes — default landing is news feed */}
       <Route path="/" element={<MainLayout />}>

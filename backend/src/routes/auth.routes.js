@@ -4,6 +4,24 @@ const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const { protect, generateToken, generateAccessToken, createRefreshToken, setTokenCookie, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
+const {
+  generateOtp,
+  hashOtp,
+  getOtpExpiresAt,
+  getOtpExpiryMinutes,
+  safeCompareHash,
+  MAX_OTP_ATTEMPTS
+} = require('../utils/passwordReset');
+const { sendPasswordResetOtpEmail } = require('../utils/emailService');
+
+const FORGOT_PASSWORD_MESSAGE =
+  'If an account with that email exists, a 6-digit verification code has been sent.';
+
+/** Forgot password only for email/password (local) accounts — not Google Sign-In. */
+const canUseForgotPassword = (user) => {
+  if (!user || !user.isActive) return false;
+  return user.authProvider === 'local';
+};
 
 const googleClient = new OAuth2Client();
 
@@ -289,13 +307,15 @@ router.post('/check-email', validate(schemas.checkEmail), async (req, res) => {
     const user = await User.findOne({ email }).select('authProvider');
 
     if (user) {
+      const provider = user.authProvider || 'local';
       return res.json({
         exists: true,
-        authProvider: user.authProvider || 'local'
+        authProvider: provider,
+        canResetPassword: canUseForgotPassword(user)
       });
     }
 
-    res.json({ exists: false, authProvider: null });
+    res.json({ exists: false, authProvider: null, canResetPassword: false });
   } catch (error) {
     console.error('Check email error:', error);
     res.status(500).json({ error: 'Failed to check email' });
@@ -328,6 +348,166 @@ router.post('/refresh-token', validate(schemas.refreshToken), async (req, res) =
   } catch (error) {
     console.error('Refresh token error:', error);
     res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
+const INVALID_OTP_MESSAGE = 'Invalid or expired verification code';
+
+/**
+ * Load a user by email and validate the supplied OTP against the stored hash.
+ * On a wrong (but non-expired) code, the attempt counter is incremented and the
+ * request is invalidated once MAX_OTP_ATTEMPTS is reached (brute-force guard).
+ * Returns { status, error } on failure or { user } on success.
+ */
+const verifyResetOtp = async (rawEmail, otp) => {
+  const email = String(rawEmail || '').toLowerCase().trim();
+  // Only override the select:false fields with `+`. Do NOT list normally-selected
+  // fields here (email, name, ...) — mixing inclusion with `+` makes Mongoose return
+  // only the listed fields, which previously dropped `email` and silently broke sending.
+  const user = await User.findOne({ email }).select(
+    '+passwordResetToken +passwordResetExpires +passwordResetAttempts +password'
+  );
+
+  if (!user || !canUseForgotPassword(user) || !user.passwordResetToken || !user.passwordResetExpires) {
+    return { status: 400, error: INVALID_OTP_MESSAGE };
+  }
+
+  if (user.passwordResetExpires.getTime() < Date.now()) {
+    return { status: 400, error: INVALID_OTP_MESSAGE };
+  }
+
+  if ((user.passwordResetAttempts || 0) >= MAX_OTP_ATTEMPTS) {
+    // Too many wrong guesses — invalidate the code and force a new request.
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.passwordResetAttempts = 0;
+    await user.save({ validateBeforeSave: false });
+    return { status: 429, error: 'Too many incorrect attempts. Please request a new code.' };
+  }
+
+  const otpHash = hashOtp(otp);
+  if (!safeCompareHash(otpHash, user.passwordResetToken)) {
+    user.passwordResetAttempts = (user.passwordResetAttempts || 0) + 1;
+    await user.save({ validateBeforeSave: false });
+    return { status: 400, error: INVALID_OTP_MESSAGE };
+  }
+
+  return { user };
+};
+
+// @route   POST /api/auth/forgot-password
+// @desc    Send a password-reset OTP (always same response — no account enumeration)
+// @access  Public
+router.post('/forgot-password', validate(schemas.forgotPassword), async (req, res) => {
+  try {
+    const email = req.body.email.toLowerCase().trim();
+    const user = await User.findOne({ email }).select(
+      '+passwordResetToken +passwordResetExpires +passwordResetAttempts'
+    );
+
+    if (user && canUseForgotPassword(user)) {
+      const { code, hash } = generateOtp();
+      user.passwordResetToken = hash;
+      user.passwordResetExpires = getOtpExpiresAt();
+      user.passwordResetAttempts = 0;
+      await user.save({ validateBeforeSave: false });
+
+      await sendPasswordResetOtpEmail({
+        to: user.email,
+        name: user.name,
+        otp: code,
+        expiresMinutes: getOtpExpiryMinutes()
+      });
+    }
+
+    res.json({ message: FORGOT_PASSWORD_MESSAGE });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// @route   POST /api/auth/verify-reset-otp
+// @desc    Check a reset OTP is valid before showing the new-password step (does not consume it)
+// @access  Public
+router.post('/verify-reset-otp', validate(schemas.verifyResetOtp), async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const result = await verifyResetOtp(email, otp);
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    res.json({ valid: true, message: 'Code verified. You can now set a new password.' });
+  } catch (error) {
+    console.error('Verify reset OTP error:', error);
+    res.status(500).json({ error: 'Failed to verify code' });
+  }
+});
+
+// @route   POST /api/auth/reset-password
+// @desc    Set a new password using the emailed OTP
+// @access  Public
+router.post('/reset-password', validate(schemas.resetPassword), async (req, res) => {
+  try {
+    const { email, otp, password } = req.body;
+    const result = await verifyResetOtp(email, otp);
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    const { user } = result;
+    if (!user.isActive) {
+      return res.status(401).json({ error: 'Account is deactivated' });
+    }
+
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.passwordResetAttempts = 0;
+    user.refreshToken = null;
+    await user.save();
+
+    res.json({ message: 'Password updated successfully. You can now log in.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// @route   POST /api/auth/change-password
+// @desc    Change password while logged in (requires current password)
+// @access  Private
+router.post('/change-password', protect, validate(schemas.changePassword), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        error: 'This account uses Google Sign-In only. Please sign in with Google.'
+      });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    user.refreshToken = null;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
