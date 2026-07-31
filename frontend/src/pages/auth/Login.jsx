@@ -162,13 +162,22 @@ const Login = () => {
                 }}
               />
 
+              <Box sx={{ textAlign: 'right', mt: 1 }}>
+                <Link
+                  to="/auth/forgot-password"
+                  style={{ color: '#4875BC', fontSize: '0.875rem', textDecoration: 'none' }}
+                >
+                  Forgot password?
+                </Link>
+              </Box>
+
               <Button
                 fullWidth
                 variant="contained"
                 type="submit"
                 size="large"
                 disabled={loading}
-                sx={{ mt: 3, mb: 2 }}
+                sx={{ mt: 2, mb: 2 }}
               >
                 {loading ? t('loading') : t('login')}
               </Button>

@@ -121,7 +121,13 @@ export const authApi = {
   register: (name, email, password) => api.post('/auth/register', { name, email, password }),
   logout: () => api.post('/auth/logout'),
   getMe: () => api.get('/auth/me'),
-  createAdmin: (data) => api.post('/auth/admin/create', data)
+  createAdmin: (data) => api.post('/auth/admin/create', data),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  verifyResetOtp: (email, otp) => api.post('/auth/verify-reset-otp', { email, otp }),
+  resetPassword: (email, otp, password) =>
+    api.post('/auth/reset-password', { email, otp, password }),
+  changePassword: (currentPassword, newPassword) =>
+    api.post('/auth/change-password', { currentPassword, newPassword })
 };
 
 export const usersApi = {

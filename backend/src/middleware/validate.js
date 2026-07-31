@@ -384,6 +384,30 @@ const schemas = {
   // Refresh token schema
   refreshToken: Joi.object({
     refreshToken: Joi.string().required()
+  }),
+
+  forgotPassword: Joi.object({
+    email: Joi.string().email().required()
+  }),
+
+  verifyResetOtp: Joi.object({
+    email: Joi.string().email().required(),
+    otp: Joi.string().pattern(/^\d{6}$/).required().messages({
+      'string.pattern.base': 'OTP must be a 6-digit code'
+    })
+  }),
+
+  resetPassword: Joi.object({
+    email: Joi.string().email().required(),
+    otp: Joi.string().pattern(/^\d{6}$/).required().messages({
+      'string.pattern.base': 'OTP must be a 6-digit code'
+    }),
+    password: Joi.string().min(6).max(100).required()
+  }),
+
+  changePassword: Joi.object({
+    currentPassword: Joi.string().required(),
+    newPassword: Joi.string().min(6).max(100).required()
   })
 };
 
