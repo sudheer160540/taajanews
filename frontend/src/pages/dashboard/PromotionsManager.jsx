@@ -10,6 +10,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   TablePagination,
   IconButton,
   Dialog,
@@ -23,11 +24,14 @@ import {
   InputLabel,
   Switch,
   FormControlLabel,
+  FormGroup,
+  Checkbox,
   Alert,
   Chip,
   Avatar,
   Grid,
   CircularProgress,
+  InputAdornment,
   Autocomplete as MuiAutocomplete
 } from '@mui/material';
 import {
@@ -36,9 +40,10 @@ import {
   Delete as DeleteIcon,
   Close as CloseIcon,
   CloudUpload as UploadIcon,
-  OpenInNew as LinkIcon
+  OpenInNew as LinkIcon,
+  Search as SearchIcon
 } from '@mui/icons-material';
-import { promotionsApi, uploadApi } from '../../services/api';
+import { promotionsApi, uploadApi, languagesApi } from '../../services/api';
 
 const INITIAL_FORM = {
   image: '',
@@ -51,7 +56,8 @@ const INITIAL_FORM = {
   youtubeUrl: '',
   priority: 0,
   startDate: '',
-  endDate: ''
+  endDate: '',
+  languages: []
 };
 
 // Strict allow-list for YouTube URLs (HTTPS only, known hosts only)
@@ -74,26 +80,54 @@ const PromotionsManager = () => {
   const [total, setTotal] = useState(0);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [availableLanguages, setAvailableLanguages] = useState([]);
+  const [languagesLoading, setLanguagesLoading] = useState(true);
 
   const [locationInput, setLocationInput] = useState('');
   const [mapsLoaded, setMapsLoaded] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const sessionTokenRef = useRef(null);
   const debounceRef = useRef(null);
+  const searchDebounceRef = useRef(null);
 
   useEffect(() => {
     fetchPromotions();
-  }, [page, rowsPerPage, filterType, filterStatus]);
+  }, [page, rowsPerPage, filterType, filterStatus, sortBy, sortOrder, search]);
+
+  useEffect(() => {
+    const loadLanguages = async () => {
+      try {
+        const response = await languagesApi.getAll();
+        setAvailableLanguages(response.data.languages || []);
+      } catch (err) {
+        console.error('Failed to load languages:', err);
+      } finally {
+        setLanguagesLoading(false);
+      }
+    };
+    loadLanguages();
+  }, []);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }, []);
 
   const fetchPromotions = async () => {
     setLoading(true);
     try {
       const params = {
         page: page + 1,
-        limit: rowsPerPage
+        limit: rowsPerPage,
+        sortBy,
+        sortOrder
       };
       if (filterType) params.type = filterType;
       if (filterStatus) params.status = filterStatus;
+      if (search) params.search = search;
 
       const response = await promotionsApi.getAll(params);
       setPromotions(response.data.promotions);
@@ -104,6 +138,26 @@ const PromotionsManager = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getDefaultLanguageCodes = () => {
+    const defaults = availableLanguages.filter((l) => l.isDefault).map((l) => l.code);
+    if (defaults.length) return defaults;
+    return availableLanguages[0] ? [availableLanguages[0].code] : [];
+  };
+
+  const getLanguageLabel = (code) => {
+    const lang = availableLanguages.find((l) => l.code === code);
+    return lang ? lang.nativeName || lang.name : code;
+  };
+
+  const handleLanguageToggle = (code) => {
+    setFormData((prev) => {
+      const selected = prev.languages.includes(code)
+        ? prev.languages.filter((c) => c !== code)
+        : [...prev.languages, code];
+      return { ...prev, languages: selected };
+    });
   };
 
   const handleOpenDialog = (promotion = null) => {
@@ -120,12 +174,15 @@ const PromotionsManager = () => {
         youtubeUrl: promotion.youtubeUrl || '',
         priority: promotion.priority || 0,
         startDate: promotion.startDate ? promotion.startDate.slice(0, 10) : '',
-        endDate: promotion.endDate ? promotion.endDate.slice(0, 10) : ''
+        endDate: promotion.endDate ? promotion.endDate.slice(0, 10) : '',
+        languages: promotion.languages?.length
+          ? [...promotion.languages]
+          : getDefaultLanguageCodes()
       });
       setLocationInput(promotion.location?.formattedAddress || '');
     } else {
       setEditingPromotion(null);
-      setFormData({ ...INITIAL_FORM });
+      setFormData({ ...INITIAL_FORM, languages: getDefaultLanguageCodes() });
       setLocationInput('');
     }
     setError(null);
@@ -259,6 +316,10 @@ const PromotionsManager = () => {
       setError('Type is required');
       return;
     }
+    if (!formData.languages.length) {
+      setError('Select at least one language');
+      return;
+    }
 
     const trimmedYoutube = formData.youtubeUrl?.trim() || '';
     if (trimmedYoutube && !isValidYouTubeUrl(trimmedYoutube)) {
@@ -280,7 +341,8 @@ const PromotionsManager = () => {
         youtubeUrl: formData.type === 'advertisement' ? (trimmedYoutube || null) : null,
         priority: Number(formData.priority) || 0,
         startDate: formData.startDate || null,
-        endDate: formData.endDate || null
+        endDate: formData.endDate || null,
+        languages: formData.languages
       };
 
       if (formData.location && formData.location.formattedAddress) {
@@ -321,6 +383,34 @@ const PromotionsManager = () => {
     return new Date(dateStr).toLocaleDateString();
   };
 
+  // Toggle asc/desc for a column; switching columns starts at desc.
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+    setPage(0);
+  };
+
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchInput(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setSearch(value.trim());
+      setPage(0);
+    }, 300);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    setSearch('');
+    setPage(0);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -339,6 +429,30 @@ const PromotionsManager = () => {
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+      {/* Search */}
+      <TextField
+        fullWidth
+        size="small"
+        placeholder="Search by title, description, location, or link..."
+        value={searchInput}
+        onChange={handleSearchChange}
+        sx={{ mb: 2 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon color="action" />
+            </InputAdornment>
+          ),
+          endAdornment: searchInput ? (
+            <InputAdornment position="end">
+              <IconButton size="small" onClick={handleClearSearch} aria-label="Clear search">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </InputAdornment>
+          ) : null
+        }}
+      />
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
@@ -376,24 +490,43 @@ const PromotionsManager = () => {
               <TableRow>
                 <TableCell>Image</TableCell>
                 <TableCell>Title</TableCell>
+                <TableCell>Description</TableCell>
                 <TableCell>Type</TableCell>
+                <TableCell>Languages</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Priority</TableCell>
+                <TableCell sortDirection={sortBy === 'priority' ? sortOrder : false}>
+                  <TableSortLabel
+                    active={sortBy === 'priority'}
+                    direction={sortBy === 'priority' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('priority')}
+                  >
+                    Priority
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell>Location</TableCell>
-                <TableCell>Dates</TableCell>
+                <TableCell>Start Date</TableCell>
+                <TableCell sortDirection={sortBy === 'endDate' ? sortOrder : false}>
+                  <TableSortLabel
+                    active={sortBy === 'endDate'}
+                    direction={sortBy === 'endDate' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('endDate')}
+                  >
+                    End Date
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
                     <CircularProgress size={24} />
                   </TableCell>
                 </TableRow>
               ) : promotions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
                     No promotions found
                   </TableCell>
                 </TableRow>
@@ -418,12 +551,43 @@ const PromotionsManager = () => {
                       )}
                     </TableCell>
                     <TableCell>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
+                          maxWidth: 240,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}
+                        title={promo.description || ''}
+                      >
+                        {promo.description || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
                       <Chip
                         label={promo.type === 'advertisement' ? 'Ad' : 'Goodwords'}
                         size="small"
                         color={promo.type === 'advertisement' ? 'primary' : 'secondary'}
                         variant="outlined"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 160 }}>
+                        {promo.languages?.length ? (
+                          promo.languages.map((code) => (
+                            <Chip
+                              key={`${promo._id}-${code}`}
+                              label={getLanguageLabel(code)}
+                              size="small"
+                            />
+                          ))
+                        ) : (
+                          <Chip label="All languages" size="small" variant="outlined" />
+                        )}
+                      </Box>
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -439,8 +603,13 @@ const PromotionsManager = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDate(promo.startDate)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
                       <Typography variant="caption">
-                        {formatDate(promo.startDate)} — {formatDate(promo.endDate)}
+                        {formatDate(promo.endDate)}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
@@ -532,6 +701,57 @@ const PromotionsManager = () => {
                 inputProps={{ maxLength: 500 }}
                 helperText={`${(formData.description || '').length}/500`}
               />
+            </Grid>
+
+            {/* Languages */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" gutterBottom>
+                Languages *
+              </Typography>
+              {languagesLoading ? (
+                <CircularProgress size={20} />
+              ) : availableLanguages.length === 0 ? (
+                <Alert severity="warning" sx={{ py: 0.5 }}>
+                  No active languages found. Add languages in Language Management first.
+                </Alert>
+              ) : (
+                <>
+                  <FormGroup row sx={{ gap: 1 }}>
+                    {availableLanguages.map((lang) => (
+                      <FormControlLabel
+                        key={lang.code}
+                        control={
+                          <Checkbox
+                            checked={formData.languages.includes(lang.code)}
+                            onChange={() => handleLanguageToggle(lang.code)}
+                          />
+                        }
+                        label={
+                          <Box sx={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                            <Typography variant="body2" fontWeight={600}>
+                              {lang.nativeName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {lang.name}
+                            </Typography>
+                          </Box>
+                        }
+                        sx={{
+                          border: 1,
+                          borderColor: formData.languages.includes(lang.code) ? 'primary.main' : 'divider',
+                          borderRadius: 1,
+                          px: 1,
+                          m: 0,
+                          bgcolor: formData.languages.includes(lang.code) ? 'action.selected' : 'transparent'
+                        }}
+                      />
+                    ))}
+                  </FormGroup>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    Select one or more languages. The promotion will appear only for users in those languages.
+                  </Typography>
+                </>
+              )}
             </Grid>
 
             {/* Type & Status */}

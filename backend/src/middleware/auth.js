@@ -182,6 +182,16 @@ const setTokenCookie = (res, token) => {
   res.cookie('token', token, cookieOptions);
 };
 
+/**
+ * Chief Editor or Admin — permanent article deletion
+ */
+const chiefEditorOnly = (req, res, next) => {
+  if (!req.user || !['chief-editor', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Chief Editor access required' });
+  }
+  next();
+};
+
 module.exports = {
   protect,
   optionalAuth,
@@ -189,6 +199,7 @@ module.exports = {
   adminOnly,
   reporterOrAdmin,
   editorOrAdmin,
+  chiefEditorOnly,
   generateToken,
   generateAccessToken,
   createRefreshToken,

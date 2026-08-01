@@ -42,7 +42,7 @@ const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { canPublish, user } = useAuth();
+  const { canPublish, user, isEditor } = useAuth();
   const isEditing = !!id;
 
   // Languages state

@@ -72,15 +72,49 @@ const getReadUrl = (blobName, expiresInMinutes = 60) => {
   return generateSASToken(blobName, 'r', expiresInMinutes); // Read permission only
 };
 
-// Delete blob
-const deleteBlob = async (blobName) => {
+// Delete blob from default images container
+const deleteBlob = async (blobName, containerName) => {
   try {
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-    await blockBlobClient.delete();
+    const imagesContainer = process.env.AZURE_STORAGE_CONTAINER || 'images';
+    const audioContainer = process.env.AZURE_STORAGE_AUDIO_CONTAINER || 'audio';
+    const client = containerName === audioContainer
+      ? audioContainerClient
+      : containerClient;
+    const blockBlobClient = client.getBlockBlobClient(blobName);
+    await blockBlobClient.deleteIfExists();
     return true;
   } catch (error) {
     console.error('Error deleting blob:', error);
     return false;
+  }
+};
+
+/** Delete a blob given its full Azure URL (images or audio container). */
+const deleteBlobFromUrl = async (blobUrl) => {
+  const parsed = parseAzureBlobUrl(blobUrl);
+  if (!parsed) return false;
+  return deleteBlob(parsed.blobName, parsed.container);
+};
+
+const parseAzureBlobUrl = (blobUrl) => {
+  const baseUrl = (process.env.AZURE_STORAGE_URL || '').replace(/\/$/, '');
+  if (!blobUrl || typeof blobUrl !== 'string' || !baseUrl) return null;
+
+  try {
+    const url = new URL(blobUrl.split('?')[0]);
+    if (!url.href.startsWith(baseUrl)) return null;
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+
+    const imagesContainer = process.env.AZURE_STORAGE_CONTAINER || 'images';
+    const audioContainer = process.env.AZURE_STORAGE_AUDIO_CONTAINER || 'audio';
+    const container = parts[0];
+    if (![imagesContainer, audioContainer].includes(container)) return null;
+
+    return { container, blobName: parts.slice(1).join('/') };
+  } catch {
+    return null;
   }
 };
 
@@ -91,5 +125,7 @@ module.exports = {
   generateSASToken,
   getUploadUrl,
   getReadUrl,
-  deleteBlob
+  deleteBlob,
+  deleteBlobFromUrl,
+  parseAzureBlobUrl
 };
