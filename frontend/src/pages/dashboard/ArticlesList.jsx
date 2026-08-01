@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -29,7 +29,8 @@ import {
   MoreVert as MoreIcon,
   Edit as EditIcon,
   Visibility as ViewIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { articlesApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,7 +38,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const ArticlesList = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { isEditor, canPublish } = useAuth();
+  const { isEditor, canPublish, canDeleteArticles, user } = useAuth();
   const lang = i18n.language;
 
   const [articles, setArticles] = useState([]);
@@ -48,12 +49,19 @@ const ArticlesList = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const searchDebounceRef = useRef(null);
 
   useEffect(() => {
     fetchArticles();
-  }, [page, rowsPerPage, statusFilter, fromDate, toDate]);
+  }, [page, rowsPerPage, statusFilter, fromDate, toDate, search]);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }, []);
 
   const fetchArticles = async () => {
     setLoading(true);
@@ -62,6 +70,7 @@ const ArticlesList = () => {
       if (statusFilter) params.status = statusFilter;
       if (fromDate) params.fromDate = fromDate;
       if (toDate) params.toDate = toDate;
+      if (search) params.search = search;
 
       const response = await articlesApi.getManaged(params);
       setArticles(response.data.articles);
@@ -93,6 +102,31 @@ const ArticlesList = () => {
     handleMenuClose();
   };
 
+  const canEditArticle = (article) => {
+    if (isEditor) return true;
+    const ownerId = article.createdBy?._id || article.author?._id;
+    return ownerId?.toString() === (user?.id || user?._id)?.toString();
+  };
+
+  const handleDeleteArticle = async () => {
+    if (!selectedArticle) return;
+    const title = typeof selectedArticle.title === 'string'
+      ? selectedArticle.title
+      : (selectedArticle.title?.te || selectedArticle.title?.en || 'this article');
+    if (!window.confirm(`Permanently delete "${title}"? This removes all images, audio, and videos from storage and cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await articlesApi.delete(selectedArticle._id);
+      fetchArticles();
+    } catch (err) {
+      console.error('Failed to delete article:', err);
+      alert(err.response?.data?.error || 'Failed to delete article');
+    }
+    handleMenuClose();
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'published': return 'success';
@@ -111,6 +145,33 @@ const ArticlesList = () => {
     });
   };
 
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchInput(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setSearch(value.trim());
+      setPage(0);
+    }, 300);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    setSearch('');
+    setPage(0);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  };
+
+  const handleClearFilters = () => {
+    setFromDate('');
+    setToDate('');
+    setStatusFilter('');
+    setSearchInput('');
+    setSearch('');
+    setPage(0);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -126,6 +187,30 @@ const ArticlesList = () => {
           {t('createArticle')}
         </Button>
       </Box>
+
+      {/* Search */}
+      <TextField
+        fullWidth
+        size="small"
+        placeholder="Search articles by title, slug, article ID, reporter, or source URL..."
+        value={searchInput}
+        onChange={handleSearchChange}
+        sx={{ mb: 2 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon color="action" />
+            </InputAdornment>
+          ),
+          endAdornment: searchInput ? (
+            <InputAdornment position="end">
+              <IconButton size="small" onClick={handleClearSearch} aria-label="Clear search">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </InputAdornment>
+          ) : null
+        }}
+      />
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -164,11 +249,11 @@ const ArticlesList = () => {
           sx={{ minWidth: 160 }}
         />
 
-        {(fromDate || toDate || statusFilter) && (
+        {(fromDate || toDate || statusFilter || search) && (
           <Button
             size="small"
             variant="outlined"
-            onClick={() => { setFromDate(''); setToDate(''); setStatusFilter(''); setPage(0); }}
+            onClick={handleClearFilters}
           >
             Clear Filters
           </Button>
@@ -238,24 +323,28 @@ const ArticlesList = () => {
                     <TableCell>{article.engagement?.views || 0}</TableCell>
                     <TableCell>{formatDate(article.createdAt)}</TableCell>
                     <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={() => navigate(`/dashboard/articles/edit/${article._id}`)}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+                      {canEditArticle(article) && (
+                        <IconButton
+                          size="small"
+                          onClick={() => navigate(`/dashboard/articles/edit/${article._id}`)}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      )}
                       <IconButton
                         size="small"
                         onClick={() => window.open(`/article/${article.slug}`, '_blank')}
                       >
                         <ViewIcon fontSize="small" />
                       </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleMenuOpen(e, article)}
-                      >
-                        <MoreIcon fontSize="small" />
-                      </IconButton>
+                      {(canEditArticle(article) || canPublish || canDeleteArticles) && (
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleMenuOpen(e, article)}
+                        >
+                          <MoreIcon fontSize="small" />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -312,6 +401,12 @@ const ArticlesList = () => {
         {canPublish && selectedArticle?.status === 'archived' && (
           <MenuItem onClick={() => handleStatusChange('draft')}>
             Restore to Draft
+          </MenuItem>
+        )}
+        {canDeleteArticles && (
+          <MenuItem onClick={handleDeleteArticle} sx={{ color: 'error.main' }}>
+            <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
+            Delete Permanently
           </MenuItem>
         )}
       </Menu>

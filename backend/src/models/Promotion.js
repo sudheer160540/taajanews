@@ -76,6 +76,17 @@ const promotionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Language codes this promotion targets (e.g. te, en). Empty = all languages.
+  languages: {
+    type: [String],
+    default: [],
+    validate: {
+      validator: (codes) =>
+        Array.isArray(codes) &&
+        codes.every((c) => typeof c === 'string' && /^[a-z]{2}(-[A-Z]{2})?$/.test(c)),
+      message: 'Each language must be a valid code (e.g. en, te)'
+    }
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -89,6 +100,7 @@ const promotionSchema = new mongoose.Schema({
 
 promotionSchema.index({ status: 1, type: 1, priority: -1 });
 promotionSchema.index({ status: 1, startDate: 1, endDate: 1 });
+promotionSchema.index({ languages: 1 });
 promotionSchema.index({ location: '2dsphere' });
 
 const Promotion = mongoose.model('Promotion', promotionSchema);

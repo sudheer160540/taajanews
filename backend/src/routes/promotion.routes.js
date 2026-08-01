@@ -4,6 +4,7 @@ const Joi = require('joi');
 const Promotion = require('../models/Promotion');
 const { protect, adminOnly } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
+const languageCache = require('../utils/languageCache');
 
 // Strict allow-list for YouTube URLs (HTTPS only, known hosts only)
 const youtubeUrlSchema = Joi.string()
@@ -19,6 +20,10 @@ const schemas = {
     title: Joi.string().min(1).max(200).required(),
     description: Joi.string().max(500).allow(null, ''),
     type: Joi.string().valid('advertisement', 'goodwords').required(),
+    languages: Joi.array()
+      .items(Joi.string().pattern(/^[a-z]{2}(-[A-Z]{2})?$/))
+      .min(1)
+      .required(),
     location: Joi.object({
       type: Joi.string().valid('Point'),
       coordinates: Joi.array().items(Joi.number()).length(2),
@@ -43,6 +48,9 @@ const schemas = {
     title: Joi.string().min(1).max(200),
     description: Joi.string().max(500).allow(null, ''),
     type: Joi.string().valid('advertisement', 'goodwords'),
+    languages: Joi.array()
+      .items(Joi.string().pattern(/^[a-z]{2}(-[A-Z]{2})?$/))
+      .min(1),
     location: Joi.object({
       type: Joi.string().valid('Point'),
       coordinates: Joi.array().items(Joi.number()).length(2),
@@ -63,6 +71,29 @@ const schemas = {
   }).min(1)
 };
 
+/** Normalize and validate language codes against active languages in DB. */
+const normalizePromotionLanguages = async (codes) => {
+  if (!Array.isArray(codes) || codes.length === 0) {
+    return { error: 'At least one language must be selected' };
+  }
+
+  const activeCodes = await languageCache.getActiveLanguageCodes();
+  const normalized = [...new Set(
+    codes.map((c) => String(c).toLowerCase().trim()).filter(Boolean)
+  )];
+
+  if (normalized.length === 0) {
+    return { error: 'At least one language must be selected' };
+  }
+
+  const invalid = normalized.filter((c) => !activeCodes.includes(c));
+  if (invalid.length > 0) {
+    return { error: `Invalid or inactive language code(s): ${invalid.join(', ')}` };
+  }
+
+  return { languages: normalized };
+};
+
 // @route   GET /api/promotions/feed
 // @desc    Promotion feed for mobile app — active, newest first, optional location
 // @access  Public
@@ -74,7 +105,8 @@ router.get('/feed', async (req, res) => {
       lng,
       radiusKM = 50,
       limit = 20,
-      page = 1
+      page = 1,
+      lang
     } = req.query;
 
     const now = new Date();
@@ -123,9 +155,23 @@ router.get('/feed', async (req, res) => {
     const baseMatch = { status: 'active', ...dateFilter };
     // if (type) baseMatch.type = type;
 
+    // Language filter for mobile — empty/missing languages = visible in all languages
+    const langCode = String(lang || '').toLowerCase().trim();
+    if (langCode) {
+      const langFilter = {
+        $or: [
+          { languages: { $exists: false } },
+          { languages: { $size: 0 } },
+          { languages: langCode }
+        ]
+      };
+      baseMatch.$and = baseMatch.$and ? [...baseMatch.$and, langFilter] : [langFilter];
+    }
+
     if (lat && lng) {
       // Include: nearby promotions OR promotions without a real location (coordinates [0,0])
       baseMatch.$and = [
+        ...(baseMatch.$and || []),
         {
           $or: [
             { _id: { $in: nearbyIds } },
@@ -167,17 +213,39 @@ router.get('/feed', async (req, res) => {
 // @access  Private/Admin
 router.get('/manage/list', protect, adminOnly, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, type } = req.query;
+    const { page = 1, limit = 20, status, type, sortBy, sortOrder, search } = req.query;
 
     const query = {};
     if (status) query.status = status;
     if (type) query.type = type;
 
+    const searchTerm = String(search || '').trim().slice(0, 100);
+    if (searchTerm) {
+      const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      query.$or = [
+        { title: regex },
+        { description: regex },
+        { 'location.city': regex },
+        { 'location.formattedAddress': regex },
+        { link: regex }
+      ];
+    }
+
+    // Allow-list sortable fields to prevent arbitrary field injection.
+    const ALLOWED_SORT_FIELDS = ['priority', 'endDate', 'startDate', 'createdAt'];
+    const sortField = ALLOWED_SORT_FIELDS.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDir = sortOrder === 'asc' ? 1 : -1;
+    // Keep a stable secondary sort so equal values have a deterministic order.
+    const sort = sortField === 'createdAt'
+      ? { createdAt: sortDir }
+      : { [sortField]: sortDir, createdAt: -1 };
+
     const skip = (Number(page) - 1) * Number(limit);
     const [promotions, total] = await Promise.all([
       Promotion.find(query)
         .populate('createdBy', 'name')
-        .sort({ createdAt: -1 })
+        .sort(sort)
         .skip(skip)
         .limit(Number(limit))
         .lean(),
@@ -223,7 +291,12 @@ router.get('/:id', protect, adminOnly, async (req, res) => {
 // @access  Private/Admin
 router.post('/', protect, adminOnly, validate(schemas.createPromotion), async (req, res) => {
   try {
-    const data = { ...req.body, createdBy: req.user._id };
+    const langResult = await normalizePromotionLanguages(req.body.languages);
+    if (langResult.error) {
+      return res.status(400).json({ error: langResult.error });
+    }
+
+    const data = { ...req.body, languages: langResult.languages, createdBy: req.user._id };
 
     if (data.link === '') data.link = null;
     if (data.youtubeUrl === '') data.youtubeUrl = null;
@@ -249,6 +322,15 @@ router.post('/', protect, adminOnly, validate(schemas.createPromotion), async (r
 router.put('/:id', protect, adminOnly, validate(schemas.updatePromotion), async (req, res) => {
   try {
     const updates = { ...req.body };
+
+    if (updates.languages !== undefined) {
+      const langResult = await normalizePromotionLanguages(updates.languages);
+      if (langResult.error) {
+        return res.status(400).json({ error: langResult.error });
+      }
+      updates.languages = langResult.languages;
+    }
+
     if (updates.link === '') updates.link = null;
     if (updates.youtubeUrl === '') updates.youtubeUrl = null;
 

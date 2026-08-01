@@ -4,9 +4,12 @@ const mongoose = require('mongoose');
 const Article = require('../models/Article');
 const Category = require('../models/Category');
 const User = require('../models/User');
-const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, adminOnly } = require('../middleware/auth');
+const Comment = require('../models/Comment');
+const Engagement = require('../models/Engagement');
+const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, chiefEditorOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
+const { deleteArticleMediaFromAzure } = require('../utils/articleMediaCleanup');
 const { notifyArticlePublished } = require('../utils/pushNotification');
 const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
 
@@ -610,7 +613,7 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Article not found' });
     }
 
-    // Check permission - reporters can only view their own articles
+    // Check permission — reporters only see their own; sub-editor+ can view any article
     const ownerId = article.createdBy?._id || article.author?._id;
     if (req.user.role === 'reporter' &&
         ownerId?.toString() !== req.user._id.toString()) {
@@ -711,15 +714,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     }
     const previousStatus = article.status;
 
-    // Check permission
+    // Check permission — reporters only edit own articles; sub-editor+ edit any article
     const ownerId = article.createdBy || article.author;
     if (req.user.role === 'reporter' &&
         ownerId?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to update this article' });
     }
 
-    // Reporters cannot edit their own article once it has been published.
-    // Sub-Editor / Chief-Editor / Admin retain edit access after publish.
+    // Reporters cannot edit their own article once published. Sub-Editor / Chief-Editor / Admin can.
     if (req.user.role === 'reporter' && article.status === 'published') {
       return res.status(403).json({
         error: 'Reporters cannot edit an article after it has been published. Please contact an editor to make changes.'
@@ -876,21 +878,28 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
 });
 
 // @route   DELETE /api/articles/:id
-// @desc    Delete article (archive)
-// @access  Private/Admin
-router.delete('/:id', protect, adminOnly, async (req, res) => {
+// @desc    Permanently delete article and remove Azure media (Chief Editor / Admin only)
+// @access  Private/Chief Editor
+router.delete('/:id', protect, chiefEditorOnly, async (req, res) => {
   try {
-    const article = await Article.findByIdAndUpdate(
-      req.params.id,
-      { status: 'archived', updatedBy: req.user._id },
-      { new: true }
-    );
-
+    const article = await Article.findById(req.params.id);
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
 
-    res.json({ message: 'Article archived' });
+    const mediaCleanup = await deleteArticleMediaFromAzure(article);
+
+    await Promise.all([
+      Comment.deleteMany({ article: article._id }),
+      Engagement.deleteMany({ article: article._id })
+    ]);
+
+    await Article.findByIdAndDelete(article._id);
+
+    res.json({
+      message: 'Article permanently deleted',
+      mediaCleanup
+    });
   } catch (error) {
     console.error('Delete article error:', error);
     res.status(500).json({ error: 'Failed to delete article' });
@@ -955,18 +964,21 @@ router.get('/manage/stats', protect, reporterOrAdmin, async (req, res) => {
 router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { page = 1, limit = 20, status, category, fromDate, toDate, lang = defaultLang } = req.query;
+    const { page = 1, limit = 20, status, category, fromDate, toDate, search, lang = defaultLang } = req.query;
 
     const query = {};
-    
+    const andConditions = [];
+
     // Reporters can only see their own articles
     if (req.user.role === 'reporter') {
-      query.$or = [
-        { createdBy: req.user._id },
-        { createdBy: { $exists: false }, author: req.user._id }
-      ];
+      andConditions.push({
+        $or: [
+          { createdBy: req.user._id },
+          { createdBy: { $exists: false }, author: req.user._id }
+        ]
+      });
     }
-    
+
     if (status) query.status = status;
     if (category) query.category = category;
 
@@ -981,9 +993,48 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
       }
     }
 
+    const searchTerm = String(search || '').trim().slice(0, 100);
+    if (searchTerm) {
+      const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      andConditions.push({
+        $or: [
+          { slug: regex },
+          { articleId: regex },
+          { reporterName: regex },
+          { sourceUrl: regex },
+          {
+            $expr: {
+              $gt: [
+                {
+                  $size: {
+                    $filter: {
+                      input: { $objectToArray: { $ifNull: ['$title', {}] } },
+                      as: 't',
+                      cond: {
+                        $regexMatch: {
+                          input: { $ifNull: ['$$t.v', ''] },
+                          regex: escaped,
+                          options: 'i'
+                        }
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            }
+          }
+        ]
+      });
+    }
+
+    if (andConditions.length) query.$and = andConditions;
+
     const articles = await Article.find(query)
-      .select('title slug status publishedAt createdAt engagement author category source sourceUrl reporterName')
+      .select('title slug status publishedAt createdAt engagement author createdBy category source sourceUrl reporterName')
       .populate('author', 'name')
+      .populate('createdBy', 'name')
       .populate('category', 'name')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
