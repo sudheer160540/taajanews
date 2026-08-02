@@ -19,9 +19,12 @@ import {
   Tab,
   IconButton,
   CircularProgress,
-  FormControlLabel,
-  Checkbox,
-  Autocomplete as MuiAutocomplete
+  Autocomplete as MuiAutocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -34,7 +37,7 @@ import {
   LocationOn as LocationIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '../../services/api';
+import { articlesApi, categoriesApi, uploadApi, usersApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -74,7 +77,6 @@ const ArticleEditor = () => {
     sourceUrl: '',
     youtubeUrl: ''
   });
-  const [generateAudio, setGenerateAudio] = useState(false);
   
   const [categories, setCategories] = useState([]);
   const [articleAuthors, setArticleAuthors] = useState([]);
@@ -88,6 +90,11 @@ const ArticleEditor = () => {
   const [tagInput, setTagInput] = useState('');
   const [uploading, setUploading] = useState(false);
   const [translating, setTranslating] = useState(false);
+  const [translateDialogOpen, setTranslateDialogOpen] = useState(false);
+  const [translatePreview, setTranslatePreview] = useState(null);
+  const [translatePreviewTab, setTranslatePreviewTab] = useState(0);
+  const [translateError, setTranslateError] = useState(null);
+  const [teluguInputText, setTeluguInputText] = useState('');
 
   useEffect(() => {
     initializeEditor();
@@ -336,87 +343,89 @@ const ArticleEditor = () => {
     }
   };
 
-  const handleTranslate = async () => {
+  const getTeluguDraftText = () => {
+    const parts = [];
+    if (article.title.te?.trim()) parts.push(article.title.te.trim());
+    if (article.summary.te?.trim()) parts.push(article.summary.te.trim());
+    if (article.content.te?.trim()) parts.push(article.content.te.trim());
+    return parts.join('\n\n');
+  };
+
+  const handleOpenTranslateDialog = () => {
     setError(null);
     setErrorDetails([]);
     setSuccess(null);
+    setTranslateError(null);
+    setTranslatePreview(null);
+    setTranslatePreviewTab(0);
+    setTeluguInputText(getTeluguDraftText());
+    setTranslateDialogOpen(true);
+  };
 
-    // Collect non-empty fields
-    const getNonEmpty = (obj) => {
-      const result = {};
-      Object.entries(obj || {}).forEach(([lang, text]) => {
-        if (text && text.trim()) result[lang] = text;
-      });
-      return result;
-    };
-
-    const titleInput = getNonEmpty(article.title);
-    const summaryInput = getNonEmpty(article.summary);
-    const contentInput = getNonEmpty(article.content);
-
-    if (Object.keys(titleInput).length === 0 && Object.keys(summaryInput).length === 0 && Object.keys(contentInput).length === 0) {
-      setError('Please enter content in at least one language before translating');
-      setErrorDetails([]);
+  const handleRunTranslate = async () => {
+    if (!teluguInputText.trim()) {
+      setTranslateError('Please enter Telugu article text to translate');
       return;
     }
 
     setTranslating(true);
+    setTranslateError(null);
+    setTranslatePreview(null);
 
     try {
-      const payload = {};
-      if (Object.keys(titleInput).length > 0) payload.title = titleInput;
-      if (Object.keys(summaryInput).length > 0) payload.summary = summaryInput;
-      if (Object.keys(contentInput).length > 0) payload.content = contentInput;
-
-      if (generateAudio) payload.generateAudio = true;
-
-      const response = await translateApi.translate(payload);
-      const translated = response.data;
-
-      setArticle(prev => {
-        const updated = { ...prev };
-
-        if (translated.title) {
-          updated.title = { ...prev.title };
-          Object.entries(translated.title).forEach(([lang, text]) => {
-            if (!prev.title[lang] || !prev.title[lang].trim()) {
-              updated.title[lang] = text;
-            }
-          });
-        }
-
-        if (translated.summary) {
-          updated.summary = { ...prev.summary };
-          Object.entries(translated.summary).forEach(([lang, text]) => {
-            if (!prev.summary[lang] || !prev.summary[lang].trim()) {
-              updated.summary[lang] = text;
-            }
-          });
-        }
-
-        if (translated.content) {
-          updated.content = { ...prev.content };
-          Object.entries(translated.content).forEach(([lang, text]) => {
-            if (!prev.content[lang] || !prev.content[lang].trim()) {
-              updated.content[lang] = text;
-            }
-          });
-        }
-
-        if (translated.audio) {
-          updated.audio = { ...prev.audio, ...translated.audio };
-        }
-
-        return updated;
+      const response = await articlesApi.translateAll({
+        sourceLang: 'te',
+        content: { te: teluguInputText.trim() }
       });
-
-      setSuccess(generateAudio ? 'Translation and audio generation completed' : 'Translation completed successfully');
+      setTranslatePreview(response.data);
     } catch (err) {
-      setApiError(err, 'Translation failed. Please try again.');
+      const message = err?.response?.data?.error || 'Translation failed. Please try again.';
+      setTranslateError(message);
       console.error(err);
     } finally {
       setTranslating(false);
     }
+  };
+
+  const handleApplyTranslation = () => {
+    if (!translatePreview) return;
+
+    setArticle((prev) => {
+      const updated = { ...prev };
+      const mergeField = (fieldName) => {
+        if (!translatePreview[fieldName]) return;
+        updated[fieldName] = { ...prev[fieldName] };
+        Object.entries(translatePreview[fieldName]).forEach(([lang, text]) => {
+          if (text && text.trim()) {
+            updated[fieldName][lang] = text;
+          }
+        });
+      };
+
+      mergeField('title');
+      mergeField('summary');
+      mergeField('content');
+      return updated;
+    });
+
+    setTranslateDialogOpen(false);
+    setTranslatePreview(null);
+    setTranslateError(null);
+    setSuccess('Translation applied to all languages');
+  };
+
+  const handleCloseTranslateDialog = () => {
+    if (translating) return;
+    setTranslateDialogOpen(false);
+    setTranslatePreview(null);
+    setTranslateError(null);
+    setTeluguInputText('');
+  };
+
+  const handleBackToTranslateInput = () => {
+    setTranslatePreview(null);
+    setTranslateError(null);
+    setTranslatePreviewTab(0);
   };
 
   // Validate that the URL is a well-formed YouTube link (allow empty since field is optional)
@@ -553,6 +562,15 @@ const ArticleEditor = () => {
         <Box sx={{ flexGrow: 1 }} />
         {!isReporterLockedOut && (
           <>
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<TranslateIcon />}
+              onClick={handleOpenTranslateDialog}
+              disabled={saving || translating}
+            >
+              Translate
+            </Button>
             <Button
               variant="outlined"
               startIcon={<SaveIcon />}
@@ -715,30 +733,6 @@ const ArticleEditor = () => {
                 </Box>
               )}
 
-              {/* Translate Button + Audio Checkbox */}
-              {!isReporterLockedOut && (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={generateAudio}
-                        onChange={(e) => setGenerateAudio(e.target.checked)}
-                        size="small"
-                      />
-                    }
-                    label="Convert to Audio"
-                  />
-                  <Button
-                    variant="outlined"
-                    color="secondary"
-                    startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
-                    onClick={handleTranslate}
-                    disabled={translating || saving}
-                  >
-                    {translating ? 'Translating...' : 'Translate to All Languages'}
-                  </Button>
-                </Box>
-              )}
             </CardContent>
           </Card>
         </Grid>
@@ -1040,6 +1034,133 @@ const ArticleEditor = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Dialog
+        open={translateDialogOpen}
+        onClose={handleCloseTranslateDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Translate to All Languages
+          <IconButton onClick={handleCloseTranslateDialog} disabled={translating} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {translating && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 6, gap: 2 }}>
+              <CircularProgress />
+              <Typography color="text.secondary">
+                Paraphrasing article in Telugu, Hindi, and English…
+              </Typography>
+            </Box>
+          )}
+
+          {!translating && translateError && (
+            <Alert severity="error" sx={{ mb: translatePreview ? 2 : 0 }}>{translateError}</Alert>
+          )}
+
+          {!translating && !translatePreview && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Paste or type the Telugu news article below. It will be paraphrased into Telugu, Hindi, and English.
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                minRows={12}
+                maxRows={20}
+                placeholder="Enter Telugu article text here…"
+                value={teluguInputText}
+                onChange={(e) => setTeluguInputText(e.target.value)}
+                inputProps={{ maxLength: 12000 }}
+                helperText={`${teluguInputText.length} / 12000 characters`}
+              />
+            </Box>
+          )}
+
+          {!translating && translatePreview && (
+            <Box>
+              <Tabs
+                value={translatePreviewTab}
+                onChange={(_, v) => setTranslatePreviewTab(v)}
+                sx={{ mb: 2 }}
+              >
+                {[
+                  { code: 'te', label: 'Telugu' },
+                  { code: 'hi', label: 'Hindi' },
+                  { code: 'en', label: 'English' }
+                ].map((lang, idx) => (
+                  <Tab key={lang.code} label={lang.label} value={idx} />
+                ))}
+              </Tabs>
+
+              {(() => {
+                const previewLangs = ['te', 'hi', 'en'];
+                const langCode = previewLangs[translatePreviewTab];
+                return (
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Heading
+                    </Typography>
+                    <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                      {translatePreview.title?.[langCode] || '—'}
+                    </Typography>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Superlead
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {translatePreview.summary?.[langCode] || '—'}
+                    </Typography>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Full News
+                    </Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {translatePreview.content?.[langCode] || '—'}
+                    </Typography>
+                  </Box>
+                );
+              })()}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          {translatePreview && !translating && (
+            <Button onClick={handleBackToTranslateInput}>
+              Edit Telugu Text
+            </Button>
+          )}
+          <Box sx={{ flexGrow: 1 }} />
+          <Button onClick={handleCloseTranslateDialog} disabled={translating}>
+            Cancel
+          </Button>
+          {!translatePreview ? (
+            <Button
+              variant="contained"
+              onClick={handleRunTranslate}
+              disabled={translating || !teluguInputText.trim()}
+              startIcon={translating ? <CircularProgress size={18} color="inherit" /> : <TranslateIcon />}
+            >
+              {translating ? 'Translating…' : 'Translate'}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={handleApplyTranslation}
+              disabled={translating}
+            >
+              Apply to Article
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

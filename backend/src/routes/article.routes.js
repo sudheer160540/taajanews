@@ -12,6 +12,7 @@ const languageCache = require('../utils/languageCache');
 const { deleteArticleMediaFromAzure } = require('../utils/articleMediaCleanup');
 const { notifyArticlePublished } = require('../utils/pushNotification');
 const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
+const { translateArticleWithAnthropic } = require('../utils/anthropicArticleTranslate');
 
 // Fire-and-forget mobile push (FCM) + Telegram. NEVER blocks the HTTP response
 // and NEVER throws; notification outages must not break the article API.
@@ -595,6 +596,45 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
   } catch (error) {
     console.error('Get article error:', error);
     res.status(500).json({ error: 'Failed to fetch article' });
+  }
+});
+
+// @route   POST /api/articles/translate-all
+// @desc    Paraphrase/translate article to Telugu, Hindi, and English via Anthropic
+// @access  Private/Reporter
+router.post('/translate-all', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const { title, summary, content, sourceLang = 'te' } = req.body;
+
+    if (!title && !summary && !content) {
+      return res.status(400).json({ error: 'At least one field (title, summary, or content) is required' });
+    }
+
+    const translated = await translateArticleWithAnthropic({
+      title: title || {},
+      summary: summary || {},
+      content: content || {},
+      sourceLang
+    });
+
+    res.json(translated);
+  } catch (error) {
+    console.error('Anthropic article translation error:', error?.message || error);
+
+    if (error?.message === 'ANTHROPIC_API_KEY is not configured') {
+      return res.status(500).json({ error: 'Translation service is not configured' });
+    }
+    if (error?.message?.includes('Please provide article content')) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error?.status === 401) {
+      return res.status(500).json({ error: 'Invalid Anthropic API key configuration' });
+    }
+    if (error?.status === 429) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+    }
+
+    res.status(500).json({ error: 'Translation failed. Please try again.' });
   }
 });
 
