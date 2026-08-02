@@ -9,6 +9,7 @@
     "process-source-articles": "node src/scripts/processSourceArticles.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@azure/storage-blob": "^12.17.0",
     "axios": "^1.13.5",
     "bcryptjs": "^2.4.3",
