@@ -19,6 +19,8 @@ import {
   Tab,
   IconButton,
   CircularProgress,
+  FormControlLabel,
+  Checkbox,
   Autocomplete as MuiAutocomplete,
   Dialog,
   DialogTitle,
@@ -37,7 +39,7 @@ import {
   LocationOn as LocationIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, uploadApi, usersApi } from '../../services/api';
+import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -77,6 +79,7 @@ const ArticleEditor = () => {
     sourceUrl: '',
     youtubeUrl: ''
   });
+  const [generateAudio, setGenerateAudio] = useState(false);
   
   const [categories, setCategories] = useState([]);
   const [articleAuthors, setArticleAuthors] = useState([]);
@@ -428,6 +431,89 @@ const ArticleEditor = () => {
     setTranslatePreviewTab(0);
   };
 
+  const handleTranslate = async () => {
+    setError(null);
+    setErrorDetails([]);
+    setSuccess(null);
+
+    const getNonEmpty = (obj) => {
+      const result = {};
+      Object.entries(obj || {}).forEach(([lang, text]) => {
+        if (text && text.trim()) result[lang] = text;
+      });
+      return result;
+    };
+
+    const titleInput = getNonEmpty(article.title);
+    const summaryInput = getNonEmpty(article.summary);
+    const contentInput = getNonEmpty(article.content);
+
+    if (
+      Object.keys(titleInput).length === 0 &&
+      Object.keys(summaryInput).length === 0 &&
+      Object.keys(contentInput).length === 0
+    ) {
+      setError('Please enter content in at least one language before translating');
+      setErrorDetails([]);
+      return;
+    }
+
+    setTranslating(true);
+
+    try {
+      const payload = { sourceLang: 'te' };
+      if (Object.keys(titleInput).length > 0) payload.title = titleInput;
+      if (Object.keys(summaryInput).length > 0) payload.summary = summaryInput;
+      if (Object.keys(contentInput).length > 0) payload.content = contentInput;
+
+      const response = await articlesApi.translateAll(payload);
+      const translated = response.data;
+
+      const mergeInto = (prev, fieldName, source) => {
+        const merged = { ...prev[fieldName] };
+        if (source) {
+          Object.entries(source).forEach(([lang, text]) => {
+            if (text?.trim() && (!merged[lang] || !merged[lang].trim())) {
+              merged[lang] = text;
+            }
+          });
+        }
+        return merged;
+      };
+
+      const mergedTitle = mergeInto(article, 'title', translated.title);
+      const mergedSummary = mergeInto(article, 'summary', translated.summary);
+      const mergedContent = mergeInto(article, 'content', translated.content);
+
+      setArticle((prev) => ({
+        ...prev,
+        title: mergedTitle,
+        summary: mergedSummary,
+        content: mergedContent
+      }));
+
+      if (generateAudio) {
+        const audioRes = await translateApi.translate({
+          content: mergedContent,
+          generateAudio: true
+        });
+        if (audioRes.data?.audio) {
+          setArticle((prev) => ({
+            ...prev,
+            audio: { ...prev.audio, ...audioRes.data.audio }
+          }));
+        }
+      }
+
+      setSuccess(generateAudio ? 'Translation and audio generation completed' : 'Translation completed successfully');
+    } catch (err) {
+      setApiError(err, 'Translation failed. Please try again.');
+      console.error(err);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   // Validate that the URL is a well-formed YouTube link (allow empty since field is optional)
   const isValidYoutubeUrl = (url) => {
     if (!url) return true;
@@ -730,6 +816,31 @@ const ArticleEditor = () => {
                   <audio controls style={{ width: '100%' }} src={article.audio[currentLang]}>
                     Your browser does not support audio playback.
                   </audio>
+                </Box>
+              )}
+
+              {/* Translate Button + Audio Checkbox */}
+              {!isReporterLockedOut && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={generateAudio}
+                        onChange={(e) => setGenerateAudio(e.target.checked)}
+                        size="small"
+                      />
+                    }
+                    label="Convert to Audio"
+                  />
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
+                    onClick={handleTranslate}
+                    disabled={translating || saving}
+                  >
+                    {translating ? 'Translating...' : 'Translate to All Languages'}
+                  </Button>
                 </Box>
               )}
 
