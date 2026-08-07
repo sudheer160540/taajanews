@@ -120,8 +120,8 @@ async function createArticleFromSource(sourceDoc, authorId) {
     author: authorId,
     reporterName: '',
     status: 'draft',
-    source: 'TNN',
-    sourceUrl: sourceDoc.url || '',
+    source: 'Taaja News Network',
+    sourceUrl: '',
     featuredImage: {
       url: getDefaultFeaturedImageUrl(),
       alt: 'default_breaking_news',

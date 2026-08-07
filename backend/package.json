@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Backend API for Taaja News application",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
@@ -28,6 +31,7 @@
     "nanoid": "^3.3.11",
     "nodemailer": "^9.0.3",
     "openai": "^6.21.0",
+    "sharp": "^0.35.3",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

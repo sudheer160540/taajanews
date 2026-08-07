@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables / secrets (keep the example)
+.env
+.env.*
+!.env.example
+
+# Service accounts & credentials — NEVER commit these
+*firebase-adminsdk*.json
+client_secret_*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
