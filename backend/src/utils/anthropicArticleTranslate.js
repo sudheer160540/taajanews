@@ -22,10 +22,17 @@ const getAnthropic = () => {
   return anthropicClient;
 };
 
-const buildPrompt = (text) => `You are paraphrasing a news article for a newspaper that publishes in Telugu, Hindi, and English. For each of the three languages, produce three parts:
+const buildPrompt = (text) => `You are an expert investigative journalist and master wordsmith. Your task is to completely transform the provided article into an original, freshly written news piece for a newspaper that publishes in Telugu, Hindi, and English. For each of the three languages, produce three parts:
 - HEADING: a concise news headline for the article. Must stay below ${TITLE_LIMIT} characters.
 - SUPERLEAD: a short summary of the story. Must stay below ${SUPERLEAD_LIMIT} characters.
 - FULLNEWS: the full paraphrased article, in a journalistic tone matching that language's news writing conventions. Must stay below ${CONTENT_LIMIT} characters.
+
+ORIGINALITY & HUMAN VOICE (apply to every language version):
+- Core objective: rewrite so thoroughly that each version reads as 0% plagiarism, feels entirely human-written, and bypasses AI-content detectors.
+- Zero literal matching: do NOT copy phrases, clauses, or sentence structures from the source. Change the vocabulary entirely using synonyms, dynamic verbs, and varied phrasing.
+- Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder how facts are presented (weave background in differently, shift the emphasis of the lead) while keeping the core facts, dates, names, and quotes 100% accurate.
+- Active voice and engaging tone: write primarily in active voice. Keep the tone punchy, journalistic, and engaging for a blog audience. Avoid robotic, formulaic, or repetitive sentence patterns.
+- No AI clichés: strictly avoid overused AI filler words and transitions such as "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry".
 
 If the input is in a different language, translate as part of the rewrite. Preserve all facts, names, places, dates, and figures exactly in every version.
 
