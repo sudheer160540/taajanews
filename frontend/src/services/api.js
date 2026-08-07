@@ -108,9 +108,12 @@ export const uploadApi = {
   confirmUpload: (blobUrl, blobName, type) => api.post('/upload/confirm', { blobUrl, blobName, type }),
   delete: (blobName) => api.delete(`/upload/${blobName}`),
   // Upload file through backend (bypasses CORS)
-  uploadFile: (file) => {
+  uploadFile: (file, options = {}) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (options.crop) {
+      formData.append('crop', JSON.stringify(options.crop));
+    }
     return api.post('/upload/file', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
