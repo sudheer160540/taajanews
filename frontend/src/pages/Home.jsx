@@ -26,6 +26,7 @@ import { articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 import { getYoutubeEmbedId } from '../utils/youtube';
 import Seo from '../components/Seo';
+import LazyImage from '../components/LazyImage';
 import { buildWebSiteJsonLd } from '../utils/seo';
 
 const IMAGE_PLACEHOLDER =
@@ -142,10 +143,10 @@ const HeroFeaturedCard = ({ article, onNavigate, t }) => {
         boxShadow: '0 4px 16px rgba(72, 117, 188, 0.15)'
       }}
     >
-      <Box
-        component="img"
+      <LazyImage
         src={imageUrl}
         alt={article.title}
+        eager
         sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
       />
       {hasVideo && <PlayBadgeOverlay />}
@@ -218,10 +219,10 @@ const HeroSideCard = ({ article, onNavigate, t }) => {
         flex: 1
       }}
     >
-      <Box
-        component="img"
+      <LazyImage
         src={imageUrl}
         alt={article.title}
+        eager
         sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
       />
       {hasVideo && <PlayBadgeOverlay />}
@@ -263,6 +264,7 @@ const ArticleListRow = ({ article, onNavigate, t }) => {
   return (
     <Paper
       elevation={0}
+      className="article-list-row"
       sx={{
         display: 'flex',
         gap: 2,
@@ -273,6 +275,8 @@ const ArticleListRow = ({ article, onNavigate, t }) => {
         borderColor: 'divider',
         bgcolor: '#fff',
         transition: 'box-shadow 0.2s',
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 110px',
         '&:hover': { boxShadow: '0 4px 12px rgba(72, 117, 188, 0.12)' }
       }}
     >
@@ -288,8 +292,7 @@ const ArticleListRow = ({ article, onNavigate, t }) => {
         }}
       >
         <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-          <Box
-            component="img"
+          <LazyImage
             src={imageUrl}
             alt=""
             sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -404,8 +407,7 @@ const TrendingListItem = ({ article, rank, onNavigate, t }) => {
         </Typography>
       </Box>
       {imageUrl && (
-        <Box
-          component="img"
+        <LazyImage
           src={imageUrl}
           alt=""
           sx={{
@@ -440,6 +442,7 @@ const Home = () => {
   const [articles, setArticles] = useState([]);
   const [trendingArticles, setTrendingArticles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, hasMore: false });
 
@@ -480,8 +483,11 @@ const Home = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setTrendingLoading(true);
     try {
-      const feedParams = { lang, limit: 20, page: 1 };
+      // Smaller first page on mobile for faster TTFB / paint on slow 4G
+      const isNarrow = typeof window !== 'undefined' && window.innerWidth < 600;
+      const feedParams = { lang, limit: isNarrow ? 10 : 16, page: 1 };
       const loc = getLocationCoords();
       if (loc) {
         feedParams.latitude = loc.lat;
@@ -489,18 +495,26 @@ const Home = () => {
         feedParams.radiusKM = 50;
       }
 
-      const [articlesRes, trendingRes] = await Promise.all([
-        articlesApi.getFeed(feedParams),
-        articlesApi.getTrending({ limit: 5, lang })
-      ]);
+      // Critical path: news feed only — unblock UI ASAP
+      const articlesRes = await articlesApi.getFeed(feedParams);
+      setArticles(articlesRes.data.articles || []);
+      setPagination(articlesRes.data.pagination || { page: 1, hasMore: false });
+      setLoading(false);
 
-      setArticles(articlesRes.data.articles);
-      setPagination(articlesRes.data.pagination);
-      setTrendingArticles(trendingRes.data.articles);
+      // Secondary: trending after feed paints (non-blocking)
+      articlesApi
+        .getTrending({ limit: 5, lang })
+        .then((trendingRes) => {
+          setTrendingArticles(trendingRes.data.articles || []);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch trending:', err);
+        })
+        .finally(() => setTrendingLoading(false));
     } catch (err) {
       console.error('Failed to fetch data:', err);
-    } finally {
       setLoading(false);
+      setTrendingLoading(false);
     }
   };
 
@@ -509,7 +523,8 @@ const Home = () => {
     setLoadingMore(true);
     try {
       const nextPage = pagination.page + 1;
-      const feedParams = { lang, limit: 20, page: nextPage };
+      const isNarrow = typeof window !== 'undefined' && window.innerWidth < 600;
+      const feedParams = { lang, limit: isNarrow ? 10 : 16, page: nextPage };
       const loc = getLocationCoords();
       if (loc) {
         feedParams.latitude = loc.lat;
@@ -517,7 +532,7 @@ const Home = () => {
         feedParams.radiusKM = 50;
       }
       const articlesRes = await articlesApi.getFeed(feedParams);
-      setArticles((prev) => [...prev, ...articlesRes.data.articles]);
+      setArticles((prev) => [...prev, ...(articlesRes.data.articles || [])]);
       setPagination(articlesRes.data.pagination);
     } catch (err) {
       console.error('Failed to fetch more articles:', err);
@@ -665,7 +680,7 @@ const Home = () => {
                 </Typography>
               </Box>
 
-              {loading ? (
+              {trendingLoading ? (
                 [1, 2, 3].map((i) => <Skeleton key={i} height={72} sx={{ my: 1 }} />)
               ) : trendingArticles.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">

@@ -30,6 +30,8 @@ const Footer = () => {
             component="img"
             src="/logo.png"
             alt="Taaja News"
+            loading="lazy"
+            decoding="async"
             sx={{ width: 36, height: 36, borderRadius: '4px', objectFit: 'cover' }}
           />
           <Typography variant="h6" fontWeight={900} letterSpacing={1} sx={{ color: 'white' }}>

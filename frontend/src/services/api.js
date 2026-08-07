@@ -10,10 +10,9 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json'
   },
-  withCredentials: true
+  withCredentials: true,
+  timeout: 20000
 });
-
-console.log("demo")
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
@@ -70,7 +69,8 @@ export const categoriesApi = {
   getAll: (params) => api.get('/categories', { params }),
   getTree: () => api.get('/categories/tree'),
   getById: (id) => api.get(`/categories/${id}`),
-  getBySlug: (slug) => api.get(`/categories/slug/${slug}`),
+  getBySlug: (slug, lang) =>
+    api.get(`/categories/slug/${slug}`, lang ? { params: { lang } } : undefined),
   create: (data) => api.post('/categories', data),
   update: (id, data) => api.put(`/categories/${id}`, data),
   delete: (id) => api.delete(`/categories/${id}`)
@@ -147,6 +147,7 @@ export const translateApi = {
 };
 
 export const promotionsApi = {
+  getFeed: (params) => api.get('/promotions/feed', { params }),
   getAll: (params) => api.get('/promotions/manage/list', { params }),
   getById: (id) => api.get(`/promotions/${id}`),
   create: (data) => api.post('/promotions', data),

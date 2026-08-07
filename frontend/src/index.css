@@ -5,6 +5,19 @@
   --color-background: #f5f5f5;
   --shadow-light: 0 2px 8px rgba(0, 0, 0, 0.1);
   --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+  /* Header fluid tokens — consistent across 320–430px Android viewports */
+  --header-pad-x: clamp(0.65rem, 3.2vw, 1.25rem);
+  --header-pad-y: clamp(0.55rem, 2vw, 0.85rem);
+  --header-gap: clamp(0.3rem, 1.5vw, 0.55rem);
+  --header-logo: clamp(2.5rem, 11vw, 4rem);
+  --header-brand-fs: clamp(1.35rem, 5.2vw + 0.55rem, 2.15rem);
+  --header-brand-tracking: clamp(0.01em, 0.2vw, 0.04em);
+  --header-control-h: clamp(1.85rem, 7vw, 2.35rem);
+  --header-lang-fs: clamp(0.74rem, 2.5vw + 0.22rem, 0.95rem);
+  --header-login-icon: clamp(1.85rem, 7vw, 2.25rem);
+  --header-location-fs: clamp(0.78rem, 2.3vw + 0.28rem, 1rem);
+  --header-chip-h: clamp(1.7rem, 6.5vw, 1.9rem);
 }
 
 * {
@@ -16,6 +29,8 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 body {
@@ -23,12 +38,16 @@ body {
   background-color: var(--color-background);
   min-height: 100vh;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 #root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Custom scrollbar */
@@ -77,10 +96,10 @@ body {
   flex-direction: column;
 }
 
-/* Responsive typography */
+/* Responsive root type — fluid, not a hard jump */
 @media (max-width: 600px) {
   html {
-    font-size: 14px;
+    font-size: clamp(14px, 3.75vw, 16px);
   }
 }
 
@@ -126,5 +145,406 @@ body {
 @media print {
   .no-print {
     display: none !important;
+  }
+}
+
+/* ─── Site header (shared) ─── */
+.site-header {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+.site-header__toolbar {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-inline: var(--header-pad-x) !important;
+  padding-block: var(--header-pad-y) !important;
+}
+
+.site-header__inner {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.45rem, 1.8vw, 0.75rem);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.site-header__brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.site-header__brand-group {
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(0.45rem, 2vw, 0.75rem);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.site-header__brand-title:focus-visible,
+.site-header__logo-wrap:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.site-header__logo-wrap {
+  width: var(--header-logo);
+  height: var(--header-logo);
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  line-height: 0;
+  box-sizing: border-box;
+  transition: opacity 0.2s ease;
+}
+
+.site-header__logo-wrap:hover {
+  opacity: 0.9;
+}
+
+.site-header__logo {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  object-fit: contain !important;
+  object-position: center;
+  display: block;
+  transform: scale(1.26);
+  transform-origin: center center;
+}
+
+.site-header__brand-title {
+  font-size: var(--header-brand-fs) !important;
+  letter-spacing: var(--header-brand-tracking) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.site-header__brand-title:hover {
+  opacity: 0.85;
+}
+
+.site-header__login:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.site-header__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  gap: var(--header-gap);
+}
+
+.site-header__actions-left {
+  display: contents;
+}
+
+.site-header__location {
+  flex: 1 1 30%;
+  width: auto;
+  min-width: 0;
+  max-width: 40%;
+  box-sizing: border-box;
+}
+
+.site-header__location-chip {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: var(--header-chip-h) !important;
+  box-sizing: border-box;
+}
+
+.site-header__location-chip .MuiChip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: var(--header-location-fs) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  padding-inline: 0.35em !important;
+  text-align: center;
+}
+
+/* Default label — never truncate "Select Location" */
+.site-header__location-chip--placeholder .MuiChip-label {
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.site-header__location-chip .MuiChip-icon,
+.site-header__location-chip .MuiChip-deleteIcon {
+  flex-shrink: 0;
+  font-size: 0.95em !important;
+  margin-inline: 0.15em !important;
+}
+
+.site-header__langs-profile {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--header-gap);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.site-header__languages {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--header-gap);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.site-header__lang-btn.MuiIconButton-root {
+  height: var(--header-control-h) !important;
+  min-height: var(--header-control-h) !important;
+  width: auto !important;
+  min-width: var(--header-control-h) !important;
+  padding-inline: clamp(0.35rem, 1.8vw, 0.7rem) !important;
+  padding-block: 0 !important;
+  font-size: var(--header-lang-fs) !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.03em !important;
+  flex-shrink: 1;
+  border-width: 2px !important;
+  box-sizing: border-box;
+}
+
+.site-header__lang-btn--long.MuiIconButton-root {
+  min-width: clamp(3rem, 14vw, 4.75rem) !important;
+  padding-inline: clamp(0.4rem, 2vw, 0.85rem) !important;
+}
+
+.site-header__lang-btn--wide.MuiIconButton-root {
+  min-width: clamp(2.35rem, 10vw, 3.1rem) !important;
+}
+
+.site-header__lang-btn img {
+  width: clamp(1rem, 4.5vw, 1.5rem) !important;
+  height: clamp(1rem, 4.5vw, 1.5rem) !important;
+  object-fit: contain;
+}
+
+.site-header__profile {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  /* Extra space between language buttons and login */
+  padding-left: clamp(0.35rem, 2vw, 0.75rem);
+}
+
+.site-header__login.MuiIconButton-root,
+.site-header__profile .MuiIconButton-root {
+  padding: 0.2rem !important;
+}
+
+.site-header__login .MuiSvgIcon-root {
+  font-size: var(--header-login-icon) !important;
+}
+
+.site-header__profile .MuiAvatar-root {
+  width: var(--header-control-h) !important;
+  height: var(--header-control-h) !important;
+  font-size: clamp(0.75rem, 3vw, 1rem) !important;
+}
+
+.site-header__categories {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+.site-header__categories-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: clamp(0.4rem, 1.8vw, 0.65rem);
+  padding-inline: var(--header-pad-x);
+  padding-block: clamp(0.45rem, 1.5vw, 0.65rem);
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.site-header__home-btn.MuiButton-root,
+.site-header__categories-toggle.MuiButton-root {
+  text-transform: none;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-inline: clamp(0.65rem, 2.5vw, 1rem) !important;
+  padding-block: clamp(0.35rem, 1.2vw, 0.55rem) !important;
+  font-size: clamp(0.8rem, 2.5vw + 0.2rem, 0.95rem) !important;
+}
+
+.site-header__categories-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.4rem, 1.5vw, 0.65rem);
+  padding-inline: var(--header-pad-x);
+  padding-bottom: clamp(0.55rem, 1.8vw, 0.85rem);
+  max-width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.site-header__categories-panel .MuiChip-root {
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.site-header__categories-panel .MuiChip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile / phablet: 320px–599px — same flex pattern on all Android widths */
+@media (max-width: 599px) {
+  :root {
+    --header-logo: clamp(2.5rem, 12.5vw, 3.15rem);
+    --header-brand-fs: clamp(1.3rem, 6.2vw + 0.35rem, 2.05rem);
+    --header-brand-tracking: clamp(0.01em, 0.25vw, 0.035em);
+    --header-control-h: clamp(1.8rem, 8vw, 2.25rem);
+    --header-lang-fs: clamp(0.7rem, 2.5vw + 0.18rem, 0.92rem);
+    --header-location-fs: clamp(0.74rem, 2.4vw + 0.22rem, 0.95rem);
+    --header-chip-h: clamp(1.65rem, 7vw, 1.85rem);
+    --header-login-icon: clamp(1.75rem, 7.5vw, 2.15rem);
+    --header-gap: clamp(0.2rem, 1.4vw, 0.45rem);
+    --header-pad-x: clamp(0.5rem, 3.2vw, 1rem);
+  }
+
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  .site-header,
+  .site-header__toolbar,
+  .site-header__inner,
+  .site-header__actions {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  .site-header__location {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: min(48%, 11.5rem);
+  }
+
+  .site-header__location:has(.site-header__location-chip--placeholder) {
+    flex: 0 0 auto;
+    width: max-content;
+    max-width: min(52%, 12rem);
+  }
+
+  .site-header__location-chip--placeholder {
+    width: max-content !important;
+    max-width: 100% !important;
+  }
+
+  .site-header__location-chip--placeholder .MuiChip-label {
+    flex: 0 0 auto !important;
+    min-width: max-content !important;
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .site-header__langs-profile {
+    flex: 0 1 auto;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .site-header__profile {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding-left: clamp(0.4rem, 2.5vw, 0.85rem);
+  }
+
+  .site-header__lang-btn.MuiIconButton-root {
+    flex-shrink: 1;
+  }
+
+  .site-header__lang-btn--long.MuiIconButton-root {
+    min-width: clamp(2.4rem, 12vw, 4.25rem) !important;
+    padding-inline: clamp(0.3rem, 1.5vw, 0.65rem) !important;
+  }
+}
+
+/* Desktop+ */
+@media (min-width: 600px) {
+  :root {
+    --header-logo: clamp(3.5rem, 5vw, 4rem);
+    --header-brand-fs: clamp(2.75rem, 5vw + 1rem, 3.35rem);
+    --header-brand-tracking: 0.06em;
+    --header-control-h: 2.625rem;
+    --header-lang-fs: 1.12rem;
+    --header-location-fs: 1.05rem;
+    --header-chip-h: 1.875rem;
+    --header-login-icon: 2.75rem;
+    --header-gap: 0.5rem;
+    --header-pad-x: clamp(1rem, 2vw, 1.5rem);
+  }
+
+  .site-header__location {
+    flex: 0 0 38%;
+    width: 38%;
+    max-width: 38%;
+  }
+
+  .site-header__brand-title {
+    font-size: clamp(3.25rem, 8.5vw + 0.5rem, 6.25rem) !important;
+  }
+
+  @media (min-width: 900px) {
+    :root {
+      --header-brand-fs: clamp(3.25rem, 8.5vw + 0.5rem, 6.25rem);
+    }
+  }
+
+  .site-header__lang-btn--long.MuiIconButton-root {
+    min-width: 4.875rem !important;
+    font-size: 1.1rem !important;
+  }
+
+  .site-header__lang-btn--wide.MuiIconButton-root {
+    min-width: 2.875rem !important;
   }
 }

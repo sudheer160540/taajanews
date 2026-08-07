@@ -8,6 +8,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { LocationProvider } from './contexts/LocationContext';
+import { CategoryTrailProvider } from './contexts/CategoryTrailContext';
 import theme from './theme';
 import { getGoogleClientId, isGoogleAuthConfigured } from './config/googleAuth';
 import './i18n';
@@ -31,7 +32,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <CssBaseline />
             <AuthProvider>
               <LocationProvider>
-                <App />
+                <CategoryTrailProvider>
+                  <App />
+                </CategoryTrailProvider>
               </LocationProvider>
             </AuthProvider>
           </ThemeProvider>

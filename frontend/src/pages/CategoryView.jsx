@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -10,74 +10,151 @@ import {
   CardContent,
   CardMedia,
   CardActionArea,
-  Chip,
-  Breadcrumbs,
   Skeleton,
   Pagination
 } from '@mui/material';
-import { NavigateNext as NavNextIcon, AccessTime as TimeIcon } from '@mui/icons-material';
+import { AccessTime as TimeIcon } from '@mui/icons-material';
 import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import { useCategoryTrail } from '../contexts/CategoryTrailContext';
 import Seo from '../components/Seo';
+import PageBreadcrumbs, { getBreadcrumbLabel } from '../components/PageBreadcrumbs';
 import { truncate } from '../utils/seo';
+
+const ArticleSkeletons = () => (
+  <Grid container spacing={3}>
+    {[1, 2, 3, 4, 5, 6].map((i) => (
+      <Grid item xs={12} sm={6} md={4} key={i}>
+        <Card sx={{ height: '100%' }}>
+          <Skeleton variant="rectangular" height={180} />
+          <CardContent>
+            <Skeleton variant="text" width="90%" height={28} />
+            <Skeleton variant="text" width="100%" />
+            <Skeleton variant="text" width="70%" />
+            <Skeleton variant="text" width="40%" sx={{ mt: 1 }} />
+          </CardContent>
+        </Card>
+      </Grid>
+    ))}
+  </Grid>
+);
 
 const CategoryView = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { city, area } = useLocation();
+  const { trail, pushCategory, truncateToSlug, clearTrail } = useCategoryTrail();
   const lang = i18n.language;
 
   const [category, setCategory] = useState(null);
-  const [children, setChildren] = useState([]);
-  const [breadcrumb, setBreadcrumb] = useState([]);
   const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [categoryLoading, setCategoryLoading] = useState(true);
+  const [articlesLoading, setArticlesLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  const categoryRequestId = useRef(0);
+  const articlesRequestId = useRef(0);
+
+  const categorySynced = Boolean(category?.slug && category.slug === slug);
+
+  // Load category for the current route slug
   useEffect(() => {
-    fetchCategory();
-  }, [slug]);
+    let cancelled = false;
+    const requestId = ++categoryRequestId.current;
+    const requestedSlug = slug;
 
+    setPage(1);
+    setCategory(null);
+    setArticles([]);
+    setTotalPages(1);
+    setCategoryLoading(true);
+    setArticlesLoading(true);
+
+    (async () => {
+      try {
+        const response = await categoriesApi.getBySlug(requestedSlug, lang);
+        if (cancelled || requestId !== categoryRequestId.current) return;
+
+        const nextCategory = response.data.category;
+        if (nextCategory?.slug && nextCategory.slug !== requestedSlug) {
+          setCategory(null);
+          setArticlesLoading(false);
+          return;
+        }
+
+        setCategory(nextCategory);
+      } catch (err) {
+        console.error('Failed to fetch category:', err);
+        if (cancelled || requestId !== categoryRequestId.current) return;
+        setCategory(null);
+        setArticlesLoading(false);
+      } finally {
+        if (!cancelled && requestId === categoryRequestId.current) {
+          setCategoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, lang]);
+
+  // Keep accumulating trail in sync with the selected category (route + loaded name)
   useEffect(() => {
-    if (category) {
-      fetchArticles();
-    }
-  }, [category, page, city, area]);
+    if (!categorySynced || !category) return;
 
-  const fetchCategory = async () => {
-    setLoading(true);
-    try {
-      const response = await categoriesApi.getBySlug(slug);
-      setCategory(response.data.category);
-      setChildren(response.data.children);
-      setBreadcrumb(response.data.breadcrumb);
-    } catch (err) {
-      console.error('Failed to fetch category:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const name = getBreadcrumbLabel(category, lang) || slug;
+    pushCategory({
+      _id: category._id,
+      slug: category.slug,
+      name
+    });
+  }, [categorySynced, category, lang, slug, pushCategory]);
 
-  const fetchArticles = async () => {
-    try {
-      const params = { 
-        category: category._id, 
-        lang, 
-        page, 
-        limit: 12 
-      };
-      if (city) params.city = city._id;
-      if (area) params.area = area._id;
+  // Load articles for the synced category
+  useEffect(() => {
+    if (!categorySynced || !category?._id) return undefined;
 
-      const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles);
-      setTotalPages(response.data.pagination.pages);
-    } catch (err) {
-      console.error('Failed to fetch articles:', err);
-    }
-  };
+    let cancelled = false;
+    const requestId = ++articlesRequestId.current;
+
+    setArticlesLoading(true);
+
+    (async () => {
+      try {
+        const params = {
+          category: category._id,
+          lang,
+          page,
+          limit: 12
+        };
+        if (city) params.city = city._id;
+        if (area) params.area = area._id;
+
+        const response = await articlesApi.getAll(params);
+        if (cancelled || requestId !== articlesRequestId.current) return;
+
+        setArticles(response.data.articles || []);
+        setTotalPages(response.data.pagination?.pages || 1);
+      } catch (err) {
+        console.error('Failed to fetch articles:', err);
+        if (cancelled || requestId !== articlesRequestId.current) return;
+        setArticles([]);
+        setTotalPages(1);
+      } finally {
+        if (!cancelled && requestId === articlesRequestId.current) {
+          setArticlesLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [categorySynced, category, page, city, area, lang]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-IN', {
@@ -87,18 +164,22 @@ const CategoryView = () => {
     });
   };
 
-  if (loading) {
+  const handleTrailHome = () => {
+    clearTrail();
+    navigate('/');
+  };
+
+  const handleTrailCrumb = (item) => {
+    truncateToSlug(item.slug);
+    navigate(`/category/${item.slug}`);
+  };
+
+  if (categoryLoading || !categorySynced) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
         <Skeleton variant="text" width="40%" height={48} />
         <Skeleton variant="text" width="60%" height={24} sx={{ mb: 4 }} />
-        <Grid container spacing={3}>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Grid item xs={12} sm={6} md={4} key={i}>
-              <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
-            </Grid>
-          ))}
-        </Grid>
+        <ArticleSkeletons />
       </Container>
     );
   }
@@ -111,12 +192,7 @@ const CategoryView = () => {
     );
   }
 
-  const categoryName =
-    (typeof category.name === 'string' ? category.name : null) ||
-    category.name?.[lang] ||
-    category.name?.en ||
-    category.name?.te ||
-    slug;
+  const categoryName = getBreadcrumbLabel(category, lang) || slug;
   const categoryDescRaw =
     typeof category.description === 'string'
       ? category.description
@@ -126,6 +202,12 @@ const CategoryView = () => {
     160
   );
 
+  // Trail for breadcrumb — ensure current category is represented even if effect lags
+  const crumbItems =
+    trail.length > 0
+      ? trail
+      : [{ _id: category._id, slug: category.slug, name: categoryName }];
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Seo
@@ -134,61 +216,32 @@ const CategoryView = () => {
         path={`/category/${slug}`}
         lang={lang}
       />
-      {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 3 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          {t('home')}
-        </Link>
-        {breadcrumb.map((item, index) => (
-          <Link
-            key={item._id}
-            to={`/category/${item.slug}`}
-            style={{ 
-              textDecoration: 'none', 
-              color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
-            }}
-          >
-            {item.name?.[lang] || item.name?.en}
-          </Link>
-        ))}
-      </Breadcrumbs>
+
+      <PageBreadcrumbs
+        key={crumbItems.map((c) => c.slug).join('>')}
+        items={crumbItems}
+        lang={lang}
+        homeLabel={t('home')}
+        sx={{ mb: 3 }}
+        onHomeClick={handleTrailHome}
+        onCrumbClick={handleTrailCrumb}
+      />
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {category.name?.[lang] || category.name?.en}
+          {categoryName}
         </Typography>
-        {category.description?.[lang] && (
+        {categoryDescRaw && (
           <Typography variant="body1" color="text.secondary">
-            {category.description[lang]}
+            {categoryDescRaw}
           </Typography>
         )}
       </Box>
 
-      {/* Subcategories */}
-      {children.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" fontWeight={600} gutterBottom>
-            {lang === 'hi' ? 'उप-श्रेणियां' : 'Subcategories'}
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {children.map((child) => (
-              <Chip
-                key={child._id}
-                label={child.name?.[lang] || child.name?.en}
-                onClick={() => navigate(`/category/${child.slug}`)}
-                sx={{ 
-                  bgcolor: child.color || 'primary.main',
-                  color: 'white'
-                }}
-              />
-            ))}
-          </Box>
-        </Box>
-      )}
-
-      {/* Articles Grid */}
-      {articles.length === 0 ? (
+      {articlesLoading ? (
+        <ArticleSkeletons />
+      ) : articles.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="h6" color="text.secondary">
             {t('noResults')}
@@ -251,7 +304,6 @@ const CategoryView = () => {
             ))}
           </Grid>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
               <Pagination

@@ -12,9 +12,8 @@ import {
   Menu,
   MenuItem,
   Chip,
-  Tab,
-  Tabs,
-  Tooltip
+  Tooltip,
+  Button
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -22,9 +21,12 @@ import {
   Logout as LogoutIcon,
   Dashboard as DashboardIcon,
   LocationOn as LocationIcon,
+  ExpandMore as ExpandMoreIcon,
+  Home as HomeIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useCategoryTrail } from '../contexts/CategoryTrailContext';
 import { categoriesApi, languagesApi } from '../services/api';
 import Footer from '../components/Footer';
 
@@ -35,21 +37,36 @@ const MainLayout = () => {
 
   const { user, isAuthenticated, isReporter, logout } = useAuth();
   const { city, area, clearLocation } = useLocation();
+  const { pushCategory, clearTrail } = useCategoryTrail();
 
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
   const [languages, setLanguages] = useState([]);
   const [currentLang, setCurrentLang] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   const currentPath = routerLocation.pathname;
 
   useEffect(() => {
+    const CACHE_KEY = 'taaja_languages_v1';
+    const CACHE_TTL = 10 * 60 * 1000;
+
     const loadLanguages = async () => {
       try {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < CACHE_TTL && Array.isArray(data)) {
+            setLanguages(data);
+            setCurrentLang(data.find((l) => l.code === i18n.language));
+            return;
+          }
+        }
         const response = await languagesApi.getAll();
         const langs = response.data.languages || [];
         setLanguages(langs);
-        setCurrentLang(langs.find(l => l.code === i18n.language));
+        setCurrentLang(langs.find((l) => l.code === i18n.language));
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: langs, ts: Date.now() }));
       } catch {
         setLanguages([
           { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
@@ -59,17 +76,30 @@ const MainLayout = () => {
       }
     };
     loadLanguages();
-  }, [i18n.language]);
+  }, []);
 
   useEffect(() => {
-    setCurrentLang(languages.find(l => l.code === i18n.language));
+    setCurrentLang(languages.find((l) => l.code === i18n.language));
   }, [i18n.language, languages]);
 
   useEffect(() => {
+    const CACHE_KEY = `taaja_categories_${i18n.language}_v1`;
+    const CACHE_TTL = 5 * 60 * 1000;
+
     const loadCategories = async () => {
       try {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < CACHE_TTL && Array.isArray(data)) {
+            setCategories(data);
+            return;
+          }
+        }
         const response = await categoriesApi.getAll({ lang: i18n.language });
-        setCategories(response.data.categories || []);
+        const cats = response.data.categories || [];
+        setCategories(cats);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: cats, ts: Date.now() }));
       } catch {
         console.error('Failed to fetch categories');
       }
@@ -94,9 +124,9 @@ const MainLayout = () => {
 
   /** Short labels when no icon URL (code → display) */
   const LANG_SHORT_LABELS = {
-    te: 'తె',
-    en: 'En',
-    hi: 'हि'
+    te: 'తెలుగు',
+    en: 'English',
+    hi: 'हिन्दी'
   };
 
   const getLangInitial = (lang) => {
@@ -122,12 +152,29 @@ const MainLayout = () => {
       : false;
 
   const handleCategoryClick = (slug) => {
+    setCategoriesOpen(false);
     if (slug === 'all') {
+      clearTrail();
       navigate('/');
-    } else {
-      navigate(`/category/${slug}`);
+      return;
     }
+
+    const cat = categories.find((c) => c.slug === slug);
+    pushCategory({
+      _id: cat?._id,
+      slug,
+      name: cat ? getDisplayName(cat) : slug
+    });
+    navigate(`/category/${slug}`);
   };
+
+  const goHome = () => {
+    setCategoriesOpen(false);
+    clearTrail();
+    navigate('/');
+  };
+
+  const allCategoryLabel = currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All';
 
   const locationDisplay = (
     <Chip
@@ -136,11 +183,20 @@ const MainLayout = () => {
       size="small"
       onClick={() => navigate('/onboarding')}
       onDelete={city ? clearLocation : undefined}
+      className={`site-header__location-chip${city ? '' : ' site-header__location-chip--placeholder'}`}
       sx={{
+        width: '100%',
+        maxWidth: '100%',
+        justifyContent: 'center',
         bgcolor: 'rgba(72, 117, 188, 0.08)',
         color: 'primary.main',
         border: '1px solid',
         borderColor: 'primary.light',
+        '& .MuiChip-label': {
+          flex: 1,
+          textAlign: 'center',
+          fontWeight: 600
+        },
         '& .MuiChip-icon': { color: 'primary.main' },
         '& .MuiChip-deleteIcon': { color: 'primary.main', opacity: 0.7 }
       }}
@@ -148,168 +204,261 @@ const MainLayout = () => {
   );
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', overflowX: 'hidden', maxWidth: '100vw' }}>
       {/* Top AppBar */}
       <AppBar
         position="sticky"
         elevation={0}
+        className="site-header"
         sx={{
           bgcolor: '#fff',
           color: 'primary.main',
           borderBottom: '1px solid',
-          borderColor: 'divider'
+          borderColor: 'divider',
+          overflowX: 'hidden',
+          maxWidth: '100vw'
         }}
       >
-        <Toolbar sx={{ color: 'primary.main' }}>
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', mr: 2, color: 'primary.main' }}
-            onClick={() => navigate('/')}
-          >
-            <Box
-              component="img"
-              src="/logo.png"
-              alt="Taaja News"
-              sx={{ width: 100, height: 80, borderRadius: '50%', objectFit: 'cover' }}
-            />
-          </Box>
+        {/* Main header: top row (logo + brand) / sub row (location, langs, profile) */}
+        <Toolbar
+          disableGutters
+          className="site-header__toolbar"
+          sx={{
+            color: 'primary.main',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            minHeight: 'auto',
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflowX: 'hidden'
+          }}
+        >
+          <Box className="site-header__inner">
+            {/* Row 1: logo + TAAJA NEWS */}
+            <Box className="site-header__brand-row">
+              <Box className="site-header__brand-group">
+                <Box
+                  className="site-header__logo-wrap"
+                  onClick={goHome}
+                  role="link"
+                  aria-label="Taaja News home"
+                  sx={{ cursor: 'pointer' }}
+                >
+                  <Box
+                    component="img"
+                    src="/logo-icon.png"
+                    alt="Taaja News"
+                    className="site-header__logo"
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
+                  />
+                </Box>
 
-          <Box sx={{ flexGrow: 1 }} />
-
-          {locationDisplay}
-
-          {languages.length > 0 && (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                ml: 1
-              }}
-              role="group"
-              aria-label="Language"
-            >
-              {languages.map((lang) => {
-                const selected = i18n.language === lang.code;
-                const iconSrc = getLangIconSrc(lang);
-                const shortLabel = iconSrc ? '' : getLangInitial(lang);
-                const label = lang.nativeName || lang.name || lang.code;
-                const isWideLabel = shortLabel.length > 1;
-
-                return (
-                  <Tooltip key={lang.code} title={label} arrow>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleLanguageSelect(lang.code)}
-                      aria-label={label}
-                      aria-pressed={selected}
-                      sx={{
-                        minWidth: isWideLabel ? 36 : 32,
-                        width: isWideLabel ? 'auto' : 32,
-                        height: 32,
-                        px: isWideLabel ? 0.5 : 0,
-                        border: '2px solid',
-                        borderColor: selected ? 'primary.main' : 'primary.light',
-                        bgcolor: selected ? 'rgba(72, 117, 188, 0.15)' : 'transparent',
-                        color: 'primary.main',
-                        fontSize: isWideLabel ? '0.7rem' : '0.8rem',
-                        fontWeight: 700,
-                        lineHeight: 1,
-                        '&:hover': {
-                          bgcolor: 'rgba(72, 117, 188, 0.1)'
-                        }
-                      }}
-                    >
-                      {iconSrc ? (
-                        <Box
-                          component="img"
-                          src={iconSrc}
-                          alt=""
-                          sx={{ width: 20, height: 20, objectFit: 'contain', borderRadius: '50%' }}
-                        />
-                      ) : (
-                        shortLabel
-                      )}
-                    </IconButton>
-                  </Tooltip>
-                );
-              })}
+                <Typography
+                  component="h1"
+                  className="site-header__brand-title"
+                  onClick={goHome}
+                  sx={{
+                    m: 0,
+                    fontWeight: 900,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexShrink: 1,
+                    minWidth: 0
+                  }}
+                >
+                  <Box component="span" sx={{ color: 'primary.main' }}>TAAJA</Box>
+                  <Box component="span" sx={{ color: 'secondary.main', ml: '0.35em' }}>NEWS</Box>
+                </Typography>
+              </Box>
             </Box>
-          )}
 
-          {isAuthenticated ? (
-            <>
-              <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ ml: 0.5, color: 'primary.main' }}>
-                <Avatar src={user?.avatar} sx={{ width: 30, height: 30, bgcolor: 'secondary.main', fontSize: 14 }}>
-                  {user?.name?.[0]}
-                </Avatar>
-              </IconButton>
-              <Menu
-                anchorEl={userMenuAnchor}
-                open={Boolean(userMenuAnchor)}
-                onClose={() => setUserMenuAnchor(null)}
-              >
-                <MenuItem disabled>
-                  <Typography variant="body2" color="text.secondary">{user?.email}</Typography>
-                </MenuItem>
-                <Divider />
-                {isReporter && (
-                  <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/dashboard'); }}>
-                    <DashboardIcon fontSize="small" sx={{ mr: 1 }} />
-                    {t('dashboard')}
-                  </MenuItem>
-                )}
-                <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/bookmarks'); }}>
-                  <BookmarkIcon fontSize="small" sx={{ mr: 1 }} />
-                  {t('bookmark')}
-                </MenuItem>
-                <MenuItem onClick={handleLogout}>
-                  <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
-                  {t('logout')}
-                </MenuItem>
-              </Menu>
-            </>
-          ) : (
-            <IconButton onClick={() => navigate('/auth/login')} sx={{ ml: 0.5, color: 'primary.main' }}>
-              <PersonIcon />
-            </IconButton>
-          )}
+            {/* Row 2: location + languages + login */}
+            <Box className="site-header__actions">
+              <Box className="site-header__actions-left">
+                <Box className="site-header__location">
+                  {locationDisplay}
+                </Box>
+
+                <Box className="site-header__langs-profile">
+                  {languages.length > 0 && (
+                    <Box
+                      className="site-header__languages"
+                      role="group"
+                      aria-label="Language"
+                    >
+                      {languages.map((lang) => {
+                        const selected = i18n.language === lang.code;
+                        const iconSrc = getLangIconSrc(lang);
+                        const shortLabel = iconSrc ? '' : getLangInitial(lang);
+                        const label = lang.nativeName || lang.name || lang.code;
+                        const isWideLabel = shortLabel.length > 1;
+                        const isLongLabel = shortLabel.length > 3;
+                        const langBtnClass = [
+                          'site-header__lang-btn',
+                          isLongLabel ? 'site-header__lang-btn--long' : '',
+                          !isLongLabel && isWideLabel ? 'site-header__lang-btn--wide' : ''
+                        ].filter(Boolean).join(' ');
+
+                        return (
+                          <Tooltip key={lang.code} title={label} arrow>
+                            <IconButton
+                              className={langBtnClass}
+                              size="small"
+                              onClick={() => handleLanguageSelect(lang.code)}
+                              aria-label={label}
+                              aria-pressed={selected}
+                              sx={{
+                                border: '2px solid',
+                                borderColor: selected ? 'primary.main' : 'primary.light',
+                                bgcolor: selected ? 'rgba(72, 117, 188, 0.15)' : 'transparent',
+                                color: 'primary.main',
+                                borderRadius: '50%',
+                                ...(isWideLabel || isLongLabel
+                                  ? { borderRadius: '999px' }
+                                  : {}),
+                                '&:hover': {
+                                  bgcolor: 'rgba(72, 117, 188, 0.1)'
+                                }
+                              }}
+                            >
+                              {iconSrc ? (
+                                <Box
+                                  component="img"
+                                  src={iconSrc}
+                                  alt=""
+                                />
+                              ) : (
+                                shortLabel
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                        );
+                      })}
+                    </Box>
+                  )}
+                </Box>
+
+                <Box className="site-header__profile">
+                  {isAuthenticated ? (
+                    <>
+                      <IconButton onClick={(e) => setUserMenuAnchor(e.currentTarget)} sx={{ color: 'primary.main' }}>
+                        <Avatar src={user?.avatar} sx={{ bgcolor: 'secondary.main' }}>
+                          {user?.name?.[0]}
+                        </Avatar>
+                      </IconButton>
+                      <Menu
+                        anchorEl={userMenuAnchor}
+                        open={Boolean(userMenuAnchor)}
+                        onClose={() => setUserMenuAnchor(null)}
+                      >
+                        <MenuItem disabled>
+                          <Typography variant="body2" color="text.secondary">{user?.email}</Typography>
+                        </MenuItem>
+                        <Divider />
+                        {isReporter && (
+                          <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/dashboard'); }}>
+                            <DashboardIcon fontSize="small" sx={{ mr: 1 }} />
+                            {t('dashboard')}
+                          </MenuItem>
+                        )}
+                        <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/bookmarks'); }}>
+                          <BookmarkIcon fontSize="small" sx={{ mr: 1 }} />
+                          {t('bookmark')}
+                        </MenuItem>
+                        <MenuItem onClick={handleLogout}>
+                          <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
+                          {t('logout')}
+                        </MenuItem>
+                      </Menu>
+                    </>
+                  ) : (
+                    <IconButton
+                      className="site-header__login"
+                      onClick={() => navigate('/auth/login')}
+                      aria-label={t('login')}
+                      sx={{ color: 'primary.main' }}
+                    >
+                      <PersonIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+          </Box>
         </Toolbar>
 
-        {/* Category Tabs Bar */}
+        {/* Categories / navigation row */}
         {categories.length > 0 && (
-          <Box sx={{ bgcolor: '#fff', borderTop: '1px solid', borderColor: 'divider' }}>
-            <Tabs
-              value={activeCategorySlug || false}
-              variant="scrollable"
-              scrollButtons="auto"
-              allowScrollButtonsMobile
-              sx={{
-                minHeight: 36,
-                '& .MuiTab-root': {
-                  color: 'text.secondary',
-                  minHeight: 36,
-                  py: 0,
-                  px: 2,
-                  fontSize: '0.8rem',
-                  textTransform: 'none',
-                  fontWeight: 500
-                },
-                '& .Mui-selected': { color: 'primary.main', fontWeight: 700 },
-                '& .MuiTabs-indicator': { backgroundColor: 'primary.main' },
-                '& .MuiTabs-scrollButtons': { color: 'primary.main' }
-              }}
-            >
-              <Tab value="all" label={currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All'} onClick={() => handleCategoryClick('all')}/>
+          <Box
+            className="site-header__categories"
+            sx={{
+              bgcolor: '#fff',
+              borderTop: '1px solid',
+              borderColor: 'divider'
+            }}
+          >
+            <Box className="site-header__categories-bar">
+              <Button
+                className="site-header__home-btn"
+                variant={currentPath === '/' ? 'contained' : 'outlined'}
+                color="primary"
+                startIcon={<HomeIcon />}
+                onClick={goHome}
+                aria-current={currentPath === '/' ? 'page' : undefined}
+                sx={{
+                  fontWeight: currentPath === '/' ? 700 : 600
+                }}
+              >
+                {t('home')}
+              </Button>
 
-              {categories.map((cat) => (
-                <Tab
-                  key={cat._id}
-                  value={cat.slug}
-                  label={getDisplayName(cat)}
-                  onClick={() => handleCategoryClick(cat.slug)}
+              <Button
+                className="site-header__categories-toggle"
+                variant="outlined"
+                color="primary"
+                onClick={() => setCategoriesOpen((open) => !open)}
+                endIcon={
+                  <ExpandMoreIcon
+                    sx={{
+                      transition: 'transform 0.2s ease',
+                      transform: categoriesOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                    }}
+                  />
+                }
+                sx={{ fontWeight: 600 }}
+              >
+                {t('categories')}
+              </Button>
+            </Box>
+
+            {categoriesOpen && (
+              <Box className="site-header__categories-panel">
+                <Chip
+                  label={allCategoryLabel}
+                  onClick={() => handleCategoryClick('all')}
+                  color={activeCategorySlug === 'all' ? 'primary' : 'default'}
+                  variant={activeCategorySlug === 'all' ? 'filled' : 'outlined'}
+                  sx={{ fontWeight: activeCategorySlug === 'all' ? 700 : 500 }}
                 />
-              ))}
-            </Tabs>
+
+                {categories.map((cat) => (
+                  <Chip
+                    key={cat._id}
+                    label={getDisplayName(cat)}
+                    onClick={() => handleCategoryClick(cat.slug)}
+                    color={activeCategorySlug === cat.slug ? 'primary' : 'default'}
+                    variant={activeCategorySlug === cat.slug ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: activeCategorySlug === cat.slug ? 700 : 500 }}
+                  />
+                ))}
+              </Box>
+            )}
           </Box>
         )}
       </AppBar>

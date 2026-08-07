@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -18,8 +18,7 @@ import {
   List,
   ListItem,
   ListItemAvatar,
-  ListItemText,
-  Breadcrumbs
+  ListItemText
 } from '@mui/material';
 import {
   ThumbUp as LikeIcon,
@@ -32,7 +31,6 @@ import {
   AccessTime as TimeIcon,
   Visibility as ViewIcon,
   Send as SendIcon,
-  NavigateNext as NavNextIcon,
   Edit as EditIcon,
   PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
@@ -41,6 +39,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
 import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
 import Seo from '../components/Seo';
+import PageBreadcrumbs, { filterValidBreadcrumbs } from '../components/PageBreadcrumbs';
 import { buildNewsArticleJsonLd, truncate, toAbsoluteUrl } from '../utils/seo';
 
 const ArticleView = () => {
@@ -246,6 +245,19 @@ const ArticleView = () => {
       ? article.category.name
       : article.category?.name?.[lang] || article.category?.name?.en;
 
+  const crumbItems = (() => {
+    const fromApi = filterValidBreadcrumbs(breadcrumb, lang);
+    if (fromApi.length > 0) return fromApi;
+    if (article.category?.slug && categoryName) {
+      return [{
+        _id: article.category._id,
+        slug: article.category.slug,
+        name: categoryName
+      }];
+    }
+    return [];
+  })();
+
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Seo
@@ -266,24 +278,8 @@ const ArticleView = () => {
           categoryName
         })}
       />
-      {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          {t('home')}
-        </Link>
-        {breadcrumb.map((item, index) => (
-          <Link
-            key={item._id}
-            to={`/category/${item.slug}`}
-            style={{ 
-              textDecoration: 'none', 
-              color: index === breadcrumb.length - 1 ? 'primary' : 'inherit'
-            }}
-          >
-            {item.name?.[lang] || item.name?.en}
-          </Link>
-        ))}
-      </Breadcrumbs>
+
+      <PageBreadcrumbs items={crumbItems} lang={lang} homeLabel={t('home')} />
 
       {/* Hero: image with optional Play overlay, swapped for an embedded
           YouTube player when the user taps Play. */}
@@ -325,6 +321,9 @@ const ArticleView = () => {
                   component="img"
                   src={article.featuredImage.url}
                   alt={article.featuredImage.alt || article.title}
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                   sx={{
                     width: '100%',
                     height: '100%',
