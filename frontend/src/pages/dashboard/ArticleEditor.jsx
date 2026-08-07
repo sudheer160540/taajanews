@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import {
   Box,
   Typography,
@@ -42,6 +44,9 @@ import {
 import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '../../services/api';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
+
+const FEATURED_IMAGE_ASPECT = 16 / 9;
+const SUPPORTED_CROP_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const ArticleEditor = () => {
   const { id } = useParams();
@@ -92,6 +97,11 @@ const ArticleEditor = () => {
   const [langTab, setLangTab] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropImageFile, setCropImageFile] = useState(null);
+  const [cropImageUrl, setCropImageUrl] = useState('');
+  const [crop, setCrop] = useState();
+  const [completedCrop, setCompletedCrop] = useState(null);
   const [translating, setTranslating] = useState(false);
   const [translateDialogOpen, setTranslateDialogOpen] = useState(false);
   const [translatePreview, setTranslatePreview] = useState(null);
@@ -102,6 +112,10 @@ const ArticleEditor = () => {
   useEffect(() => {
     initializeEditor();
   }, [id]);
+
+  useEffect(() => () => {
+    if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
+  }, [cropImageUrl]);
 
   const initializeEditor = async () => {
     setLoading(true);
@@ -319,25 +333,71 @@ const ArticleEditor = () => {
     }));
   };
 
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
+    setError(null);
+    setErrorDetails([]);
+    setSuccess(null);
+
+    if (!SUPPORTED_CROP_IMAGE_TYPES.includes(file.type)) {
+      setError('Please select a JPEG, PNG, or WebP image');
+      return;
+    }
+
+    setCropImageFile(file);
+    setCropImageUrl(URL.createObjectURL(file));
+    setCrop(undefined);
+    setCompletedCrop(null);
+    setCropDialogOpen(true);
+  };
+
+  const handleCropImageLoad = (e) => {
+    const { width, height } = e.currentTarget;
+    const initialCrop = centerCrop(
+      makeAspectCrop({ unit: '%', width: 90 }, FEATURED_IMAGE_ASPECT, width, height),
+      width,
+      height
+    );
+    setCrop(initialCrop);
+    setCompletedCrop(initialCrop);
+  };
+
+  const handleCloseCropDialog = () => {
+    if (uploading) return;
+    setCropDialogOpen(false);
+    setCropImageFile(null);
+    setCropImageUrl('');
+    setCrop(undefined);
+    setCompletedCrop(null);
+  };
+
+  const handleCroppedImageUpload = async () => {
+    if (!cropImageFile || !completedCrop?.width || !completedCrop?.height) {
+      setError('Please select an area to crop');
+      return;
+    }
 
     setUploading(true);
     setError(null);
 
     try {
-      // Upload through backend (bypasses CORS)
-      const response = await uploadApi.uploadFile(file);
+      const response = await uploadApi.uploadFile(cropImageFile, { crop: completedCrop });
       const { blobUrl } = response.data;
 
-      // Set featured image
       setArticle(prev => ({
         ...prev,
-        featuredImage: { url: blobUrl, alt: file.name }
+        featuredImage: { url: blobUrl, alt: cropImageFile.name }
       }));
 
-      setSuccess('Image uploaded successfully');
+      setSuccess('Image cropped, converted to WebP, and uploaded successfully');
+      setCropDialogOpen(false);
+      setCropImageFile(null);
+      setCropImageUrl('');
+      setCrop(undefined);
+      setCompletedCrop(null);
     } catch (err) {
       setApiError(err, 'Failed to upload image');
       console.error(err);
@@ -884,8 +944,8 @@ const ArticleEditor = () => {
                   <input
                     type="file"
                     hidden
-                    accept="image/*"
-                    onChange={handleImageUpload}
+                    accept={SUPPORTED_CROP_IMAGE_TYPES.join(',')}
+                    onChange={handleImageSelect}
                   />
                 </Button>
               )}
@@ -1145,6 +1205,51 @@ const ArticleEditor = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Dialog
+        open={cropDialogOpen}
+        onClose={handleCloseCropDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Crop Featured Image</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Adjust the 16:9 crop area. The uploaded image will be converted to WebP.
+          </Typography>
+          {cropImageUrl && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', bgcolor: 'grey.100', p: 1 }}>
+              <ReactCrop
+                crop={crop}
+                onChange={(_, percentCrop) => setCrop(percentCrop)}
+                onComplete={(_, percentCrop) => setCompletedCrop(percentCrop)}
+                aspect={FEATURED_IMAGE_ASPECT}
+                keepSelection
+              >
+                <img
+                  src={cropImageUrl}
+                  alt="Crop preview"
+                  onLoad={handleCropImageLoad}
+                  style={{ maxWidth: '100%', maxHeight: '65vh', display: 'block' }}
+                />
+              </ReactCrop>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseCropDialog} disabled={uploading}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCroppedImageUpload}
+            disabled={uploading || !completedCrop?.width || !completedCrop?.height}
+            startIcon={uploading ? <CircularProgress size={18} color="inherit" /> : <UploadIcon />}
+          >
+            {uploading ? 'Processing...' : 'Crop and Upload'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={translateDialogOpen}
