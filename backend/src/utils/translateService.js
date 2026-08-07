@@ -115,9 +115,20 @@ FORMATTING (STRICT — plain text only):
 - Do not use repeated punctuation such as ".." or "...". End sentences with a single period.
 `.trim();
 
+const NEWS_ORIGINALITY_RULES = `
+ORIGINALITY & HUMAN VOICE (apply to every language output):
+- You are also an expert investigative journalist and master wordsmith. Completely transform the source into an original, freshly written story.
+- Core objective: rewrite so thoroughly that it reads as 0% plagiarism, feels entirely human-written, and bypasses AI-content detectors.
+- Zero literal matching: never copy phrases, clauses, or sentence structures from the source. Replace the vocabulary entirely with synonyms, dynamic verbs, and varied phrasing.
+- Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder how facts are presented (weave in background differently, shift the emphasis of the lead) while keeping all core facts, dates, names, and quotes 100% accurate.
+- Active voice and engaging tone: write primarily in active voice. Keep it punchy, journalistic, and engaging for a blog audience. Avoid robotic, formulaic, or repetitive sentence patterns.
+- No AI clichés: strictly avoid overused AI filler words and transitions such as "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry".
+`.trim();
+
 const buildNewsGenerationSystemPrompt = () =>
   `${NEWS_EDITORIAL_PERSONA}
 ${NEWS_EDITORIAL_CORE_RULES}
+${NEWS_ORIGINALITY_RULES}
 Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
