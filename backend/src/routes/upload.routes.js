@@ -2,8 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
+const sharp = require('sharp');
 const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../config/azure');
 const { protect, reporterOrAdmin } = require('../middleware/auth');
+
+const MAX_FEATURED_IMAGE_WIDTH = 1600;
+const WEBP_QUALITY = 85;
 
 // Configure multer for memory storage (50MB for e-paper PDFs)
 const upload = multer({
@@ -35,6 +39,73 @@ const getUploadFolder = (mimetype) => {
   return 'images';
 };
 
+const parseCrop = (cropValue) => {
+  if (!cropValue) return null;
+
+  let crop;
+  try {
+    crop = JSON.parse(cropValue);
+  } catch {
+    const error = new Error('Invalid crop data');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const values = ['x', 'y', 'width', 'height'].map((key) => Number(crop[key]));
+  const [x, y, width, height] = values;
+  const isValid = values.every(Number.isFinite)
+    && x >= 0
+    && y >= 0
+    && width > 0
+    && height > 0
+    && x + width <= 100.01
+    && y + height <= 100.01;
+
+  if (!isValid) {
+    const error = new Error('Crop must contain valid percentage coordinates');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { x, y, width, height };
+};
+
+const cropAndConvertToWebp = async (file, crop) => {
+  if (!file.mimetype.startsWith('image/')) {
+    const error = new Error('Crop is only supported for images');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Normalize EXIF orientation first so the backend dimensions match the image
+  // orientation shown by modern browsers in the crop dialog.
+  const orientedBuffer = await sharp(file.buffer).rotate().toBuffer();
+  const metadata = await sharp(orientedBuffer).metadata();
+
+  if (!metadata.width || !metadata.height) {
+    const error = new Error('Unable to determine image dimensions');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const left = Math.max(0, Math.floor((crop.x / 100) * metadata.width));
+  const top = Math.max(0, Math.floor((crop.y / 100) * metadata.height));
+  const width = Math.min(
+    metadata.width - left,
+    Math.max(1, Math.round((crop.width / 100) * metadata.width))
+  );
+  const height = Math.min(
+    metadata.height - top,
+    Math.max(1, Math.round((crop.height / 100) * metadata.height))
+  );
+
+  return sharp(orientedBuffer)
+    .extract({ left, top, width, height })
+    .resize({ width: MAX_FEATURED_IMAGE_WIDTH, withoutEnlargement: true })
+    .webp({ quality: WEBP_QUALITY })
+    .toBuffer();
+};
+
 // @route   POST /api/upload/file
 // @desc    Upload file through backend (bypasses CORS)
 // @access  Private/Reporter
@@ -45,15 +116,18 @@ router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req
     }
 
     const file = req.file;
-    const extension = file.originalname.split('.').pop();
+    const crop = parseCrop(req.body.crop);
+    const outputBuffer = crop ? await cropAndConvertToWebp(file, crop) : file.buffer;
+    const outputContentType = crop ? 'image/webp' : file.mimetype;
+    const extension = crop ? 'webp' : file.originalname.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;
-    const folder = getUploadFolder(file.mimetype);
+    const folder = getUploadFolder(outputContentType);
     const blobName = `${Date.now()}-${folder}/${uniqueFilename}`;
 
     // Upload to Azure
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-    await blockBlobClient.uploadData(file.buffer, {
-      blobHTTPHeaders: { blobContentType: file.mimetype }
+    await blockBlobClient.uploadData(outputBuffer, {
+      blobHTTPHeaders: { blobContentType: outputContentType }
     });
 
     const blobUrl = `${process.env.AZURE_STORAGE_URL}/${process.env.AZURE_STORAGE_CONTAINER}/${blobName}`;
@@ -62,12 +136,12 @@ router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req
       blobUrl,
       blobName,
       originalName: file.originalname,
-      size: file.size,
-      contentType: file.mimetype
+      size: outputBuffer.length,
+      contentType: outputContentType
     });
   } catch (error) {
     console.error('File upload error:', error);
-    res.status(500).json({ error: 'Failed to upload file' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Failed to upload file' });
   }
 });
 
