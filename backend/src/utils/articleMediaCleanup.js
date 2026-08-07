@@ -6,6 +6,7 @@ const collectArticleMediaUrls = (article) => {
   if (!article) return [];
 
   if (article.featuredImage?.url) urls.add(article.featuredImage.url);
+  if (article.featuredImage?.appUrl) urls.add(article.featuredImage.appUrl);
 
   (article.images || []).forEach((img) => {
     if (img?.url) urls.add(img.url);

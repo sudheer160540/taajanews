@@ -185,6 +185,7 @@ const schemas = {
     author: Joi.string().hex().length(24).allow(null, ''),
     featuredImage: Joi.object({
       url: Joi.string().uri(),
+      appUrl: Joi.string().uri(),
       caption: Joi.object().pattern(
         Joi.string(),
         Joi.string()

@@ -96,6 +96,7 @@ const articleSchema = new mongoose.Schema({
   }],
   featuredImage: {
     url: String,
+    appUrl: String,
     caption: {
       type: Map,
       of: String,

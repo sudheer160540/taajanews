@@ -114,6 +114,9 @@ export const uploadApi = {
     if (options.crop) {
       formData.append('crop', JSON.stringify(options.crop));
     }
+    if (options.crops) {
+      formData.append('crops', JSON.stringify(options.crops));
+    }
     return api.post('/upload/file', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });

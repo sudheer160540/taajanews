@@ -8,6 +8,10 @@ const { protect, reporterOrAdmin } = require('../middleware/auth');
 
 const MAX_FEATURED_IMAGE_WIDTH = 1600;
 const WEBP_QUALITY = 85;
+const FEATURED_IMAGE_VARIANTS = {
+  web: { width: 800, height: 700 },
+  app: { width: 750, height: 750 }
+};
 
 // Configure multer for memory storage (50MB for e-paper PDFs)
 const upload = multer({
@@ -42,9 +46,9 @@ const getUploadFolder = (mimetype) => {
 const parseCrop = (cropValue) => {
   if (!cropValue) return null;
 
-  let crop;
+  let crop = cropValue;
   try {
-    crop = JSON.parse(cropValue);
+    if (typeof cropValue === 'string') crop = JSON.parse(cropValue);
   } catch {
     const error = new Error('Invalid crop data');
     error.statusCode = 400;
@@ -70,7 +74,31 @@ const parseCrop = (cropValue) => {
   return { x, y, width, height };
 };
 
-const cropAndConvertToWebp = async (file, crop) => {
+const parseCropVariants = (cropsValue) => {
+  if (!cropsValue) return null;
+
+  let crops;
+  try {
+    crops = typeof cropsValue === 'string' ? JSON.parse(cropsValue) : cropsValue;
+  } catch {
+    const error = new Error('Invalid image variant crop data');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!crops?.web || !crops?.app) {
+    const error = new Error('Both web and app crop areas are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    web: parseCrop(crops.web),
+    app: parseCrop(crops.app)
+  };
+};
+
+const prepareImage = async (file) => {
   if (!file.mimetype.startsWith('image/')) {
     const error = new Error('Crop is only supported for images');
     error.statusCode = 400;
@@ -88,6 +116,10 @@ const cropAndConvertToWebp = async (file, crop) => {
     throw error;
   }
 
+  return { orientedBuffer, metadata };
+};
+
+const cropAndConvertToWebp = async (orientedBuffer, metadata, crop, targetSize = null) => {
   const left = Math.max(0, Math.floor((crop.x / 100) * metadata.width));
   const top = Math.max(0, Math.floor((crop.y / 100) * metadata.height));
   const width = Math.min(
@@ -99,9 +131,13 @@ const cropAndConvertToWebp = async (file, crop) => {
     Math.max(1, Math.round((crop.height / 100) * metadata.height))
   );
 
+  const resizeOptions = targetSize
+    ? { width: targetSize.width, height: targetSize.height, fit: 'cover' }
+    : { width: MAX_FEATURED_IMAGE_WIDTH, withoutEnlargement: true };
+
   return sharp(orientedBuffer)
     .extract({ left, top, width, height })
-    .resize({ width: MAX_FEATURED_IMAGE_WIDTH, withoutEnlargement: true })
+    .resize(resizeOptions)
     .webp({ quality: WEBP_QUALITY })
     .toBuffer();
 };
@@ -116,8 +152,75 @@ router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req
     }
 
     const file = req.file;
+    const cropVariants = parseCropVariants(req.body.crops);
+
+    if (cropVariants) {
+      const { orientedBuffer, metadata } = await prepareImage(file);
+      const variantBuffers = {};
+
+      await Promise.all(Object.entries(FEATURED_IMAGE_VARIANTS).map(async ([name, dimensions]) => {
+        variantBuffers[name] = await cropAndConvertToWebp(
+          orientedBuffer,
+          metadata,
+          cropVariants[name],
+          dimensions
+        );
+      }));
+
+      const timestamp = Date.now();
+      const imageId = uuidv4();
+      const blobNames = {
+        web: `${timestamp}-images/${imageId}-web.webp`,
+        app: `${timestamp}-images/${imageId}-app.webp`
+      };
+      const blobClients = Object.fromEntries(
+        Object.entries(blobNames).map(([name, blobName]) => [
+          name,
+          containerClient.getBlockBlobClient(blobName)
+        ])
+      );
+
+      const uploadResults = await Promise.allSettled(
+        Object.entries(blobClients).map(([name, client]) => (
+          client.uploadData(variantBuffers[name], {
+            blobHTTPHeaders: { blobContentType: 'image/webp' }
+          })
+        ))
+      );
+      const failedUpload = uploadResults.find((result) => result.status === 'rejected');
+      if (failedUpload) {
+        await Promise.allSettled(Object.values(blobClients).map((client) => client.deleteIfExists()));
+        throw failedUpload.reason;
+      }
+
+      const getBlobUrl = (blobName) => (
+        `${process.env.AZURE_STORAGE_URL}/${process.env.AZURE_STORAGE_CONTAINER}/${blobName}`
+      );
+      const variants = Object.fromEntries(Object.entries(blobNames).map(([name, blobName]) => [
+        name,
+        {
+          blobUrl: getBlobUrl(blobName),
+          blobName,
+          width: FEATURED_IMAGE_VARIANTS[name].width,
+          height: FEATURED_IMAGE_VARIANTS[name].height,
+          size: variantBuffers[name].length
+        }
+      ]));
+
+      return res.json({
+        blobUrl: variants.web.blobUrl,
+        appBlobUrl: variants.app.blobUrl,
+        originalName: file.originalname,
+        contentType: 'image/webp',
+        variants
+      });
+    }
+
     const crop = parseCrop(req.body.crop);
-    const outputBuffer = crop ? await cropAndConvertToWebp(file, crop) : file.buffer;
+    const preparedImage = crop ? await prepareImage(file) : null;
+    const outputBuffer = crop
+      ? await cropAndConvertToWebp(preparedImage.orientedBuffer, preparedImage.metadata, crop)
+      : file.buffer;
     const outputContentType = crop ? 'image/webp' : file.mimetype;
     const extension = crop ? 'webp' : file.originalname.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;

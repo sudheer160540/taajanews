@@ -45,7 +45,10 @@ import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '.
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 
-const FEATURED_IMAGE_ASPECT = 16 / 9;
+const FEATURED_IMAGE_VARIANTS = {
+  web: { label: 'Website', width: 800, height: 700, aspect: 800 / 700 },
+  app: { label: 'App / Mobile', width: 750, height: 750, aspect: 1 }
+};
 const SUPPORTED_CROP_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const ArticleEditor = () => {
@@ -100,8 +103,8 @@ const ArticleEditor = () => {
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const [cropImageFile, setCropImageFile] = useState(null);
   const [cropImageUrl, setCropImageUrl] = useState('');
-  const [crop, setCrop] = useState();
-  const [completedCrop, setCompletedCrop] = useState(null);
+  const [cropVariant, setCropVariant] = useState('web');
+  const [variantCrops, setVariantCrops] = useState({ web: null, app: null });
   const [translating, setTranslating] = useState(false);
   const [translateDialogOpen, setTranslateDialogOpen] = useState(false);
   const [translatePreview, setTranslatePreview] = useState(null);
@@ -349,20 +352,28 @@ const ArticleEditor = () => {
 
     setCropImageFile(file);
     setCropImageUrl(URL.createObjectURL(file));
-    setCrop(undefined);
-    setCompletedCrop(null);
+    setCropVariant('web');
+    setVariantCrops({ web: null, app: null });
     setCropDialogOpen(true);
   };
 
   const handleCropImageLoad = (e) => {
     const { width, height } = e.currentTarget;
-    const initialCrop = centerCrop(
-      makeAspectCrop({ unit: '%', width: 90 }, FEATURED_IMAGE_ASPECT, width, height),
-      width,
-      height
+    const initialCrops = Object.fromEntries(
+      Object.entries(FEATURED_IMAGE_VARIANTS).map(([name, variant]) => [
+        name,
+        centerCrop(
+          makeAspectCrop({ unit: '%', width: 90 }, variant.aspect, width, height),
+          width,
+          height
+        )
+      ])
     );
-    setCrop(initialCrop);
-    setCompletedCrop(initialCrop);
+    setVariantCrops(initialCrops);
+  };
+
+  const handleVariantCropChange = (percentCrop) => {
+    setVariantCrops(prev => ({ ...prev, [cropVariant]: percentCrop }));
   };
 
   const handleCloseCropDialog = () => {
@@ -370,13 +381,16 @@ const ArticleEditor = () => {
     setCropDialogOpen(false);
     setCropImageFile(null);
     setCropImageUrl('');
-    setCrop(undefined);
-    setCompletedCrop(null);
+    setCropVariant('web');
+    setVariantCrops({ web: null, app: null });
   };
 
   const handleCroppedImageUpload = async () => {
-    if (!cropImageFile || !completedCrop?.width || !completedCrop?.height) {
-      setError('Please select an area to crop');
+    const cropsAreComplete = Object.keys(FEATURED_IMAGE_VARIANTS).every(
+      (name) => variantCrops[name]?.width && variantCrops[name]?.height
+    );
+    if (!cropImageFile || !cropsAreComplete) {
+      setError('Please select both website and app crop areas');
       return;
     }
 
@@ -384,20 +398,20 @@ const ArticleEditor = () => {
     setError(null);
 
     try {
-      const response = await uploadApi.uploadFile(cropImageFile, { crop: completedCrop });
-      const { blobUrl } = response.data;
+      const response = await uploadApi.uploadFile(cropImageFile, { crops: variantCrops });
+      const { blobUrl, appBlobUrl } = response.data;
 
       setArticle(prev => ({
         ...prev,
-        featuredImage: { url: blobUrl, alt: cropImageFile.name }
+        featuredImage: { url: blobUrl, appUrl: appBlobUrl, alt: cropImageFile.name }
       }));
 
-      setSuccess('Image cropped, converted to WebP, and uploaded successfully');
+      setSuccess('Website and app images cropped, converted to WebP, and uploaded successfully');
       setCropDialogOpen(false);
       setCropImageFile(null);
       setCropImageUrl('');
-      setCrop(undefined);
-      setCompletedCrop(null);
+      setCropVariant('web');
+      setVariantCrops({ web: null, app: null });
     } catch (err) {
       setApiError(err, 'Failed to upload image');
       console.error(err);
@@ -918,11 +932,32 @@ const ArticleEditor = () => {
               </Typography>
               {article.featuredImage?.url ? (
                 <Box sx={{ position: 'relative' }}>
-                  <img
-                    src={article.featuredImage.url}
-                    alt="Featured"
-                    style={{ width: '100%', borderRadius: 8 }}
-                  />
+                  <Grid container spacing={1}>
+                    <Grid item xs={article.featuredImage.appUrl ? 7 : 12}>
+                      <Typography variant="caption" color="text.secondary">
+                        Website · 800×700
+                      </Typography>
+                      <Box
+                        component="img"
+                        src={article.featuredImage.url}
+                        alt="Website featured"
+                        sx={{ width: '100%', aspectRatio: '8 / 7', objectFit: 'cover', borderRadius: 1 }}
+                      />
+                    </Grid>
+                    {article.featuredImage.appUrl && (
+                      <Grid item xs={5}>
+                        <Typography variant="caption" color="text.secondary">
+                          App · 750×750
+                        </Typography>
+                        <Box
+                          component="img"
+                          src={article.featuredImage.appUrl}
+                          alt="App featured"
+                          sx={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 1 }}
+                        />
+                      </Grid>
+                    )}
+                  </Grid>
                   {!isReporterLockedOut && (
                     <IconButton
                       sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'white' }}
@@ -1215,15 +1250,29 @@ const ArticleEditor = () => {
         <DialogTitle>Crop Featured Image</DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Adjust the 16:9 crop area. The uploaded image will be converted to WebP.
+            Set both crop areas. Two optimized WebP images will be generated from this upload.
           </Typography>
+          <Tabs
+            value={cropVariant}
+            onChange={(_, value) => setCropVariant(value)}
+            variant="fullWidth"
+            sx={{ mb: 2 }}
+          >
+            {Object.entries(FEATURED_IMAGE_VARIANTS).map(([name, variant]) => (
+              <Tab
+                key={name}
+                value={name}
+                label={`${variant.label} · ${variant.width}×${variant.height}`}
+              />
+            ))}
+          </Tabs>
           {cropImageUrl && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', bgcolor: 'grey.100', p: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', bgcolor: 'grey.100', p: 1, minHeight: 280 }}>
               <ReactCrop
-                crop={crop}
-                onChange={(_, percentCrop) => setCrop(percentCrop)}
-                onComplete={(_, percentCrop) => setCompletedCrop(percentCrop)}
-                aspect={FEATURED_IMAGE_ASPECT}
+                crop={variantCrops[cropVariant] || undefined}
+                onChange={(_, percentCrop) => handleVariantCropChange(percentCrop)}
+                onComplete={(_, percentCrop) => handleVariantCropChange(percentCrop)}
+                aspect={FEATURED_IMAGE_VARIANTS[cropVariant].aspect}
                 keepSelection
               >
                 <img
@@ -1243,10 +1292,12 @@ const ArticleEditor = () => {
           <Button
             variant="contained"
             onClick={handleCroppedImageUpload}
-            disabled={uploading || !completedCrop?.width || !completedCrop?.height}
+            disabled={uploading || !Object.keys(FEATURED_IMAGE_VARIANTS).every(
+              (name) => variantCrops[name]?.width && variantCrops[name]?.height
+            )}
             startIcon={uploading ? <CircularProgress size={18} color="inherit" /> : <UploadIcon />}
           >
-            {uploading ? 'Processing...' : 'Crop and Upload'}
+            {uploading ? 'Generating both images...' : 'Generate and Upload Both'}
           </Button>
         </DialogActions>
       </Dialog>
