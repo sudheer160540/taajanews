@@ -83,7 +83,7 @@ const buildArticleMessage = async (article) => {
   if (!headline) return null;
 
   const body = truncate(headline, NOTIFICATION_BODY_LIMIT);
-  const imageUrl = article.featuredImage && article.featuredImage.url ? article.featuredImage.url : undefined;
+  const imageUrl = article.featuredImage?.appUrl || article.featuredImage?.url || undefined;
 
   // `data` is string-only per FCM contract.
   const data = {
