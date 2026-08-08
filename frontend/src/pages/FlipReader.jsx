@@ -73,7 +73,7 @@ const FlipReader = () => {
 
   useEffect(() => {
     fetchArticle();
-  }, [slug]);
+  }, [slug, lang]);
 
   const fetchArticle = async () => {
     setLoading(true);

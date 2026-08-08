@@ -66,7 +66,7 @@ const ArticleView = () => {
 
   useEffect(() => {
     fetchArticle();
-  }, [slug]);
+  }, [slug, lang]);
 
   const fetchArticle = async () => {
     setLoading(true);

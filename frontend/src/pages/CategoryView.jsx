@@ -20,6 +20,7 @@ import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
+import CategoryIcon from '../components/CategoryIcon';
 
 const CategoryView = () => {
   const { slug } = useParams();
@@ -37,6 +38,11 @@ const CategoryView = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
+    setPage(1);
+    setArticles([]);
+    setCategory(null);
+    setChildren([]);
+    setBreadcrumb([]);
     fetchCategory();
   }, [slug]);
 
@@ -44,7 +50,7 @@ const CategoryView = () => {
     if (category) {
       fetchArticles();
     }
-  }, [category, page, city, area]);
+  }, [category, page, city, area, lang]);
 
   const fetchCategory = async () => {
     setLoading(true);
@@ -53,14 +59,16 @@ const CategoryView = () => {
       setCategory(response.data.category);
       setChildren(response.data.children);
       setBreadcrumb(response.data.breadcrumb);
+      // Keep loading true until articles finish fetching
     } catch (err) {
       console.error('Failed to fetch category:', err);
-    } finally {
+      setCategory(null);
       setLoading(false);
     }
   };
 
   const fetchArticles = async () => {
+    setLoading(true);
     try {
       const params = { 
         category: category._id, 
@@ -72,10 +80,13 @@ const CategoryView = () => {
       if (area) params.area = area._id;
 
       const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles);
-      setTotalPages(response.data.pagination.pages);
+      setArticles(response.data.articles || []);
+      setTotalPages(response.data.pagination?.pages || 1);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
+      setArticles([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -155,9 +166,14 @@ const CategoryView = () => {
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {category.name?.[lang] || category.name?.en}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+          {category.icon && (
+            <CategoryIcon icon={category.icon} color={category.color} size={36} />
+          )}
+          <Typography variant="h4" component="h1" fontWeight={700}>
+            {category.name?.[lang] || category.name?.en}
+          </Typography>
+        </Box>
         {category.description?.[lang] && (
           <Typography variant="body1" color="text.secondary">
             {category.description[lang]}
@@ -175,11 +191,22 @@ const CategoryView = () => {
             {children.map((child) => (
               <Chip
                 key={child._id}
+                icon={
+                  child.icon ? (
+                    <CategoryIcon
+                      icon={child.icon}
+                      color="#fff"
+                      size={16}
+                      sx={{ '&&': { ml: 0.75, color: '#fff' } }}
+                    />
+                  ) : undefined
+                }
                 label={child.name?.[lang] || child.name?.en}
                 onClick={() => navigate(`/category/${child.slug}`)}
                 sx={{ 
                   bgcolor: child.color || 'primary.main',
-                  color: 'white'
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white' }
                 }}
               />
             ))}
