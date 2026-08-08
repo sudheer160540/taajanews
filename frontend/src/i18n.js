@@ -340,12 +340,41 @@ const resources = {
   }
 };
 
-// Get saved language from localStorage or default to 'te' (Telugu)
+/** Normalize lang codes like `te`, `te-IN`, `TE` → `te` */
+export const normalizeLangCode = (code) => {
+  if (!code || typeof code !== 'string') return null;
+  const normalized = code.trim().toLowerCase().split(/[-_]/)[0];
+  if (!/^[a-z]{2,3}$/.test(normalized)) return null;
+  return normalized;
+};
+
+const getLangFromUrl = () => {
+  try {
+    return normalizeLangCode(new URLSearchParams(window.location.search).get('lang'));
+  } catch {
+    return null;
+  }
+};
+
+const persistLanguage = (lng) => {
+  try {
+    localStorage.setItem('taaja_lang', lng);
+  } catch (e) {
+    console.warn('Failed to save language preference:', e);
+  }
+};
+
+// Prefer ?lang= (shared links) over storage; persist so it becomes default
 const getSavedLanguage = () => {
+  const fromUrl = getLangFromUrl();
+  if (fromUrl) {
+    persistLanguage(fromUrl);
+    return fromUrl;
+  }
   try {
     return localStorage.getItem('taaja_lang') || 'en';
   } catch {
-    return 'te';
+    return 'en';
   }
 };
 
@@ -367,13 +396,10 @@ i18n
 
 // Save language preference to localStorage when changed
 i18n.on('languageChanged', (lng) => {
-  try {
-    localStorage.setItem('taaja_lang', lng);
-  } catch (e) {
-    console.warn('Failed to save language preference:', e);
-  }
-  document.documentElement.lang = lng;
-  document.documentElement.dir = lng === 'ar' || lng === 'ur' ? 'rtl' : 'ltr';
+  const code = normalizeLangCode(lng) || lng;
+  persistLanguage(code);
+  document.documentElement.lang = code;
+  document.documentElement.dir = code === 'ar' || code === 'ur' ? 'rtl' : 'ltr';
 });
 
 // Set initial document language

@@ -20,6 +20,7 @@ import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
+import CategoryIcon from '../components/CategoryIcon';
 
 const CategoryView = () => {
   const { slug } = useParams();
@@ -165,9 +166,14 @@ const CategoryView = () => {
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {category.name?.[lang] || category.name?.en}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+          {category.icon && (
+            <CategoryIcon icon={category.icon} color={category.color} size={36} />
+          )}
+          <Typography variant="h4" component="h1" fontWeight={700}>
+            {category.name?.[lang] || category.name?.en}
+          </Typography>
+        </Box>
         {category.description?.[lang] && (
           <Typography variant="body1" color="text.secondary">
             {category.description[lang]}
@@ -185,11 +191,22 @@ const CategoryView = () => {
             {children.map((child) => (
               <Chip
                 key={child._id}
+                icon={
+                  child.icon ? (
+                    <CategoryIcon
+                      icon={child.icon}
+                      color="#fff"
+                      size={16}
+                      sx={{ '&&': { ml: 0.75, color: '#fff' } }}
+                    />
+                  ) : undefined
+                }
                 label={child.name?.[lang] || child.name?.en}
                 onClick={() => navigate(`/category/${child.slug}`)}
                 sx={{ 
                   bgcolor: child.color || 'primary.main',
-                  color: 'white'
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white' }
                 }}
               />
             ))}

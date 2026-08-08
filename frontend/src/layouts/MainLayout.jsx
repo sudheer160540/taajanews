@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { categoriesApi, languagesApi } from '../services/api';
 import Footer from '../components/Footer';
+import CategoryIcon from '../components/CategoryIcon';
 
 const MainLayout = () => {
   const { t, i18n } = useTranslation();
@@ -81,7 +82,7 @@ const MainLayout = () => {
   }, [i18n.language, languages]);
 
   useEffect(() => {
-    const CACHE_KEY = `taaja_categories_${i18n.language}_v1`;
+    const CACHE_KEY = `taaja_categories_${i18n.language}_v2`;
     const CACHE_TTL = 5 * 60 * 1000;
 
     const loadCategories = async () => {
@@ -355,15 +356,20 @@ const MainLayout = () => {
               scrollButtons="auto"
               allowScrollButtonsMobile
               sx={{
-                minHeight: 36,
+                minHeight: 42,
                 '& .MuiTab-root': {
                   color: 'text.secondary',
-                  minHeight: 36,
+                  minHeight: 42,
                   py: 0,
-                  px: 2,
+                  px: 1.5,
                   fontSize: '0.8rem',
                   textTransform: 'none',
-                  fontWeight: 500
+                  fontWeight: 500,
+                  gap: 0.75
+                },
+                '& .MuiTab-iconWrapper': {
+                  marginBottom: '0 !important',
+                  marginRight: 0
                 },
                 '& .Mui-selected': { color: 'primary.main', fontWeight: 700 },
                 '& .MuiTabs-indicator': { backgroundColor: 'primary.main' },
@@ -376,6 +382,12 @@ const MainLayout = () => {
                 <Tab
                   key={cat._id}
                   value={cat.slug}
+                  icon={
+                    cat.icon ? (
+                      <CategoryIcon icon={cat.icon} color={cat.color} size={18} />
+                    ) : undefined
+                  }
+                  iconPosition="start"
                   label={getDisplayName(cat)}
                   onClick={() => handleCategoryClick(cat.slug)}
                 />
