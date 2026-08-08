@@ -37,6 +37,11 @@ const CategoryView = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
+    setPage(1);
+    setArticles([]);
+    setCategory(null);
+    setChildren([]);
+    setBreadcrumb([]);
     fetchCategory();
   }, [slug]);
 
@@ -44,7 +49,7 @@ const CategoryView = () => {
     if (category) {
       fetchArticles();
     }
-  }, [category, page, city, area]);
+  }, [category, page, city, area, lang]);
 
   const fetchCategory = async () => {
     setLoading(true);
@@ -53,14 +58,16 @@ const CategoryView = () => {
       setCategory(response.data.category);
       setChildren(response.data.children);
       setBreadcrumb(response.data.breadcrumb);
+      // Keep loading true until articles finish fetching
     } catch (err) {
       console.error('Failed to fetch category:', err);
-    } finally {
+      setCategory(null);
       setLoading(false);
     }
   };
 
   const fetchArticles = async () => {
+    setLoading(true);
     try {
       const params = { 
         category: category._id, 
@@ -72,10 +79,13 @@ const CategoryView = () => {
       if (area) params.area = area._id;
 
       const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles);
-      setTotalPages(response.data.pagination.pages);
+      setArticles(response.data.articles || []);
+      setTotalPages(response.data.pagination?.pages || 1);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
+      setArticles([]);
+    } finally {
+      setLoading(false);
     }
   };
 
