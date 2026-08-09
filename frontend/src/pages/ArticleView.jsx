@@ -267,8 +267,8 @@ const ArticleView = () => {
         })}
       />
       {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }} className="page-breadcrumb">
+        <Link to="/" className="page-breadcrumb__home" style={{ textDecoration: 'none', color: 'inherit' }}>
           {t('home')}
         </Link>
         {breadcrumb.map((item, index) => (

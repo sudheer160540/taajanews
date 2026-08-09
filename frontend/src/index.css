@@ -208,25 +208,25 @@ body {
   }
 
   .site-header__location-chip.MuiChip-root {
-    height: 2.55rem !important;
+    height: 2.2rem !important;
     max-width: 100%;
-    padding-left: 0.6rem !important;
-    padding-right: 0.65rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.45rem !important;
   }
 
   .site-header__location-chip .MuiChip-label {
-    font-size: 1rem !important;
+    font-size: 0.85rem !important;
     font-weight: 600 !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+    padding-left: 0.65rem !important;
+    padding-right: 0.65rem !important;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .site-header__location-chip .MuiChip-icon {
-    font-size: 1.25rem !important;
-    margin-left: 0.5rem !important;
+    font-size: 1.05rem !important;
+    margin-left: 0.35rem !important;
   }
 
   .site-header__location-chip--placeholder .MuiChip-label {
@@ -236,7 +236,7 @@ body {
 
   .site-header__languages {
     grid-area: languages;
-    margin-left: 0 !important;
+    margin-left: 0.85rem !important;
     gap: 0.3rem !important;
     justify-content: flex-start;
     justify-self: start;
@@ -294,18 +294,31 @@ body {
   }
 
   .site-header__categories .MuiTabs-root {
-    min-height: 34px;
+    min-height: 38px;
   }
 
+  /* All category tabs match Home/All size on mobile */
   .site-header__categories .MuiTab-root {
-    min-height: 34px !important;
-    padding-left: 0.75rem !important;
-    padding-right: 0.75rem !important;
-    font-size: 0.75rem !important;
+    min-height: 38px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    font-size: 0.88rem !important;
+    font-weight: 700 !important;
   }
 
   .site-header__categories .MuiTabs-scrollButtons {
     width: 28px;
+  }
+
+  /* Breadcrumb Home link — slightly larger on mobile only */
+  .page-breadcrumb__home {
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    line-height: 1.4 !important;
+  }
+
+  .page-breadcrumb .MuiBreadcrumbs-separator .MuiSvgIcon-root {
+    font-size: 1.15rem !important;
   }
 
   /* Homepage content: keep cards within phone width */

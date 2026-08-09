@@ -10,7 +10,6 @@ import {
   CardContent,
   CardMedia,
   CardActionArea,
-  Chip,
   Breadcrumbs,
   Skeleton,
   Pagination
@@ -29,7 +28,6 @@ const CategoryView = () => {
   const lang = i18n.language;
 
   const [category, setCategory] = useState(null);
-  const [children, setChildren] = useState([]);
   const [breadcrumb, setBreadcrumb] = useState([]);
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +38,6 @@ const CategoryView = () => {
     setPage(1);
     setArticles([]);
     setCategory(null);
-    setChildren([]);
     setBreadcrumb([]);
     fetchCategory();
   }, [slug]);
@@ -56,7 +53,6 @@ const CategoryView = () => {
     try {
       const response = await categoriesApi.getBySlug(slug);
       setCategory(response.data.category);
-      setChildren(response.data.children);
       setBreadcrumb(response.data.breadcrumb);
       // Keep loading true until articles finish fetching
     } catch (err) {
@@ -144,24 +140,91 @@ const CategoryView = () => {
         path={`/category/${slug}`}
         lang={lang}
       />
-      {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 3 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          {t('home')}
-        </Link>
-        {breadcrumb.map((item, index) => (
-          <Link
-            key={item._id}
-            to={`/category/${item.slug}`}
-            style={{ 
-              textDecoration: 'none', 
-              color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
+      {/* Breadcrumb + mobile-only ad placeholder */}
+      <Box
+        className="category-breadcrumb-row"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: { xs: 1.5, sm: 1 },
+          mb: { xs: 4.5, sm: 3 },
+          mt: { xs: 1, sm: 0 },
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          overflow: 'hidden',
+          position: 'relative',
+          zIndex: 0,
+          boxSizing: 'border-box'
+        }}
+      >
+        <Breadcrumbs
+          separator={<NavNextIcon fontSize="small" />}
+          sx={{
+            mb: 0,
+            minWidth: 0,
+            flex: { xs: '0 1 auto', sm: '1 1 auto' },
+            maxWidth: { xs: '40%', sm: '100%' },
+            overflow: 'hidden',
+            whiteSpace: 'nowrap'
+          }}
+          className="page-breadcrumb"
+        >
+          <Link to="/" className="page-breadcrumb__home" style={{ textDecoration: 'none', color: 'inherit' }}>
+            {t('home')}
+          </Link>
+          {breadcrumb.map((item, index) => (
+            <Link
+              key={item._id}
+              to={`/category/${item.slug}`}
+              style={{
+                textDecoration: 'none',
+                color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
+              }}
+            >
+              {item.name?.[lang] || item.name?.en}
+            </Link>
+          ))}
+        </Breadcrumbs>
+        <Box
+          className="category-ad-placeholder"
+          aria-hidden
+          sx={{
+            display: { xs: 'flex', sm: 'none' },
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: '1 1 auto',
+            minWidth: 0,
+            px: 2,
+            py: 2.75,
+            minHeight: 76,
+            border: '1px dashed',
+            borderColor: 'divider',
+            bgcolor: 'action.hover',
+            borderRadius: 1,
+            position: 'relative',
+            zIndex: 0,
+            boxSizing: 'border-box',
+            overflow: 'hidden'
+          }}
+        >
+          <Typography
+            component="span"
+            sx={{
+              fontSize: '0.8rem',
+              fontWeight: 500,
+              letterSpacing: '0.04em',
+              color: 'text.disabled',
+              textTransform: 'uppercase',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap'
             }}
           >
-            {item.name?.[lang] || item.name?.en}
-          </Link>
-        ))}
-      </Breadcrumbs>
+            Advertisement
+          </Typography>
+        </Box>
+      </Box>
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
@@ -174,28 +237,6 @@ const CategoryView = () => {
           </Typography>
         )}
       </Box>
-
-      {/* Subcategories */}
-      {children.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" fontWeight={600} gutterBottom>
-            {lang === 'hi' ? 'उप-श्रेणियां' : 'Subcategories'}
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {children.map((child) => (
-              <Chip
-                key={child._id}
-                label={child.name?.[lang] || child.name?.en}
-                onClick={() => navigate(`/category/${child.slug}`)}
-                sx={{ 
-                  bgcolor: child.color || 'primary.main',
-                  color: 'white'
-                }}
-              />
-            ))}
-          </Box>
-        </Box>
-      )}
 
       {/* Articles Grid */}
       {articles.length === 0 ? (

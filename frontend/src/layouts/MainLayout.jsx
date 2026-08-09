@@ -370,7 +370,7 @@ const MainLayout = () => {
                 '& .MuiTabs-scrollButtons': { color: 'primary.main' }
               }}
             >
-              <Tab value="all" label={currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All'} onClick={() => handleCategoryClick('all')}/>
+              <Tab className="site-header__home-tab" value="all" label={currentLang?.code === 'hi' ? 'सभी' : currentLang?.code === 'te' ? 'అన్నీ' : 'All'} onClick={() => handleCategoryClick('all')}/>
 
               {categories.map((cat) => (
                 <Tab
