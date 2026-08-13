@@ -73,6 +73,15 @@ const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
   return field[lang] || field[fallbackLang] || Object.values(field)[0] || '';
 };
 
+// Resolve the language-specific audio URL (lang → en → null), matching the /feed projection.
+const getAudioUrl = (audio, lang, fallbackLang = 'en') => {
+  if (!audio) return null;
+  if (audio instanceof Map) {
+    return audio.get(lang) || audio.get(fallbackLang) || null;
+  }
+  return audio[lang] || audio[fallbackLang] || null;
+};
+
 // ─────────────────────────────────────────────────────────────
 // GET /api/articles/feed
 // Geospatial + Personalized News Feed
@@ -119,6 +128,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
         audioUrl: {
           $ifNull: [`$audio.${lang}`, { $ifNull: ['$audio.en', null] }]
         },
+        audio: 1,
         featuredImage: 1,
         tags: 1,
         location: 1,
@@ -370,6 +380,7 @@ router.get('/', optionalAuth, async (req, res) => {
       ...article,
       title: getLocalizedValue(article.title, lang, defaultLang),
       summary: getLocalizedValue(article.summary, lang, defaultLang),
+      audioUrl: getAudioUrl(article.audio, lang, defaultLang),
       // Transform nested objects
       category: article.category ? {
         ...article.category,
@@ -415,6 +426,7 @@ router.get('/nearby', async (req, res) => {
       ...article,
       title: getLocalizedValue(article.title, lang, defaultLang),
       summary: getLocalizedValue(article.summary, lang, defaultLang),
+      audioUrl: getAudioUrl(article.audio, lang, defaultLang),
       distance: Math.round(article.distance) // in meters
     }));
 
@@ -439,7 +451,7 @@ router.get('/trending', async (req, res) => {
       status: 'published',
       publishedAt: { $gte: oneDayAgo }
     })
-      .select('title slug featuredImage engagement publishedAt author category youtubeUrl')
+      .select('title slug featuredImage engagement publishedAt author category youtubeUrl audio')
       .populate('author', 'name avatar')
       .populate('category', 'name slug')
       .sort({ 'engagement.views': -1, 'engagement.likes': -1 })
@@ -449,6 +461,7 @@ router.get('/trending', async (req, res) => {
     const transformedArticles = articles.map(article => ({
       ...article,
       title: getLocalizedValue(article.title, lang, defaultLang),
+      audioUrl: getAudioUrl(article.audio, lang, defaultLang),
       category: article.category ? {
         ...article.category,
         name: getLocalizedValue(article.category.name, lang, defaultLang)
