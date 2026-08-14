@@ -94,6 +94,8 @@ const ArticleEditor = () => {
   const [authorsLoading, setAuthorsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [sendNotification, setSendNotification] = useState(true);
   const [error, setError] = useState(null);
   const [errorDetails, setErrorDetails] = useState([]);
   const [success, setSuccess] = useState(null);
@@ -618,7 +620,7 @@ const ArticleEditor = () => {
   };
 
   // saveMode: 'draft' | 'pending' | 'published'
-  const handleSave = async (saveMode = 'draft') => {
+  const handleSave = async (saveMode = 'draft', options = {}) => {
     setError(null);
     setErrorDetails([]);
     setSuccess(null);
@@ -669,6 +671,11 @@ const ArticleEditor = () => {
         youtubeUrl: (article.youtubeUrl || '').trim()
       };
 
+      // Only relevant when publishing: controls the push notification fan-out.
+      if (targetStatus === 'published') {
+        articleData.sendNotification = options.sendNotification !== false;
+      }
+
       if (article.category) articleData.category = article.category;
       if (article.location) articleData.location = article.location;
       if (article.featuredImage?.url) articleData.featuredImage = article.featuredImage;
@@ -687,6 +694,21 @@ const ArticleEditor = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openPublishDialog = () => {
+    setSendNotification(true);
+    setPublishDialogOpen(true);
+  };
+
+  const closePublishDialog = () => {
+    if (saving) return;
+    setPublishDialogOpen(false);
+  };
+
+  const handleConfirmPublish = async () => {
+    setPublishDialogOpen(false);
+    await handleSave('published', { sendNotification });
   };
 
   // Check if language has content
@@ -753,7 +775,7 @@ const ArticleEditor = () => {
                 variant="contained"
                 color="success"
                 startIcon={<PublishIcon />}
-                onClick={() => handleSave('published')}
+                onClick={openPublishDialog}
                 disabled={saving}
               >
                 {saving ? t('loading') : 'Publish'}
@@ -1426,6 +1448,38 @@ const ArticleEditor = () => {
               Apply to Article
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Publish confirmation dialog with optional notification */}
+      <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Publish article?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Are you sure you want to publish this article?
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={sendNotification}
+                onChange={(e) => setSendNotification(e.target.checked)}
+              />
+            }
+            label="Send push notification to users"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePublishDialog} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handleConfirmPublish}
+            disabled={saving}
+          >
+            {saving ? t('loading') : 'Publish'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
