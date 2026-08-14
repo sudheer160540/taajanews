@@ -1,9 +1,17 @@
 {
-    "rewrites": [
-      {
-        "source": "/:path*",
-        "destination": "/index.html"
-      }
-    ]
-  }
-  
+  "buildCommand": "npm run build:ssr",
+  "outputDirectory": "dist/client",
+  "functions": {
+    "api/ssr.js": {
+      "includeFiles": "dist/server/**",
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/|assets/|favicon\\.svg|logo\\.png|slogo\\.png|robots\\.txt|\\.well-known/).*)",
+      "destination": "/api/ssr?path=$1"
+    }
+  ]
+}
