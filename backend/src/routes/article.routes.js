@@ -699,6 +699,10 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
       authorId = selectedAuthor._id;
     }
 
+    // Only send a push when explicitly requested. Defaults to true when the
+    // flag is omitted so existing callers keep their current behavior.
+    const shouldNotify = req.body.sendNotification !== false;
+
     // Convert plain objects to Maps for multilingual fields
     const articleData = {
       ...req.body,
@@ -712,6 +716,8 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
       source: req.body.source || 'Taaja News Network',
       sourceUrl: req.body.sourceUrl || ''
     };
+    // Not a persisted field — remove before saving.
+    delete articleData.sendNotification;
 
     // Get category ancestors if category provided
     if (req.body.category) {
@@ -732,7 +738,9 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
 
     // If the article was created directly as 'published' (e.g. by an
     // admin), kick off the push notification fan-out.
-    firePublishedNotification(article, 'POST /articles');
+    if (shouldNotify) {
+      firePublishedNotification(article, 'POST /articles');
+    }
 
     // Update category article count
     if (req.body.category) {
@@ -789,10 +797,15 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       }
     }
 
+    // Only send a push when explicitly requested. Defaults to true when the
+    // flag is omitted so existing callers keep their current behavior.
+    const shouldNotify = req.body.sendNotification !== false;
+
     // Convert plain objects to Maps for multilingual fields
     const updateData = { ...req.body };
     delete updateData.createdBy;
     delete updateData.updatedBy;
+    delete updateData.sendNotification;
     updateData.updatedBy = req.user._id;
 
     if (updateData.author) {
@@ -858,7 +871,7 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 
     // Notify mobile clients ONLY on the non-published → published transition,
     // so re-saves of an already-published article don't re-trigger pushes.
-    if (previousStatus !== 'published' && updatedArticle && updatedArticle.status === 'published') {
+    if (shouldNotify && previousStatus !== 'published' && updatedArticle && updatedArticle.status === 'published') {
       firePublishedNotification(updatedArticle, 'PUT /articles/:id');
     } else if (updatedArticle && updatedArticle.status === 'published') {
       // Helpful trace for re-saves: confirms why we did NOT send a push.
@@ -885,11 +898,15 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 //   chief-editor, admin → can set draft, pending, published, archived
 router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, sendNotification } = req.body;
 
     if (!['draft', 'pending', 'published', 'archived'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
+
+    // Only send a push when explicitly requested. Defaults to true when the
+    // flag is omitted so existing callers keep their current behavior.
+    const shouldNotify = sendNotification !== false;
 
     if (['published', 'archived'].includes(status) &&
         !['chief-editor', 'admin'].includes(req.user.role)) {
@@ -916,7 +933,7 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Article not found' });
     }
 
-    if (prior.status !== 'published' && article.status === 'published') {
+    if (shouldNotify && prior.status !== 'published' && article.status === 'published') {
       firePublishedNotification(article, 'PUT /articles/:id/status');
     }
 
