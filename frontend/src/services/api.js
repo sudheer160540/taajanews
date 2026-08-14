@@ -23,8 +23,13 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Add language header
-    const lang = Cookies.get('taaja_lang') || 'en';
+    // Add language header (same source as i18n: localStorage taaja_lang)
+    let lang = 'en';
+    try {
+      lang = localStorage.getItem('taaja_lang') || 'en';
+    } catch {
+      lang = 'en';
+    }
     config.headers['Accept-Language'] = lang;
     
     return config;

@@ -71,7 +71,7 @@ const ArticleView = () => {
 
   useEffect(() => {
     fetchArticle();
-  }, [slug]);
+  }, [slug, lang]);
 
   const fetchArticle = async () => {
     // Keep the SSR-seeded content visible instead of flashing a skeleton.

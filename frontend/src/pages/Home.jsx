@@ -440,6 +440,7 @@ const Home = () => {
   const [articles, setArticles] = useState([]);
   const [trendingArticles, setTrendingArticles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, hasMore: false });
 
@@ -480,6 +481,7 @@ const Home = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setTrendingLoading(true);
     try {
       const feedParams = { lang, limit: 20, page: 1 };
       const loc = getLocationCoords();
@@ -489,18 +491,26 @@ const Home = () => {
         feedParams.radiusKM = 50;
       }
 
-      const [articlesRes, trendingRes] = await Promise.all([
-        articlesApi.getFeed(feedParams),
-        articlesApi.getTrending({ limit: 5, lang })
-      ]);
+      // Critical path: paint the feed as soon as it arrives
+      const articlesRes = await articlesApi.getFeed(feedParams);
+      setArticles(articlesRes.data.articles || []);
+      setPagination(articlesRes.data.pagination || { page: 1, hasMore: false });
+      setLoading(false);
 
-      setArticles(articlesRes.data.articles);
-      setPagination(articlesRes.data.pagination);
-      setTrendingArticles(trendingRes.data.articles);
+      // Secondary: trending does not block the main feed
+      articlesApi
+        .getTrending({ limit: 5, lang })
+        .then((trendingRes) => {
+          setTrendingArticles(trendingRes.data.articles || []);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch trending:', err);
+        })
+        .finally(() => setTrendingLoading(false));
     } catch (err) {
       console.error('Failed to fetch data:', err);
-    } finally {
       setLoading(false);
+      setTrendingLoading(false);
     }
   };
 
@@ -665,7 +675,7 @@ const Home = () => {
                 </Typography>
               </Box>
 
-              {loading ? (
+              {trendingLoading ? (
                 [1, 2, 3].map((i) => <Skeleton key={i} height={72} sx={{ my: 1 }} />)
               ) : trendingArticles.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
