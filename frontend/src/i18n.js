@@ -340,6 +340,9 @@ const resources = {
   }
 };
 
+// SSR-safe: these globals only exist in the browser.
+const isBrowser = typeof window !== 'undefined';
+
 /** Normalize lang codes like `te`, `te-IN`, `TE` → `te` */
 export const normalizeLangCode = (code) => {
   if (!code || typeof code !== 'string') return null;
@@ -349,6 +352,7 @@ export const normalizeLangCode = (code) => {
 };
 
 const getLangFromUrl = () => {
+  if (!isBrowser) return null;
   try {
     return normalizeLangCode(new URLSearchParams(window.location.search).get('lang'));
   } catch {
@@ -357,6 +361,7 @@ const getLangFromUrl = () => {
 };
 
 const persistLanguage = (lng) => {
+  if (!isBrowser) return;
   try {
     localStorage.setItem('taaja_lang', lng);
   } catch (e) {
@@ -396,13 +401,16 @@ i18n
 
 // Save language preference to localStorage when changed
 i18n.on('languageChanged', (lng) => {
+  if (!isBrowser) return;
   const code = normalizeLangCode(lng) || lng;
   persistLanguage(code);
   document.documentElement.lang = code;
   document.documentElement.dir = code === 'ar' || code === 'ur' ? 'rtl' : 'ltr';
 });
 
-// Set initial document language
-document.documentElement.lang = savedLanguage;
+// Set initial document language (browser only).
+if (isBrowser) {
+  document.documentElement.lang = savedLanguage;
+}
 
 export default i18n;
