@@ -38,6 +38,7 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useSSRData } from '../contexts/SSRDataContext';
 import { v4 as uuidv4 } from 'uuid';
 import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
 import Seo from '../components/Seo';
@@ -50,11 +51,15 @@ const ArticleView = () => {
   const { isAuthenticated, isEditor } = useAuth();
   const lang = i18n.language;
 
-  const [article, setArticle] = useState(null);
-  const [relatedArticles, setRelatedArticles] = useState([]);
-  const [breadcrumb, setBreadcrumb] = useState([]);
+  // Data prefetched by the SSR server for this slug (null on client navigation).
+  const seed = useSSRData(`article:${slug}`);
+  const seededArticle = seed?.article && seed.article.slug === slug ? seed.article : null;
+
+  const [article, setArticle] = useState(seededArticle);
+  const [relatedArticles, setRelatedArticles] = useState(seededArticle ? seed.relatedArticles || [] : []);
+  const [breadcrumb, setBreadcrumb] = useState(seededArticle ? seed.breadcrumb || [] : []);
   const [comments, setComments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!seededArticle);
   const [engagement, setEngagement] = useState({ liked: false, disliked: false, bookmarked: false });
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -69,7 +74,9 @@ const ArticleView = () => {
   }, [slug]);
 
   const fetchArticle = async () => {
-    setLoading(true);
+    // Keep the SSR-seeded content visible instead of flashing a skeleton.
+    const hasSeed = article && article.slug === slug;
+    if (!hasSeed) setLoading(true);
     setPlayingVideo(false);
     try {
       const response = await articlesApi.getBySlug(slug, lang);

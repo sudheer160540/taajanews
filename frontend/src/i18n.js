@@ -340,6 +340,9 @@ const resources = {
   }
 };
 
+// SSR-safe: these globals only exist in the browser.
+const isBrowser = typeof window !== 'undefined';
+
 // Get saved language from localStorage or default to 'te' (Telugu)
 const getSavedLanguage = () => {
   try {
@@ -367,6 +370,7 @@ i18n
 
 // Save language preference to localStorage when changed
 i18n.on('languageChanged', (lng) => {
+  if (!isBrowser) return;
   try {
     localStorage.setItem('taaja_lang', lng);
   } catch (e) {
@@ -376,7 +380,9 @@ i18n.on('languageChanged', (lng) => {
   document.documentElement.dir = lng === 'ar' || lng === 'ur' ? 'rtl' : 'ltr';
 });
 
-// Set initial document language
-document.documentElement.lang = savedLanguage;
+// Set initial document language (browser only).
+if (isBrowser) {
+  document.documentElement.lang = savedLanguage;
+}
 
 export default i18n;

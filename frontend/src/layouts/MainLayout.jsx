@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { categoriesApi, languagesApi } from '../services/api';
 import Footer from '../components/Footer';
+import Seo from '../components/Seo';
 
 const MainLayout = () => {
   const { t, i18n } = useTranslation();
@@ -149,6 +150,9 @@ const MainLayout = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {/* Baseline SEO for every public route; individual pages override via their own <Seo>. */}
+      <Seo path={currentPath} lang={i18n.language} />
+
       {/* Top AppBar */}
       <AppBar
         position="sticky"
