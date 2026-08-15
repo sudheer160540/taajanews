@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import {
   Box,
   Grid,
@@ -24,12 +23,13 @@ import {
 } from '@mui/icons-material';
 import { articlesApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const Dashboard = () => {
-  const { t, i18n } = useTranslation();
+  const { t, language, localizeField } = useLanguage();
   const navigate = useNavigate();
-  const { user, isAdmin } = useAuth();
-  const lang = i18n.language;
+  const { user } = useAuth();
+  const lang = language;
 
   const [stats, setStats] = useState({
     totalArticles: 0,
@@ -42,13 +42,13 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [lang]);
 
   const fetchDashboardData = async () => {
     try {
       const [statsRes, articlesRes] = await Promise.all([
         articlesApi.getStats(),
-        articlesApi.getManaged({ limit: 5 })
+        articlesApi.getManaged({ limit: 5, lang })
       ]);
 
       const s = statsRes.data.stats;
@@ -59,7 +59,7 @@ const Dashboard = () => {
         totalLikes: s.totalLikes || 0
       });
 
-      setRecentArticles(articlesRes.data.articles);
+      setRecentArticles(articlesRes.data.articles || []);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
@@ -89,9 +89,9 @@ const Dashboard = () => {
               {title}
             </Typography>
           </Box>
-          <Box sx={{ 
-            bgcolor: `${color}.light`, 
-            p: 1.5, 
+          <Box sx={{
+            bgcolor: `${color}.light`,
+            p: 1.5,
             borderRadius: 2,
             color: `${color}.main`
           }}>
@@ -108,10 +108,10 @@ const Dashboard = () => {
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           <Typography variant="h4" fontWeight={700}>
-            {lang === 'hi' ? 'नमस्ते' : 'Welcome'}, {user?.name}!
+            {t('welcomeUser', { name: user?.name })}
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            {lang === 'hi' ? 'यहाँ आपका डैशबोर्ड अवलोकन है' : "Here's your dashboard overview"}
+            {t('dashboardOverview')}
           </Typography>
         </Box>
         <Button
@@ -164,10 +164,10 @@ const Dashboard = () => {
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" fontWeight={600}>
-              {lang === 'hi' ? 'हाल के लेख' : 'Recent Articles'}
+              {t('recentArticles')}
             </Typography>
             <Button size="small" onClick={() => navigate('/dashboard/articles')}>
-              {lang === 'hi' ? 'सभी देखें' : 'View All'}
+              {t('viewAll')}
             </Button>
           </Box>
 
@@ -180,7 +180,7 @@ const Dashboard = () => {
           ) : recentArticles.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography color="text.secondary">
-                {lang === 'hi' ? 'अभी तक कोई लेख नहीं' : 'No articles yet'}
+                {t('noArticlesYet')}
               </Typography>
               <Button
                 variant="outlined"
@@ -206,7 +206,11 @@ const Dashboard = () => {
                   onClick={() => navigate(`/dashboard/articles/edit/${article._id}`)}
                 >
                   <ListItemText
-                    primary={article.title?.en || article.title}
+                    primary={
+                      localizeField(article.title) ||
+                      (typeof article.title === 'string' ? article.title : '') ||
+                      t('versionUnavailable')
+                    }
                     secondary={
                       <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">
@@ -223,7 +227,7 @@ const Dashboard = () => {
                   />
                   <ListItemSecondaryAction>
                     <Chip
-                      label={article.status}
+                      label={t(article.status) !== article.status ? t(article.status) : article.status}
                       size="small"
                       color={getStatusColor(article.status)}
                     />

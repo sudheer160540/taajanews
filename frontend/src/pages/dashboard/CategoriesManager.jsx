@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -30,9 +29,10 @@ import {
   Close as CloseIcon
 } from '@mui/icons-material';
 import { categoriesApi, uploadApi } from '../../services/api';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const CategoriesManager = () => {
-  const { t } = useTranslation();
+  const { t, localizeField } = useLanguage();
 
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -280,10 +280,10 @@ const CategoriesManager = () => {
                       ) : '-'}
                     </TableCell>
                     <TableCell>
-                      {category._multilingual?.name?.te || category.name}
+                      {localizeField(category._multilingual?.name || category.name) || '-'}
                     </TableCell>
                     <TableCell>
-                      {category._multilingual?.description?.te || category.description || '-'}
+                      {localizeField(category._multilingual?.description || category.description) || '-'}
                     </TableCell>
                     <TableCell align="right">
                       <IconButton size="small" onClick={() => handleOpenDialog(category)}>

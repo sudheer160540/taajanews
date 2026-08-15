@@ -25,13 +25,15 @@ import {
   Check as CheckIcon
 } from '@mui/icons-material';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { languagesApi } from '../services/api';
 import api from '../services/api';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const Onboarding = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { language, setLanguage, localizeField } = useLanguage();
   const navigate = useNavigate();
   const {
     city,
@@ -61,7 +63,11 @@ const Onboarding = () => {
     const loadLanguages = async () => {
       try {
         const response = await languagesApi.getAll();
-        setLanguages(response.data.languages || []);
+        setLanguages(
+          (response.data.languages || []).filter((l) =>
+            ['te', 'en', 'hi'].includes(String(l.code || '').split('-')[0].toLowerCase())
+          )
+        );
       } catch {
         setLanguages([
           { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
@@ -176,7 +182,7 @@ const Onboarding = () => {
   }, [selectCity, selectArea]);
 
   const handleLanguageSelect = (langCode) => {
-    i18n.changeLanguage(langCode);
+    setLanguage(langCode);
     setActiveStep(1);
   };
 
@@ -214,10 +220,7 @@ const Onboarding = () => {
   const getDisplayName = (item) => {
     if (!item) return '';
     if (typeof item.name === 'string') return item.name;
-    if (typeof item.name === 'object' && item.name) {
-      return item.name[i18n.language] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
-    }
-    return '';
+    return localizeField(item.name);
   };
 
   return (
@@ -278,7 +281,7 @@ const Onboarding = () => {
                     {languages.map((lang) => (
                       <Grid item xs={6} key={lang.code}>
                         <Button
-                          variant={i18n.language === lang.code ? 'contained' : 'outlined'}
+                          variant={language === lang.code ? 'contained' : 'outlined'}
                           fullWidth
                           size="large"
                           onClick={() => handleLanguageSelect(lang.code)}

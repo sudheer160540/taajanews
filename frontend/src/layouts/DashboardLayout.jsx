@@ -57,10 +57,10 @@ const DashboardLayout = () => {
   const adminMenuItems = [
     { path: '/dashboard/categories', label: t('manageCategories'), icon: <CategoryIcon /> },
     { path: '/dashboard/users', label: t('manageUsers'), icon: <PeopleIcon /> },
-    { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
-    { path: '/dashboard/promotions', label: 'Promotions', icon: <CampaignIcon /> },
-    { path: '/dashboard/epapers', label: 'E-Papers', icon: <EPaperIcon /> },
-    { path: '/dashboard/videos', label: 'Videos', icon: <VideoIcon /> },
+    { path: '/dashboard/languages', label: t('manageLanguages'), icon: <LanguageIcon /> },
+    { path: '/dashboard/promotions', label: t('promotions'), icon: <CampaignIcon /> },
+    { path: '/dashboard/epapers', label: t('epapers'), icon: <EPaperIcon /> },
+    { path: '/dashboard/videos', label: t('videos'), icon: <VideoIcon /> },
   ];
 
   const drawer = (
@@ -73,7 +73,7 @@ const DashboardLayout = () => {
           sx={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', mb: 1 }}
         />
         <Typography variant="subtitle2" fontWeight={700} color="primary">
-          Local Taaja News
+          {t('appName')}
         </Typography>
       </Box>
 

@@ -25,13 +25,16 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { categoriesApi, languagesApi } from '../services/api';
 import Footer from '../components/Footer';
 
 const MainLayout = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { language, setLanguage, localizeField } = useLanguage();
   const navigate = useNavigate();
   const routerLocation = useRouterLocation();
+  const lang = language;
 
   const { user, isAuthenticated, isReporter, logout } = useAuth();
   const { city, area, clearLocation } = useLocation();
@@ -53,15 +56,20 @@ const MainLayout = () => {
         if (cached) {
           const { data, ts } = JSON.parse(cached);
           if (Date.now() - ts < CACHE_TTL && Array.isArray(data)) {
-            setLanguages(data);
-            setCurrentLang(data.find((l) => l.code === i18n.language));
+            const filtered = data.filter((l) =>
+              ['te', 'en', 'hi'].includes(String(l.code || '').split('-')[0].toLowerCase())
+            );
+            setLanguages(filtered);
+            setCurrentLang(filtered.find((l) => l.code === language));
             return;
           }
         }
         const response = await languagesApi.getAll();
-        const langs = response.data.languages || [];
+        const langs = (response.data.languages || []).filter((l) =>
+          ['te', 'en', 'hi'].includes(String(l.code || '').split('-')[0].toLowerCase())
+        );
         setLanguages(langs);
-        setCurrentLang(langs.find((l) => l.code === i18n.language));
+        setCurrentLang(langs.find((l) => l.code === language));
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: langs, ts: Date.now() }));
       } catch {
         setLanguages([
@@ -77,11 +85,11 @@ const MainLayout = () => {
   }, []);
 
   useEffect(() => {
-    setCurrentLang(languages.find(l => l.code === i18n.language));
-  }, [i18n.language, languages]);
+    setCurrentLang(languages.find(l => l.code === language));
+  }, [language, languages]);
 
   useEffect(() => {
-    const CACHE_KEY = `taaja_categories_${i18n.language}_v1`;
+    const CACHE_KEY = `taaja_categories_${language}_v1`;
     const CACHE_TTL = 5 * 60 * 1000;
 
     const loadCategories = async () => {
@@ -94,7 +102,7 @@ const MainLayout = () => {
             return;
           }
         }
-        const response = await categoriesApi.getAll({ lang: i18n.language });
+        const response = await categoriesApi.getAll({ lang: language });
         const cats = response.data.categories || [];
         setCategories(cats);
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: cats, ts: Date.now() }));
@@ -103,19 +111,15 @@ const MainLayout = () => {
       }
     };
     loadCategories();
-  }, [i18n.language]);
+  }, [language]);
 
   const getDisplayName = (item) => {
     if (!item) return '';
-    if (typeof item.name === 'string') return item.name;
-    if (typeof item.name === 'object' && item.name) {
-      return item.name[i18n.language] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
-    }
-    return '';
+    return localizeField(item.name);
   };
 
   const handleLanguageSelect = (langCode) => {
-    i18n.changeLanguage(langCode);
+    setLanguage(langCode);
   };
 
   const getLangIconSrc = (lang) => lang?.icon || lang?.flag || lang?.flagUrl || null;
@@ -289,7 +293,7 @@ const MainLayout = () => {
                 aria-label="Language"
               >
                 {languages.map((lang) => {
-                  const selected = i18n.language === lang.code;
+                  const selected = language === lang.code;
                   const iconSrc = getLangIconSrc(lang);
                   const shortLabel = iconSrc ? '' : getLangInitial(lang);
                   const label = lang.nativeName || lang.name || lang.code;

@@ -64,13 +64,67 @@ const toObjectId = (id) => {
   try { return new mongoose.Types.ObjectId(id); } catch { return null; }
 };
 
+/** Normalize Map / plain object multilingual fields to a plain { te, en, hi } object. */
+const toLanguageMap = (value) => {
+  if (!value) return {};
+  if (value instanceof Map) return Object.fromEntries(value.entries());
+  if (typeof value === 'object') return { ...value };
+  return {};
+};
+
+/**
+ * Public article payload: keep ALL language versions so the client can pick
+ * one language consistently for title/summary/content/audio.
+ * Do NOT flatten with per-field English fallback (that mixes languages).
+ */
+const withMultilingualFields = (article) => {
+  if (!article) return article;
+  return {
+    ...article,
+    title: toLanguageMap(article.title),
+    summary: toLanguageMap(article.summary),
+    content: toLanguageMap(article.content),
+    audio: toLanguageMap(article.audio)
+  };
+};
+
 // Helper to get value from Map or plain object
 const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
   if (!field) return '';
+  const code = String(lang || 'en').split('-')[0].toLowerCase();
+  const fallback = String(fallbackLang || 'en').split('-')[0].toLowerCase();
   if (field instanceof Map) {
-    return field.get(lang) || field.get(fallbackLang) || [...field.values()][0] || '';
+    return field.get(code) || field.get(fallback) || [...field.values()][0] || '';
   }
-  return field[lang] || field[fallbackLang] || Object.values(field)[0] || '';
+  return field[code] || field[fallback] || Object.values(field)[0] || '';
+};
+
+/** Audio URL for the selected language only — never fall back to another language. */
+const resolveAudioUrlForLang = (audio, lang) => {
+  if (!audio) return null;
+  const code = String(lang || 'en').split('-')[0].toLowerCase();
+  const value = audio instanceof Map ? audio.get(code) : audio[code];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+};
+
+// Resolve a playable/downloadable audio URL from language Map/object (admin/list may use broader fallback)
+const resolveAudioUrl = (audio, lang, defaultLang = 'en') => {
+  if (!audio) return null;
+  const obj = audio instanceof Map
+    ? Object.fromEntries(audio.entries())
+    : (typeof audio === 'object' ? audio : null);
+  if (!obj) return null;
+  const code = String(lang || 'en').split('-')[0].toLowerCase();
+  const fallback = String(defaultLang || 'en').split('-')[0].toLowerCase();
+  return (
+    obj[code] ||
+    obj[fallback] ||
+    obj.en ||
+    obj.te ||
+    obj.hi ||
+    Object.values(obj).find((v) => typeof v === 'string' && v.trim()) ||
+    null
+  );
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -91,17 +145,20 @@ router.get('/feed', optionalAuth, async (req, res) => {
       longitude,
       radiusKM = 50,
       category,
-      lang = defaultLang,
+      lang: langRaw = defaultLang,
       userId,
       limit = 20,
       page = 1,
       article: pinnedArticleId
     } = req.query;
 
+    const lang = String(langRaw || defaultLang).split('-')[0].toLowerCase();
+
     const pageLimit = Math.min(Number(limit) || 20, 100);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * pageLimit;
 
-    // ── Shared $project stage for localized fields ──
+    // Return FULL multilingual maps (title/summary/audio) so the client can pick
+    // one language for ALL fields. Do NOT flatten with per-field English fallback.
     const projectStage = {
       $project: {
         _id: 1,
@@ -110,15 +167,10 @@ router.get('/feed', optionalAuth, async (req, res) => {
         shortLinks: 1,
         slug: 1,
         reporterName: 1,
-        title: {
-          $ifNull: [`$title.${lang}`, { $ifNull: ['$title.en', ''] }]
-        },
-        summary: {
-          $ifNull: [`$summary.${lang}`, { $ifNull: ['$summary.en', ''] }]
-        },
-        audioUrl: {
-          $ifNull: [`$audio.${lang}`, { $ifNull: ['$audio.en', null] }]
-        },
+        title: { $ifNull: ['$title', {}] },
+        summary: { $ifNull: ['$summary', {}] },
+        content: { $ifNull: ['$content', {}] },
+        audio: { $ifNull: ['$audio', {}] },
         featuredImage: 1,
         tags: 1,
         location: 1,
@@ -140,7 +192,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
         },
         category: {
           _id: '$category._id',
-          name: { $ifNull: [`$category.name.${lang}`, { $ifNull: ['$category.name.en', ''] }] },
+          name: { $ifNull: ['$category.name', {}] },
           slug: '$category.slug'
         }
       }
@@ -249,7 +301,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
     const total = countResult[0]?.total || 0;
 
     res.json({
-      articles,
+      articles: articles.map(withMultilingualFields),
       pagination: {
         page: Number(page),
         limit: pageLimit,
@@ -327,8 +379,10 @@ router.get('/', optionalAuth, async (req, res) => {
       featured,
       breaking,
       search,
-      lang = defaultLang
+      lang: langRaw = defaultLang
     } = req.query;
+
+    const lang = String(langRaw || defaultLang).split('-')[0].toLowerCase();
 
     const query = { status: 'published' };
     
@@ -365,17 +419,19 @@ router.get('/', optionalAuth, async (req, res) => {
 
     const total = await Article.countDocuments(query);
 
-    // Transform for single language response
-    const transformedArticles = articles.map(article => ({
-      ...article,
-      title: getLocalizedValue(article.title, lang, defaultLang),
-      summary: getLocalizedValue(article.summary, lang, defaultLang),
-      // Transform nested objects
-      category: article.category ? {
-        ...article.category,
-        name: getLocalizedValue(article.category.name, lang, defaultLang)
-      } : null
-    }));
+    // Return full multilingual maps — client picks one language for all fields
+    const transformedArticles = articles.map((article) => {
+      const multi = withMultilingualFields(article);
+      return {
+        ...multi,
+        category: article.category
+          ? {
+              ...article.category,
+              name: toLanguageMap(article.category.name)
+            }
+          : null
+      };
+    });
 
     res.json({
       articles: transformedArticles,
@@ -410,13 +466,13 @@ router.get('/nearby', async (req, res) => {
       parseInt(limit)
     );
 
-    // Transform for language
-    const transformedArticles = articles.map(article => ({
-      ...article,
-      title: getLocalizedValue(article.title, lang, defaultLang),
-      summary: getLocalizedValue(article.summary, lang, defaultLang),
-      distance: Math.round(article.distance) // in meters
-    }));
+    const transformedArticles = articles.map((article) => {
+      const multi = withMultilingualFields(article);
+      return {
+        ...multi,
+        distance: Math.round(article.distance)
+      };
+    });
 
     res.json({ articles: transformedArticles });
   } catch (error) {
@@ -431,7 +487,7 @@ router.get('/nearby', async (req, res) => {
 router.get('/trending', async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { limit = 10, lang = defaultLang } = req.query;
+    const lang = String(req.query.lang || defaultLang).split('-')[0].toLowerCase();
     
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -443,17 +499,21 @@ router.get('/trending', async (req, res) => {
       .populate('author', 'name avatar')
       .populate('category', 'name slug')
       .sort({ 'engagement.views': -1, 'engagement.likes': -1 })
-      .limit(Number(limit))
+      .limit(Number(req.query.limit || 10))
       .lean();
 
-    const transformedArticles = articles.map(article => ({
-      ...article,
-      title: getLocalizedValue(article.title, lang, defaultLang),
-      category: article.category ? {
-        ...article.category,
-        name: getLocalizedValue(article.category.name, lang, defaultLang)
-      } : null
-    }));
+    const transformedArticles = articles.map((article) => {
+      const multi = withMultilingualFields(article);
+      return {
+        ...multi,
+        category: article.category
+          ? {
+              ...article.category,
+              name: toLanguageMap(article.category.name)
+            }
+          : null
+      };
+    });
 
     res.json({ articles: transformedArticles });
   } catch (error) {
@@ -488,7 +548,7 @@ router.get('/ref/:articleId', optionalAuth, async (req, res) => {
 router.get('/s/:shortId', optionalAuth, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { lang = defaultLang } = req.query;
+    const lang = String(req.query.lang || defaultLang).split('-')[0].toLowerCase();
     const sid = req.params.shortId;
 
     let article = await Article.findOne({ shortId: sid })
@@ -512,17 +572,15 @@ router.get('/s/:shortId', optionalAuth, async (req, res) => {
     }
 
     res.json({
-      article: {
+      article: withMultilingualFields({
         ...article,
-        title: getLocalizedValue(article.title, lang, defaultLang),
-        summary: getLocalizedValue(article.summary, lang, defaultLang),
-        content: getLocalizedValue(article.content, lang, defaultLang),
-        audioUrl: article.audio?.[lang] || article.audio?.en || null,
-        category: article.category ? {
-          ...article.category,
-          name: getLocalizedValue(article.category.name, lang, defaultLang)
-        } : null
-      }
+        category: article.category
+          ? {
+              ...article.category,
+              name: toLanguageMap(article.category.name)
+            }
+          : null
+      })
     });
   } catch (error) {
     console.error('Get article by shortId error:', error);
@@ -536,7 +594,7 @@ router.get('/s/:shortId', optionalAuth, async (req, res) => {
 router.get('/slug/:slug', optionalAuth, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { lang = defaultLang } = req.query;
+    const lang = String(req.query.lang || defaultLang).split('-')[0].toLowerCase();
 
     const article = await Article.findOne({ 
       slug: req.params.slug,
@@ -574,24 +632,20 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
       .lean();
 
     res.json({
-      article: {
+      article: withMultilingualFields({
         ...article,
-        title: getLocalizedValue(article.title, lang, defaultLang),
-        summary: getLocalizedValue(article.summary, lang, defaultLang),
-        content: getLocalizedValue(article.content, lang, defaultLang),
-        category: article.category ? {
-          ...article.category,
-          name: getLocalizedValue(article.category.name, lang, defaultLang)
-        } : null
-      },
+        category: article.category
+          ? {
+              ...article.category,
+              name: toLanguageMap(article.category.name)
+            }
+          : null
+      }),
       breadcrumb: breadcrumb.map(b => ({
         ...b,
-        name: getLocalizedValue(b.name, lang, defaultLang)
+        name: toLanguageMap(b.name)
       })),
-      relatedArticles: relatedArticles.map(a => ({
-        ...a,
-        title: getLocalizedValue(a.title, lang, defaultLang)
-      }))
+      relatedArticles: relatedArticles.map(a => withMultilingualFields(a))
     });
   } catch (error) {
     console.error('Get article error:', error);
@@ -917,6 +971,57 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   }
 });
 
+// @route   GET /api/articles/:id/audio/download
+// @desc    Download generated article audio (proxied to avoid browser CORS issues)
+// @access  Private/Reporter
+router.get('/:id/audio/download', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const defaultLang = await languageCache.getDefaultLanguageCode();
+    const lang = req.query.lang || defaultLang;
+
+    const article = await Article.findById(req.params.id)
+      .select('audio title createdBy author')
+      .lean();
+
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    const ownerId = article.createdBy || article.author;
+    if (req.user.role === 'reporter' &&
+        ownerId?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized to download this article audio' });
+    }
+
+    const audioUrl = resolveAudioUrl(article.audio, lang, defaultLang);
+    if (!audioUrl) {
+      return res.status(404).json({ error: 'No generated audio available for this article' });
+    }
+
+    const axios = require('axios');
+    const upstream = await axios.get(audioUrl, {
+      responseType: 'stream',
+      timeout: 60000,
+      validateStatus: (status) => status >= 200 && status < 400
+    });
+
+    const title = getLocalizedValue(article.title, lang, defaultLang) || 'article-audio';
+    const safeName = String(title)
+      .replace(/[^\w\u0C00-\u0C7F\u0900-\u097F\-]+/g, '_')
+      .replace(/_+/g, '_')
+      .slice(0, 80) || 'article-audio';
+
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/wav');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.wav"`);
+    upstream.data.pipe(res);
+  } catch (error) {
+    console.error('Download article audio error:', error?.message || error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to download article audio' });
+    }
+  }
+});
+
 // @route   DELETE /api/articles/:id
 // @desc    Permanently delete article and remove Azure media (Chief Editor / Admin only)
 // @access  Private/Chief Editor
@@ -1072,7 +1177,7 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     if (andConditions.length) query.$and = andConditions;
 
     const articles = await Article.find(query)
-      .select('title slug status publishedAt createdAt engagement author createdBy category source sourceUrl reporterName')
+      .select('title slug status publishedAt createdAt engagement author createdBy category source sourceUrl reporterName audio')
       .populate('author', 'name')
       .populate('createdBy', 'name')
       .populate('category', 'name')
@@ -1083,15 +1188,24 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
 
     const total = await Article.countDocuments(query);
 
-    // Transform articles for display
-    const transformedArticles = articles.map(article => ({
-      ...article,
-      title: getLocalizedValue(article.title, lang, defaultLang),
-      category: article.category ? {
-        ...article.category,
-        name: getLocalizedValue(article.category.name, lang, defaultLang)
-      } : null
-    }));
+    // Transform articles for display.
+    // Audio is stored as Map/object of lang → Azure URL (same as Edit: article.audio.te / .en / .hi).
+    const transformedArticles = articles.map(article => {
+      const audio = article.audio instanceof Map
+        ? Object.fromEntries(article.audio.entries())
+        : (article.audio && typeof article.audio === 'object' ? { ...article.audio } : {});
+
+      return {
+        ...article,
+        title: getLocalizedValue(article.title, lang, defaultLang),
+        audio,
+        audioUrl: resolveAudioUrl(audio, lang, defaultLang),
+        category: article.category ? {
+          ...article.category,
+          name: getLocalizedValue(article.category.name, lang, defaultLang)
+        } : null
+      };
+    });
 
     res.json({
       articles: transformedArticles,

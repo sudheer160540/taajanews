@@ -17,15 +17,17 @@ import {
 import { NavigateNext as NavNextIcon, AccessTime as TimeIcon } from '@mui/icons-material';
 import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
 
 const CategoryView = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { city, area } = useLocation();
-  const lang = i18n.language;
+  const { language, localizeArticle, localizeField } = useLanguage();
+  const lang = language;
 
   const [category, setCategory] = useState(null);
   const [breadcrumb, setBreadcrumb] = useState([]);
@@ -75,7 +77,7 @@ const CategoryView = () => {
       if (area) params.area = area._id;
 
       const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles || []);
+      setArticles((response.data.articles || []).map((a) => localizeArticle(a)));
       setTotalPages(response.data.pagination?.pages || 1);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
@@ -86,7 +88,8 @@ const CategoryView = () => {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-IN', {
+    const locale = lang === 'hi' ? 'hi-IN' : lang === 'te' ? 'te-IN' : 'en-IN';
+    return new Date(dateString).toLocaleDateString(locale, {
       day: 'numeric',
       month: 'short',
       year: 'numeric'
@@ -118,15 +121,9 @@ const CategoryView = () => {
   }
 
   const categoryName =
-    (typeof category.name === 'string' ? category.name : null) ||
-    category.name?.[lang] ||
-    category.name?.en ||
-    category.name?.te ||
-    slug;
+    localizeField(category.name) || slug;
   const categoryDescRaw =
-    typeof category.description === 'string'
-      ? category.description
-      : category.description?.[lang] || category.description?.en || '';
+    localizeField(category.description) || '';
   const categoryDescription = truncate(
     categoryDescRaw || `${categoryName} news — latest articles on Taaja News`,
     160
@@ -183,7 +180,7 @@ const CategoryView = () => {
                 color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
               }}
             >
-              {item.name?.[lang] || item.name?.en}
+              {localizeField(item.name)}
             </Link>
           ))}
         </Breadcrumbs>
@@ -229,11 +226,11 @@ const CategoryView = () => {
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {category.name?.[lang] || category.name?.en}
+          {categoryName}
         </Typography>
-        {category.description?.[lang] && (
+        {categoryDescRaw && (
           <Typography variant="body1" color="text.secondary">
-            {category.description[lang]}
+            {categoryDescRaw}
           </Typography>
         )}
       </Box>

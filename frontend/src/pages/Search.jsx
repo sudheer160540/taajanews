@@ -25,13 +25,15 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, categoriesApi, engagementApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const Search = ({ bookmarks = false }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { city, area } = useLocation();
-  const lang = i18n.language;
+  const { language, localizeArticle, localizeField } = useLanguage();
+  const lang = language;
 
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [articles, setArticles] = useState([]);
@@ -51,7 +53,7 @@ const Search = ({ bookmarks = false }) => {
     } else {
       fetchArticles();
     }
-  }, [query, page, selectedCategory, city, area, bookmarks]);
+  }, [query, page, selectedCategory, city, area, bookmarks, lang]);
 
   const fetchCategories = async () => {
     try {
@@ -72,7 +74,7 @@ const Search = ({ bookmarks = false }) => {
       if (area) params.area = area._id;
 
       const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles);
+      setArticles((response.data.articles || []).map((a) => localizeArticle(a)));
       setTotalPages(response.data.pagination.pages);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
@@ -85,7 +87,7 @@ const Search = ({ bookmarks = false }) => {
     setLoading(true);
     try {
       const response = await engagementApi.getBookmarks({ lang, page, limit: 12 });
-      setArticles(response.data.articles);
+      setArticles((response.data.articles || []).map((a) => localizeArticle(a)));
       setTotalPages(response.data.pagination.pages);
     } catch (err) {
       console.error('Failed to fetch bookmarks:', err);
@@ -148,7 +150,7 @@ const Search = ({ bookmarks = false }) => {
             <Tab
               key={category._id}
               value={category._id}
-              label={category.name[lang] || category.name.en}
+              label={localizeField(category.name)}
             />
           ))}
         </Tabs>
@@ -208,7 +210,7 @@ const Search = ({ bookmarks = false }) => {
                     <CardContent>
                       {article.category && (
                         <Chip
-                          label={article.category?.name?.[lang] || article.category?.name?.en}
+                          label={localizeField(article.category?.name)}
                           size="small"
                           sx={{ mb: 1 }}
                         />

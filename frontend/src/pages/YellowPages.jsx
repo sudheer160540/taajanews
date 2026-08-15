@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   Container,
   Typography,
@@ -24,10 +23,11 @@ import {
   Business as BusinessIcon
 } from '@mui/icons-material';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { yellowPagesApi } from '../services/api';
 
 const YellowPages = () => {
-  const { t } = useTranslation();
+  const { t, localizeField } = useLanguage();
   const { city, area, coordinates } = useLocation();
 
   const [users, setUsers] = useState([]);
@@ -72,10 +72,7 @@ const YellowPages = () => {
   const getDisplayName = (item) => {
     if (!item) return '';
     if (typeof item.name === 'string') return item.name;
-    if (typeof item.name === 'object' && item.name) {
-      return Object.values(item.name)[0] || '';
-    }
-    return '';
+    return localizeField(item.name);
   };
 
   const filteredUsers = searchTerm

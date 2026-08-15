@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { v4 as uuidv4 } from 'uuid';
 
 // Page component for flip book
@@ -53,7 +54,8 @@ Page.displayName = 'Page';
 const FlipReader = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { language, localizeArticle } = useLanguage();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { isAuthenticated } = useAuth();
@@ -68,19 +70,21 @@ const FlipReader = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [engagement, setEngagement] = useState({ liked: false, bookmarked: false });
 
-  const lang = i18n.language;
+  const lang = language;
   const sessionId = useRef(uuidv4());
 
   useEffect(() => {
     fetchArticle();
-  }, [slug]);
+  }, [slug, lang]);
 
   const fetchArticle = async () => {
     setLoading(true);
     try {
       const response = await articlesApi.getBySlug(slug, lang);
-      setArticle(response.data.article);
-      setRelatedArticles(response.data.relatedArticles || []);
+      setArticle(localizeArticle(response.data.article));
+      setRelatedArticles(
+        (response.data.relatedArticles || []).map((a) => localizeArticle(a))
+      );
 
       // Record view
       engagementApi.recordView(response.data.article._id, sessionId.current);
@@ -379,7 +383,7 @@ const FlipReader = () => {
                       onClick={() => navigate(`/read/${related.slug}`)}
                     >
                       <Typography variant="subtitle2" fontWeight={500}>
-                        {related.title?.[lang] || related.title?.en || related.title}
+                        {related.title || t('versionUnavailable')}
                       </Typography>
                     </Box>
                   ))}
