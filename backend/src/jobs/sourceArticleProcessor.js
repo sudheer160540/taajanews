@@ -49,8 +49,8 @@ async function markSourceComplete(sourceDoc, articleId) {
 }
 
 /**
- * Generate title, Super Lead (summary), and Detailed Story (content) in te/en/hi
- * per Taaja News editorial rules. Anchor language from TELUGU_SOURCES / detect.
+ * Generate headline (from content), Super Lead (summary), and Detailed Story in te/en/hi.
+ * Scraped source title is context only — saved Article.title comes from AI rewrite.
  */
 async function buildMultilingualFields(sourceDoc) {
   const { title, summary, content, tags } = await buildSourceArticleMultilingual({
