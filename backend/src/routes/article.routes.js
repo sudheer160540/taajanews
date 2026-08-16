@@ -138,13 +138,7 @@ const getAudioUrl = (audio, lang, fallbackLang = 'en') => {
 };
 
 // Resolve the language-specific audio URL (lang → en → null), matching the /feed projection.
-const getAudioUrl = (audio, lang, fallbackLang = 'en') => {
-  if (!audio) return null;
-  if (audio instanceof Map) {
-    return audio.get(lang) || audio.get(fallbackLang) || null;
-  }
-  return audio[lang] || audio[fallbackLang] || null;
-};
+
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/articles/feed
