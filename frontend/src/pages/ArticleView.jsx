@@ -38,11 +38,8 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-<<<<<<< HEAD
-import { useLanguage } from '../contexts/LanguageContext';
-=======
 import { useSSRData } from '../contexts/SSRDataContext';
->>>>>>> origin/main
+import { useLanguage } from '../contexts/LanguageContext';
 import { v4 as uuidv4 } from 'uuid';
 import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
 import Seo from '../components/Seo';
