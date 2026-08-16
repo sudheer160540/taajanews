@@ -28,7 +28,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Divider
+  Divider,
+  Tooltip
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -39,9 +40,11 @@ import {
   Star as StarIcon,
   Translate as TranslateIcon,
   LocationOn as LocationIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  VolumeUp as VolumeUpIcon
 } from '@mui/icons-material';
-import { articlesApi, categoriesApi, uploadApi, translateApi, usersApi } from '../../services/api';
+import { articlesApi, categoriesApi, uploadApi, usersApi } from '../../services/api';
+import { articleTranslateApi } from '../../services/articleTranslateApi';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -90,7 +93,7 @@ const ArticleEditor = () => {
     sourceUrl: '',
     youtubeUrl: ''
   });
-  const [generateAudio, setGenerateAudio] = useState(false);
+  const [convertingAudio, setConvertingAudio] = useState(false);
   
   const [categories, setCategories] = useState([]);
   const [articleAuthors, setArticleAuthors] = useState([]);
@@ -471,9 +474,9 @@ const ArticleEditor = () => {
     setTranslatePreview(null);
 
     try {
-      const response = await articlesApi.translateAll({
+      const response = await articleTranslateApi.generateFromText({
         sourceLang: 'te',
-        content: { te: teluguInputText.trim() }
+        text: teluguInputText.trim()
       });
       setTranslatePreview(response.data);
     } catch (err) {
@@ -561,7 +564,7 @@ const ArticleEditor = () => {
       if (Object.keys(summaryInput).length > 0) payload.summary = summaryInput;
       if (Object.keys(contentInput).length > 0) payload.content = contentInput;
 
-      const response = await articlesApi.translateAll(payload);
+      const response = await articleTranslateApi.translateFields(payload);
       const translated = response.data;
 
       const mergeInto = (prev, fieldName, source) => {
@@ -646,6 +649,51 @@ const ArticleEditor = () => {
       console.error(err);
     } finally {
       setTranslating(false);
+    }
+  };
+
+  // Audio is spoken from the summary, so only languages with a summary can be converted.
+  const audioLangs = ['te', 'hi', 'en'].filter((lang) => article.summary?.[lang]?.trim());
+  const canConvertAudio = audioLangs.length > 0;
+
+  const handleConvertAudio = async () => {
+    setError(null);
+    setErrorDetails([]);
+    setSuccess(null);
+
+    if (!canConvertAudio) {
+      setError('Please add a summary in at least one language before converting to audio');
+      return;
+    }
+
+    setConvertingAudio(true);
+
+    try {
+      const summaryByLang = {};
+      audioLangs.forEach((lang) => {
+        summaryByLang[lang] = article.summary[lang].trim();
+      });
+
+      const response = await articleTranslateApi.convertAudio({ summary: summaryByLang });
+      const { audio, failed } = response.data;
+
+      if (audio && Object.keys(audio).length > 0) {
+        setArticle((prev) => ({ ...prev, audio: { ...prev.audio, ...audio } }));
+      }
+
+      const names = (codes) =>
+        codes.map((code) => languages.find((l) => l.code === code)?.name || code).join(', ');
+
+      setSuccess(
+        failed?.length
+          ? `Audio created for ${names(Object.keys(audio))}. Failed: ${names(failed)}`
+          : `Audio created for ${names(Object.keys(audio))}`
+      );
+    } catch (err) {
+      setApiError(err, 'Audio generation failed. Please try again.');
+      console.error(err);
+    } finally {
+      setConvertingAudio(false);
     }
   };
 
@@ -974,25 +1022,33 @@ const ArticleEditor = () => {
                 </Box>
               )}
 
-              {/* Translate Button + Audio Checkbox */}
+              {/* Translate + Convert to Audio buttons */}
               {!isReporterLockedOut && (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={generateAudio}
-                        onChange={(e) => setGenerateAudio(e.target.checked)}
-                        size="small"
-                      />
+                  <Tooltip
+                    title={
+                      canConvertAudio
+                        ? `Convert the summary to audio (${audioLangs.join(', ')})`
+                        : 'Add a summary in at least one language to enable audio'
                     }
-                    label="Convert to Audio"
-                  />
+                  >
+                    <span>
+                      <Button
+                        variant="outlined"
+                        startIcon={convertingAudio ? <CircularProgress size={20} /> : <VolumeUpIcon />}
+                        onClick={handleConvertAudio}
+                        disabled={!canConvertAudio || convertingAudio || translating || saving}
+                      >
+                        {convertingAudio ? 'Converting...' : 'Convert to Audio'}
+                      </Button>
+                    </span>
+                  </Tooltip>
                   <Button
                     variant="outlined"
                     color="secondary"
                     startIcon={translating ? <CircularProgress size={20} /> : <TranslateIcon />}
                     onClick={handleTranslate}
-                    disabled={translating || saving}
+                    disabled={translating || convertingAudio || saving}
                   >
                     {translating ? 'Translating...' : 'Translate to All Languages'}
                   </Button>

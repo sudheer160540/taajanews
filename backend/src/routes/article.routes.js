@@ -12,7 +12,8 @@ const languageCache = require('../utils/languageCache');
 const { deleteArticleMediaFromAzure } = require('../utils/articleMediaCleanup');
 const { notifyArticlePublished } = require('../utils/pushNotification');
 const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
-const { translateArticleWithAnthropic } = require('../utils/anthropicArticleTranslate');
+const { translateArticleFields, generateAndTranslateArticle } = require('../utils/articleTranslate');
+const { generateAudioForLanguages, getFilledAudioLanguages } = require('../utils/sarvamAudio');
 
 // Fire-and-forget mobile push (FCM) + Telegram. NEVER blocks the HTTP response
 // and NEVER throws; notification outages must not break the article API.
@@ -672,8 +673,34 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
   }
 });
 
+// Maps AI-provider failures onto HTTP responses for the translation endpoints.
+const sendTranslationError = (res, error, label) => {
+  console.error(`${label} error:`, error?.message || error);
+
+  const message = error?.message || '';
+  const status = error?.status ?? error?.response?.status;
+
+  if (message.endsWith('is not configured')) {
+    return res.status(500).json({ error: 'Translation service is not configured' });
+  }
+  if (message.includes('Please provide article content')) {
+    return res.status(400).json({ error: message });
+  }
+  if (status === 401 || status === 403) {
+    return res.status(500).json({ error: 'Invalid API key configuration' });
+  }
+  if (status === 429 || message.includes('Gemini API error (429')) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+  }
+
+  return res.status(500).json({ error: 'Translation failed. Please try again.' });
+};
+
 // @route   POST /api/articles/translate-all
-// @desc    Paraphrase/translate article to Telugu, Hindi, and English via Anthropic
+// @desc    Translate an already written title, summary, and content into Telugu,
+//          Hindi, and English. Each field is translated faithfully, so the
+//          headline keeps the same meaning in every language.
+//          Engine comes from TRANSLATE_TYPE (gemini | openai | sarvam | anthropic).
 // @access  Private/Reporter
 router.post('/translate-all', protect, reporterOrAdmin, async (req, res) => {
   try {
@@ -683,7 +710,7 @@ router.post('/translate-all', protect, reporterOrAdmin, async (req, res) => {
       return res.status(400).json({ error: 'At least one field (title, summary, or content) is required' });
     }
 
-    const translated = await translateArticleWithAnthropic({
+    const translated = await translateArticleFields({
       title: title || {},
       summary: summary || {},
       content: content || {},
@@ -692,22 +719,78 @@ router.post('/translate-all', protect, reporterOrAdmin, async (req, res) => {
 
     res.json(translated);
   } catch (error) {
-    console.error('Anthropic article translation error:', error?.message || error);
+    sendTranslationError(res, error, 'Article translate-all');
+  }
+});
 
-    if (error?.message === 'ANTHROPIC_API_KEY is not configured') {
-      return res.status(500).json({ error: 'Translation service is not configured' });
-    }
-    if (error?.message?.includes('Please provide article content')) {
-      return res.status(400).json({ error: error.message });
-    }
-    if (error?.status === 401) {
-      return res.status(500).json({ error: 'Invalid Anthropic API key configuration' });
-    }
-    if (error?.status === 429) {
-      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+// @route   POST /api/articles/generate-translate
+// @desc    Take raw article text in one language, let the AI decide the headline,
+//          superlead, and full story, then translate all three into Telugu,
+//          Hindi, and English.
+// @access  Private/Reporter
+router.post('/generate-translate', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const { text, content, sourceLang = 'te' } = req.body;
+
+    // Accept either raw `text` or a `content` map keyed by language.
+    const rawText =
+      typeof text === 'string' && text.trim()
+        ? text
+        : typeof content === 'string'
+          ? content
+          : content?.[sourceLang] || Object.values(content || {}).find((v) => v?.trim()) || '';
+
+    if (!rawText || !String(rawText).trim()) {
+      return res.status(400).json({ error: 'Article text is required' });
     }
 
-    res.status(500).json({ error: 'Translation failed. Please try again.' });
+    const generated = await generateAndTranslateArticle({ text: rawText, sourceLang });
+
+    res.json(generated);
+  } catch (error) {
+    sendTranslationError(res, error, 'Article generate-translate');
+  }
+});
+
+// @route   POST /api/articles/convert-audio
+// @desc    Convert the article summary (superlead) to speech with Sarvam. Only the
+//          languages that already have a summary are converted; the full content
+//          is never sent to TTS.
+// @access  Private/Reporter
+router.post('/convert-audio', protect, reporterOrAdmin, async (req, res) => {
+  try {
+    const { summary } = req.body;
+
+    if (!process.env.SARVAM_API_KEY) {
+      return res.status(500).json({ error: 'Audio service is not configured' });
+    }
+
+    const texts = typeof summary === 'string' ? { te: summary } : summary || {};
+    const languages = getFilledAudioLanguages(texts);
+
+    if (languages.length === 0) {
+      return res.status(400).json({
+        error: 'Please add a summary in at least one language before converting to audio'
+      });
+    }
+
+    console.log(`[convert-audio] provider=sarvam languages=${languages.join(',')}`);
+
+    const { audio, failed } = await generateAudioForLanguages(texts);
+
+    if (Object.keys(audio).length === 0) {
+      return res.status(502).json({ error: 'Audio generation failed. Please try again.' });
+    }
+
+    res.json({ audio, languages: Object.keys(audio), failed });
+  } catch (error) {
+    console.error('Article convert-audio error:', error?.response?.data || error?.message || error);
+
+    if (error?.message === 'SARVAM_API_KEY is not configured') {
+      return res.status(500).json({ error: 'Audio service is not configured' });
+    }
+
+    res.status(500).json({ error: 'Audio generation failed. Please try again.' });
   }
 });
 

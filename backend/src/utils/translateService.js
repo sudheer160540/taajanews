@@ -46,10 +46,11 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
     try {
       return await fn();
     } catch (err) {
-      const status = err?.response?.status;
+      // OpenAI SDK errors expose `status` directly; axios errors nest it under `response`.
+      const status = err?.response?.status ?? err?.status;
       // A per-day quota (limit resets in hours) will not recover via short backoff,
       // so don't waste retries on it.
-      const bodyStr = JSON.stringify(err?.response?.data || '');
+      const bodyStr = JSON.stringify(err?.response?.data || err?.error || '');
       const isPerDayQuota = status === 429 && /PerDay|limit:\s*0/.test(bodyStr);
       const isRetriable =
         !isPerDayQuota &&
@@ -129,7 +130,7 @@ const buildNewsGenerationSystemPrompt = () =>
   `${NEWS_EDITORIAL_PERSONA}
 ${NEWS_EDITORIAL_CORE_RULES}
 ${NEWS_ORIGINALITY_RULES}
-Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
+Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
   `${NEWS_EDITORIAL_PERSONA}
@@ -243,6 +244,29 @@ async function sarvamTranslate(text, sourceLang, targetLang) {
 }
 
 /**
+ * Low-level OpenAI call. Sends a system + user message and returns the text output.
+ * Set `json: true` to request a JSON response.
+ */
+async function openaiGenerateText(systemContent, userContent, { temperature = 0.3, json = false, maxTokens } = {}) {
+  const request = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent }
+    ],
+    temperature
+  };
+  if (json) request.response_format = { type: 'json_object' };
+  if (maxTokens) request.max_tokens = maxTokens;
+
+  const completion = await withRetry(() => getOpenAI().chat.completions.create(request), {
+    label: 'OpenAI gpt-4o-mini'
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || '';
+}
+
+/**
  * @param {string} text
  * @param {string} targetLangName - e.g. "Telugu", "English", "Hindi"
  * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
@@ -269,29 +293,25 @@ async function openaiTranslate(text, targetLangName, options = {}) {
       ? `Translate this ${fieldLabel} to ${targetLangName}:\n\n${text}`
       : `Translate the following text to ${targetLangName}:\n\n${text}`;
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: userContent }
-    ],
-    temperature: 0.3
-  });
-
-  return completion.choices[0]?.message?.content?.trim() || '';
+  return openaiGenerateText(systemContent, userContent, { temperature: 0.3 });
 }
 
 /**
  * Low-level Gemini call. Sends a system instruction + user prompt and returns
  * the model's text output. Set `json: true` to request a JSON response.
  */
-async function geminiGenerateText(systemContent, userContent, { temperature = 0.3, json = false } = {}) {
+async function geminiGenerateText(
+  systemContent,
+  userContent,
+  { temperature = 0.3, json = false, maxOutputTokens } = {}
+) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured');
   }
 
   const generationConfig = { temperature };
   if (json) generationConfig.responseMimeType = 'application/json';
+  if (maxOutputTokens) generationConfig.maxOutputTokens = maxOutputTokens;
 
   const model = getGeminiModel();
   let data;
@@ -329,8 +349,11 @@ async function geminiGenerateText(systemContent, userContent, { temperature = 0.
   return parts.map((p) => p?.text || '').join('').trim();
 }
 
+/** Active translation/generation provider from TRANSLATE_TYPE (openai | sarvam | gemini | anthropic). */
+const getTranslateProvider = () => (process.env.TRANSLATE_TYPE || '').trim().toLowerCase();
+
 /** True when the active translation/generation provider is Gemini. */
-const isGeminiProvider = () => (process.env.TRANSLATE_TYPE || '').toLowerCase() === 'gemini';
+const isGeminiProvider = () => getTranslateProvider() === 'gemini';
 
 /**
  * Translate/adapt text with Google Gemini, applying the same news editorial
@@ -470,6 +493,18 @@ const getDetailedStoryLimits = () => {
   return { minWords, maxWords };
 };
 
+/** Headline (stored in Article.title) */
+const getHeadlineLimits = () => {
+  const maxChars = Math.max(40, parseInt(process.env.SOURCE_TITLE_MAX_CHARS, 10) || 200);
+  return { maxChars };
+};
+
+const cleanHeadline = (text) =>
+  cleanNewsText(text)
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
 /**
  * Resolve anchor language for a scraped source article.
  * Telugu/English source lists take precedence; otherwise script detection.
@@ -524,10 +559,14 @@ const parseJsonObject = (raw) => {
 };
 
 /**
- * OpenAI: rewrite source into Super Lead + Detailed Story in anchor language.
+ * OpenAI: rewrite source into headline + Super Lead + Detailed Story in anchor language.
  * Sarvam cannot summarize; this step always uses OpenAI.
+ *
+ * @param {string} rawText - full source article body
+ * @param {string} anchorLang - te | en | hi
+ * @param {{ sourceTitle?: string }} [options] - scraped headline (context only; not copied)
  */
-async function generateSummaryAndContent(rawText, anchorLang) {
+async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const trimmed = String(rawText || '').trim();
   if (!trimmed) {
     throw new Error('Cannot generate summary/content from empty source text');
@@ -538,7 +577,13 @@ async function generateSummaryAndContent(rawText, anchorLang) {
 
   const superLead = getSuperLeadLimits();
   const detailed = getDetailedStoryLimits();
+  const headline = getHeadlineLimits();
   const languageName = SUPPORTED_LANGUAGES[anchorLang];
+  const sourceTitle = String(options.sourceTitle || '').trim();
+
+  const sourceTitleNote = sourceTitle
+    ? `\nSource headline (for context only — do NOT copy or lightly rephrase; write a fresh headline from the facts):\n"${sourceTitle}"\n`
+    : '';
 
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
@@ -547,19 +592,24 @@ async function generateSummaryAndContent(rawText, anchorLang) {
       {
         role: 'user',
         content:
-          `Read the source article below, summarize it mentally, then rewrite it in ${languageName} as two JSON fields.\n\n` +
-          `1) "summary" — SUPER LEAD:\n` +
+          `Read the source article below, summarize it mentally, then rewrite it in ${languageName} as three JSON fields.\n\n` +
+          `1) "title" — HEADLINE:\n` +
+          `   - A complete, compelling news headline that states the core story (Who, What, and the key hook).\n` +
+          `   - Write it fresh from the article facts — never copy the source headline verbatim or with minor edits.\n` +
+          `   - Single line only; max ${headline.maxChars} characters; no sub-headings or markdown.\n` +
+          `   - Active voice; specific names, places, or numbers when they are the story hook.\n\n` +
+          `2) "summary" — SUPER LEAD:\n` +
           `   - Either ${superLead.minWords} to ${superLead.maxWords} words OR ${superLead.minSentences} to ${superLead.maxSentences} short sentences (choose whichever fits the story better).\n` +
           `   - Brief summary of the main news; inverted pyramid; full 5W-1H where possible.\n\n` +
-          `2) "content" — DETAILED STORY:\n` +
+          `3) "content" — DETAILED STORY:\n` +
           `   - ${detailed.minWords} to ${detailed.maxWords} words.\n` +
           `   - Same 5W-1H and inverted pyramid; include background/context so readers understand linked past events.\n` +
           `   - Engaging, not overly terse. Write without plagiarism (fresh wording, do not copy source phrases).\n` +
           `   - Start a new paragraph every four to five sentences (depending on the need); never write one long block.\n` +
           `   - Add a sub-heading (a short plain-text label on its own line) ONLY if the story is long and covers multiple distinct points; for short or single-topic stories use plain paragraphs with NO sub-headings.\n` +
           `   - When one event follows another, briefly explain prior context.\n\n` +
-          `Return ONLY: {"summary":"...","content":"..."}\n\n` +
-          `Source article:\n\n${trimmed}`
+          `Return ONLY: {"title":"...","summary":"...","content":"..."}\n` +
+          `${sourceTitleNote}\nSource article:\n\n${trimmed}`
       }
     ],
     temperature: 0.35,
@@ -578,15 +628,24 @@ async function generateSummaryAndContent(rawText, anchorLang) {
     throw new Error('Failed to parse summary/content JSON from OpenAI');
   }
 
+  let title = cleanHeadline(parsed.title);
   let summary = cleanNewsText(parsed.summary);
   let content = cleanNewsText(parsed.content);
+
+  if (!title) {
+    // Fallback: derive a headline from the Super Lead rather than reuse the scraped title.
+    title = cleanHeadline(truncateAtSentence(summary, headline.maxChars));
+  }
+  if (title.length > headline.maxChars) {
+    title = truncateAtSentence(title, headline.maxChars);
+  }
 
   if (!summary) throw new Error('Generated Super Lead (summary) is empty');
   if (!content) throw new Error('Generated Detailed Story (content) is empty');
 
   content = cleanNewsText(truncateToWordCount(content, detailed.maxWords));
 
-  return { summary, content };
+  return { title, summary, content };
 }
 
 /** Convert a free-form tag into a lowercase, hyphenated slug (e.g. "HITEC City" → "hitec-city"). */
@@ -693,19 +752,23 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
 
 /**
  * Build title, summary, and content maps for source-article → Article conversion.
+ * Title is AI-generated from content (not the scraped RSS headline).
  */
 async function buildSourceArticleMultilingual({ title, contentText, source }) {
   const titleTrimmed = String(title || '').trim();
   const contentTrimmed = String(contentText || '').trim();
 
-  if (!titleTrimmed) throw new Error('Source article has no title');
   if (!contentTrimmed) throw new Error('Source article has no contentText');
 
   const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
-  const { summary, content } = await generateSummaryAndContent(contentTrimmed, anchorLang);
+  const { title: anchorTitle, summary, content } = await generateSummaryAndContent(
+    contentTrimmed,
+    anchorLang,
+    { sourceTitle: titleTrimmed }
+  );
 
   // Sequential to keep provider request bursts low (avoids 429 rate limits).
-  const titleMap = await toTrilingual(titleTrimmed, anchorLang, 'title');
+  const titleMap = await toTrilingual(anchorTitle, anchorLang, 'title');
   const summaryMap = await toTrilingual(summary, anchorLang, 'summary');
   const contentMap = await toTrilingual(content, anchorLang, 'content');
 
@@ -731,8 +794,11 @@ module.exports = {
   translateField,
   twoStepTranslateField,
   openaiTranslate,
+  openaiGenerateText,
   sarvamTranslate,
   geminiTranslate,
+  geminiGenerateText,
+  getTranslateProvider,
   getTeluguSourceSet,
   getEnglishSourceSet,
   resolveAnchorLanguage,
