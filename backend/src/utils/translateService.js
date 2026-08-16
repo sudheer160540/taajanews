@@ -46,10 +46,11 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
     try {
       return await fn();
     } catch (err) {
-      const status = err?.response?.status;
+      // OpenAI SDK errors expose `status` directly; axios errors nest it under `response`.
+      const status = err?.response?.status ?? err?.status;
       // A per-day quota (limit resets in hours) will not recover via short backoff,
       // so don't waste retries on it.
-      const bodyStr = JSON.stringify(err?.response?.data || '');
+      const bodyStr = JSON.stringify(err?.response?.data || err?.error || '');
       const isPerDayQuota = status === 429 && /PerDay|limit:\s*0/.test(bodyStr);
       const isRetriable =
         !isPerDayQuota &&
@@ -243,6 +244,29 @@ async function sarvamTranslate(text, sourceLang, targetLang) {
 }
 
 /**
+ * Low-level OpenAI call. Sends a system + user message and returns the text output.
+ * Set `json: true` to request a JSON response.
+ */
+async function openaiGenerateText(systemContent, userContent, { temperature = 0.3, json = false, maxTokens } = {}) {
+  const request = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent }
+    ],
+    temperature
+  };
+  if (json) request.response_format = { type: 'json_object' };
+  if (maxTokens) request.max_tokens = maxTokens;
+
+  const completion = await withRetry(() => getOpenAI().chat.completions.create(request), {
+    label: 'OpenAI gpt-4o-mini'
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || '';
+}
+
+/**
  * @param {string} text
  * @param {string} targetLangName - e.g. "Telugu", "English", "Hindi"
  * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
@@ -269,29 +293,25 @@ async function openaiTranslate(text, targetLangName, options = {}) {
       ? `Translate this ${fieldLabel} to ${targetLangName}:\n\n${text}`
       : `Translate the following text to ${targetLangName}:\n\n${text}`;
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: userContent }
-    ],
-    temperature: 0.3
-  });
-
-  return completion.choices[0]?.message?.content?.trim() || '';
+  return openaiGenerateText(systemContent, userContent, { temperature: 0.3 });
 }
 
 /**
  * Low-level Gemini call. Sends a system instruction + user prompt and returns
  * the model's text output. Set `json: true` to request a JSON response.
  */
-async function geminiGenerateText(systemContent, userContent, { temperature = 0.3, json = false } = {}) {
+async function geminiGenerateText(
+  systemContent,
+  userContent,
+  { temperature = 0.3, json = false, maxOutputTokens } = {}
+) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured');
   }
 
   const generationConfig = { temperature };
   if (json) generationConfig.responseMimeType = 'application/json';
+  if (maxOutputTokens) generationConfig.maxOutputTokens = maxOutputTokens;
 
   const model = getGeminiModel();
   let data;
@@ -329,8 +349,11 @@ async function geminiGenerateText(systemContent, userContent, { temperature = 0.
   return parts.map((p) => p?.text || '').join('').trim();
 }
 
+/** Active translation/generation provider from TRANSLATE_TYPE (openai | sarvam | gemini | anthropic). */
+const getTranslateProvider = () => (process.env.TRANSLATE_TYPE || '').trim().toLowerCase();
+
 /** True when the active translation/generation provider is Gemini. */
-const isGeminiProvider = () => (process.env.TRANSLATE_TYPE || '').toLowerCase() === 'gemini';
+const isGeminiProvider = () => getTranslateProvider() === 'gemini';
 
 /**
  * Translate/adapt text with Google Gemini, applying the same news editorial
@@ -771,8 +794,11 @@ module.exports = {
   translateField,
   twoStepTranslateField,
   openaiTranslate,
+  openaiGenerateText,
   sarvamTranslate,
   geminiTranslate,
+  geminiGenerateText,
+  getTranslateProvider,
   getTeluguSourceSet,
   getEnglishSourceSet,
   resolveAnchorLanguage,

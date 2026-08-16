@@ -1,60 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 const { protect } = require('../middleware/auth');
-const { audioContainerClient } = require('../config/azure');
 const {
   SUPPORTED_LANGUAGES,
-  chunkText,
   twoStepTranslateField
 } = require('../utils/translateService');
-
-const SARVAM_LANG_CODES = {
-  te: 'te-IN',
-  en: 'en-IN',
-  hi: 'hi-IN'
-};
-
-const SARVAM_API_URL = 'https://api.sarvam.ai';
-const SARVAM_TTS_LIMIT = 2500;
-
-async function generateTTSForLanguage(text, langCode) {
-  if (!text || !text.trim()) return null;
-
-  const chunks = chunkText(text, SARVAM_TTS_LIMIT);
-  const audioBuffers = [];
-
-  for (const chunk of chunks) {
-    if (!chunk || !chunk.trim()) continue;
-
-    const { data } = await axios.post(`${SARVAM_API_URL}/text-to-speech`, {
-      text: chunk,
-      target_language_code: SARVAM_LANG_CODES[langCode],
-      speaker: 'priya',
-      model: 'bulbul:v3'
-    }, {
-      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY }
-    });
-
-    if (data.audios && data.audios[0]) {
-      audioBuffers.push(Buffer.from(data.audios[0], 'base64'));
-    }
-  }
-
-  if (audioBuffers.length === 0) return null;
-
-  const combined = Buffer.concat(audioBuffers);
-
-  const blobName = `${Date.now()}-${uuidv4()}-${langCode}.wav`;
-  const blockBlobClient = audioContainerClient.getBlockBlobClient(blobName);
-  await blockBlobClient.uploadData(combined, {
-    blobHTTPHeaders: { blobContentType: 'audio/wav' }
-  });
-
-  const audioContainer = process.env.AZURE_STORAGE_AUDIO_CONTAINER || 'audio';
-  return `${process.env.AZURE_STORAGE_URL}/${audioContainer}/${blobName}`;
-}
+const { generateAudioForLanguages } = require('../utils/sarvamAudio');
 
 router.post('/', protect, async (req, res) => {
   try {
@@ -104,20 +55,7 @@ router.post('/', protect, async (req, res) => {
     await translateMultilingual(filledContent, 'content');
 
     if (generateAudio && result.content) {
-      const audio = {};
-
-      for (const lang of allLangs) {
-        const text = result.content[lang];
-        if (!text) continue;
-
-        try {
-          const url = await generateTTSForLanguage(text, lang);
-          if (url) audio[lang] = url;
-        } catch (ttsErr) {
-          console.error(`TTS failed for ${lang}:`, ttsErr.message, ttsErr.response?.data || '');
-        }
-      }
-
+      const { audio } = await generateAudioForLanguages(result.content);
       if (Object.keys(audio).length > 0) {
         result.audio = audio;
       }
