@@ -129,7 +129,7 @@ const buildNewsGenerationSystemPrompt = () =>
   `${NEWS_EDITORIAL_PERSONA}
 ${NEWS_EDITORIAL_CORE_RULES}
 ${NEWS_ORIGINALITY_RULES}
-Return ONLY valid JSON with keys "summary" (Super Lead) and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
+Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
   `${NEWS_EDITORIAL_PERSONA}
@@ -470,6 +470,18 @@ const getDetailedStoryLimits = () => {
   return { minWords, maxWords };
 };
 
+/** Headline (stored in Article.title) */
+const getHeadlineLimits = () => {
+  const maxChars = Math.max(40, parseInt(process.env.SOURCE_TITLE_MAX_CHARS, 10) || 200);
+  return { maxChars };
+};
+
+const cleanHeadline = (text) =>
+  cleanNewsText(text)
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
 /**
  * Resolve anchor language for a scraped source article.
  * Telugu/English source lists take precedence; otherwise script detection.
@@ -524,10 +536,14 @@ const parseJsonObject = (raw) => {
 };
 
 /**
- * OpenAI: rewrite source into Super Lead + Detailed Story in anchor language.
+ * OpenAI: rewrite source into headline + Super Lead + Detailed Story in anchor language.
  * Sarvam cannot summarize; this step always uses OpenAI.
+ *
+ * @param {string} rawText - full source article body
+ * @param {string} anchorLang - te | en | hi
+ * @param {{ sourceTitle?: string }} [options] - scraped headline (context only; not copied)
  */
-async function generateSummaryAndContent(rawText, anchorLang) {
+async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const trimmed = String(rawText || '').trim();
   if (!trimmed) {
     throw new Error('Cannot generate summary/content from empty source text');
@@ -538,7 +554,13 @@ async function generateSummaryAndContent(rawText, anchorLang) {
 
   const superLead = getSuperLeadLimits();
   const detailed = getDetailedStoryLimits();
+  const headline = getHeadlineLimits();
   const languageName = SUPPORTED_LANGUAGES[anchorLang];
+  const sourceTitle = String(options.sourceTitle || '').trim();
+
+  const sourceTitleNote = sourceTitle
+    ? `\nSource headline (for context only — do NOT copy or lightly rephrase; write a fresh headline from the facts):\n"${sourceTitle}"\n`
+    : '';
 
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
@@ -547,19 +569,24 @@ async function generateSummaryAndContent(rawText, anchorLang) {
       {
         role: 'user',
         content:
-          `Read the source article below, summarize it mentally, then rewrite it in ${languageName} as two JSON fields.\n\n` +
-          `1) "summary" — SUPER LEAD:\n` +
+          `Read the source article below, summarize it mentally, then rewrite it in ${languageName} as three JSON fields.\n\n` +
+          `1) "title" — HEADLINE:\n` +
+          `   - A complete, compelling news headline that states the core story (Who, What, and the key hook).\n` +
+          `   - Write it fresh from the article facts — never copy the source headline verbatim or with minor edits.\n` +
+          `   - Single line only; max ${headline.maxChars} characters; no sub-headings or markdown.\n` +
+          `   - Active voice; specific names, places, or numbers when they are the story hook.\n\n` +
+          `2) "summary" — SUPER LEAD:\n` +
           `   - Either ${superLead.minWords} to ${superLead.maxWords} words OR ${superLead.minSentences} to ${superLead.maxSentences} short sentences (choose whichever fits the story better).\n` +
           `   - Brief summary of the main news; inverted pyramid; full 5W-1H where possible.\n\n` +
-          `2) "content" — DETAILED STORY:\n` +
+          `3) "content" — DETAILED STORY:\n` +
           `   - ${detailed.minWords} to ${detailed.maxWords} words.\n` +
           `   - Same 5W-1H and inverted pyramid; include background/context so readers understand linked past events.\n` +
           `   - Engaging, not overly terse. Write without plagiarism (fresh wording, do not copy source phrases).\n` +
           `   - Start a new paragraph every four to five sentences (depending on the need); never write one long block.\n` +
           `   - Add a sub-heading (a short plain-text label on its own line) ONLY if the story is long and covers multiple distinct points; for short or single-topic stories use plain paragraphs with NO sub-headings.\n` +
           `   - When one event follows another, briefly explain prior context.\n\n` +
-          `Return ONLY: {"summary":"...","content":"..."}\n\n` +
-          `Source article:\n\n${trimmed}`
+          `Return ONLY: {"title":"...","summary":"...","content":"..."}\n` +
+          `${sourceTitleNote}\nSource article:\n\n${trimmed}`
       }
     ],
     temperature: 0.35,
@@ -578,15 +605,24 @@ async function generateSummaryAndContent(rawText, anchorLang) {
     throw new Error('Failed to parse summary/content JSON from OpenAI');
   }
 
+  let title = cleanHeadline(parsed.title);
   let summary = cleanNewsText(parsed.summary);
   let content = cleanNewsText(parsed.content);
+
+  if (!title) {
+    // Fallback: derive a headline from the Super Lead rather than reuse the scraped title.
+    title = cleanHeadline(truncateAtSentence(summary, headline.maxChars));
+  }
+  if (title.length > headline.maxChars) {
+    title = truncateAtSentence(title, headline.maxChars);
+  }
 
   if (!summary) throw new Error('Generated Super Lead (summary) is empty');
   if (!content) throw new Error('Generated Detailed Story (content) is empty');
 
   content = cleanNewsText(truncateToWordCount(content, detailed.maxWords));
 
-  return { summary, content };
+  return { title, summary, content };
 }
 
 /** Convert a free-form tag into a lowercase, hyphenated slug (e.g. "HITEC City" → "hitec-city"). */
@@ -693,19 +729,23 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
 
 /**
  * Build title, summary, and content maps for source-article → Article conversion.
+ * Title is AI-generated from content (not the scraped RSS headline).
  */
 async function buildSourceArticleMultilingual({ title, contentText, source }) {
   const titleTrimmed = String(title || '').trim();
   const contentTrimmed = String(contentText || '').trim();
 
-  if (!titleTrimmed) throw new Error('Source article has no title');
   if (!contentTrimmed) throw new Error('Source article has no contentText');
 
   const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
-  const { summary, content } = await generateSummaryAndContent(contentTrimmed, anchorLang);
+  const { title: anchorTitle, summary, content } = await generateSummaryAndContent(
+    contentTrimmed,
+    anchorLang,
+    { sourceTitle: titleTrimmed }
+  );
 
   // Sequential to keep provider request bursts low (avoids 429 rate limits).
-  const titleMap = await toTrilingual(titleTrimmed, anchorLang, 'title');
+  const titleMap = await toTrilingual(anchorTitle, anchorLang, 'title');
   const summaryMap = await toTrilingual(summary, anchorLang, 'summary');
   const contentMap = await toTrilingual(content, anchorLang, 'content');
 
