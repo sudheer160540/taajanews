@@ -74,12 +74,8 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
 };
 
 function App() {
-  const { loading: authLoading } = useAuth();
-
-  if (authLoading) {
-    return <LoadingScreen />;
-  }
-
+  // Public routes must render immediately (needed for SSR and fast first paint).
+  // Protected routes handle their own auth-loading state via <ProtectedRoute>.
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>

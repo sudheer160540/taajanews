@@ -70,7 +70,7 @@ export const articlesApi = {
   getTrending: (params) => api.get('/articles/trending', { params }),
   create: (data) => api.post('/articles', data),
   update: (id, data) => api.put(`/articles/${id}`, data),
-  updateStatus: (id, status) => api.put(`/articles/${id}/status`, { status }),
+  updateStatus: (id, status, options = {}) => api.put(`/articles/${id}/status`, { status, ...options }),
   delete: (id) => api.delete(`/articles/${id}`),
   getManaged: (params) => api.get('/articles/manage/list', { params }),
   getStats: () => api.get('/articles/manage/stats'),

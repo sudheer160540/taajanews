@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { categoriesApi, uploadApi } from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
+import CategoryIcon from '../../components/CategoryIcon';
 
 const CategoriesManager = () => {
   const { t, localizeField } = useLanguage();
@@ -269,8 +270,7 @@ const CategoriesManager = () => {
                     <TableCell>{Number.isFinite(Number(category.order)) ? Number(category.order) : 0}</TableCell>
                     <TableCell>
                       {category.icon ? (
-                        <Box component="img" src={category.icon} alt="icon"
-                          sx={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 1 }} />
+                        <CategoryIcon icon={category.icon} color={category.color} size={36} />
                       ) : '-'}
                     </TableCell>
                     <TableCell>
@@ -404,8 +404,12 @@ const CategoriesManager = () => {
             <Typography variant="subtitle2" sx={{ mb: 1 }}>Normal Icon</Typography>
             {formData.icon ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box component="img" src={formData.icon} alt="Icon"
-                  sx={{ width: 56, height: 56, objectFit: 'contain', border: '1px solid #e0e0e0', borderRadius: 1, p: 0.5 }} />
+                <CategoryIcon
+                  icon={formData.icon}
+                  color={formData.color}
+                  size={56}
+                  sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 0.5, boxSizing: 'content-box' }}
+                />
                 <IconButton size="small" color="error" onClick={handleRemoveIcon}>
                   <CloseIcon fontSize="small" />
                 </IconButton>

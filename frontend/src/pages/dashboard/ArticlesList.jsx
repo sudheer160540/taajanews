@@ -21,7 +21,14 @@ import {
   InputAdornment,
   Select,
   FormControl,
-  InputLabel
+  InputLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -153,6 +160,10 @@ const ArticlesList = () => {
   const [search, setSearch] = useState('');
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishArticle, setPublishArticle] = useState(null);
+  const [sendNotification, setSendNotification] = useState(true);
+  const [publishing, setPublishing] = useState(false);
   const searchDebounceRef = useRef(null);
 
   useEffect(() => {
@@ -242,6 +253,38 @@ const ArticlesList = () => {
       console.error('Failed to update status:', err);
     }
     handleMenuClose();
+  };
+
+  const openPublishDialog = () => {
+    setPublishArticle(selectedArticle);
+    setSendNotification(true);
+    setPublishDialogOpen(true);
+    // Close the menu but keep the target article captured in publishArticle.
+    setMenuAnchor(null);
+  };
+
+  const closePublishDialog = () => {
+    if (publishing) return;
+    setPublishDialogOpen(false);
+    setPublishArticle(null);
+    setSelectedArticle(null);
+  };
+
+  const handleConfirmPublish = async () => {
+    if (!publishArticle) return;
+    setPublishing(true);
+    try {
+      await articlesApi.updateStatus(publishArticle._id, 'published', { sendNotification });
+      fetchArticles();
+      setPublishDialogOpen(false);
+      setPublishArticle(null);
+      setSelectedArticle(null);
+    } catch (err) {
+      console.error('Failed to publish article:', err);
+      alert(err.response?.data?.error || 'Failed to publish article');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const canEditArticle = (article) => {
@@ -565,7 +608,7 @@ const ArticlesList = () => {
         )}
         {/* Chief editor / Admin: publish pending article */}
         {canPublish && selectedArticle?.status === 'pending' && (
-          <MenuItem onClick={() => handleStatusChange('published')}>
+          <MenuItem onClick={openPublishDialog}>
             Publish
           </MenuItem>
         )}
@@ -588,6 +631,41 @@ const ArticlesList = () => {
           </MenuItem>
         )}
       </Menu>
+
+      {/* Publish confirmation dialog with optional notification */}
+      <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Publish article?</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1 }}>
+            Are you sure you want to publish
+            {' '}
+            "{typeof publishArticle?.title === 'string'
+              ? publishArticle.title
+              : (publishArticle?.title?.te || publishArticle?.title?.en || 'this article')}"?
+          </DialogContentText>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={sendNotification}
+                onChange={(e) => setSendNotification(e.target.checked)}
+              />
+            }
+            label="Send push notification to users"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePublishDialog} disabled={publishing}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmPublish}
+            disabled={publishing}
+          >
+            {publishing ? 'Publishing...' : 'Publish'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -20,6 +20,7 @@ import { useLocation } from '../contexts/LocationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
+import CategoryIcon from '../components/CategoryIcon';
 
 const CategoryView = () => {
   const { slug } = useParams();
@@ -225,15 +226,53 @@ const CategoryView = () => {
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {categoryName}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+          {category.icon && (
+            <CategoryIcon icon={category.icon} color={category.color} size={36} />
+          )}
+          <Typography variant="h4" component="h1" fontWeight={700}>
+            {categoryName}
+          </Typography>
+        </Box>
         {categoryDescRaw && (
           <Typography variant="body1" color="text.secondary">
             {categoryDescRaw}
           </Typography>
         )}
       </Box>
+
+      {/* Subcategories */}
+      {children.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h6" fontWeight={600} gutterBottom>
+            {lang === 'hi' ? 'उप-श्रेणियां' : 'Subcategories'}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {children.map((child) => (
+              <Chip
+                key={child._id}
+                icon={
+                  child.icon ? (
+                    <CategoryIcon
+                      icon={child.icon}
+                      color="#fff"
+                      size={16}
+                      sx={{ '&&': { ml: 0.75, color: '#fff' } }}
+                    />
+                  ) : undefined
+                }
+                label={child.name?.[lang] || child.name?.en}
+                onClick={() => navigate(`/category/${child.slug}`)}
+                sx={{ 
+                  bgcolor: child.color || 'primary.main',
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white' }
+                }}
+              />
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {/* Articles Grid */}
       {articles.length === 0 ? (

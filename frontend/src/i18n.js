@@ -378,7 +378,7 @@ const resources = {
   }
 };
 
-// Get saved language from localStorage/cookie or default to Telugu
+// Get saved language from localStorage or default to 'te' (Telugu)
 const getSavedLanguage = () => {
   try {
     const fromStorage = localStorage.getItem('taaja_lang');

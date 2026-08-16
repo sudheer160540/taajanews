@@ -28,6 +28,8 @@ import { useLocation } from '../contexts/LocationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { categoriesApi, languagesApi } from '../services/api';
 import Footer from '../components/Footer';
+import Seo from '../components/Seo';
+import CategoryIcon from '../components/CategoryIcon';
 
 const MainLayout = () => {
   const { t } = useTranslation();
@@ -89,7 +91,7 @@ const MainLayout = () => {
   }, [language, languages]);
 
   useEffect(() => {
-    const CACHE_KEY = `taaja_categories_${language}_v1`;
+    const CACHE_KEY = `taaja_categories_${language}_v2`;
     const CACHE_TTL = 5 * 60 * 1000;
 
     const loadCategories = async () => {
@@ -229,6 +231,9 @@ const MainLayout = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {/* Baseline SEO for every public route; individual pages override via their own <Seo>. */}
+      <Seo path={currentPath} lang={i18n.language} />
+
       {/* Top AppBar */}
       <AppBar
         position="sticky"
@@ -359,15 +364,20 @@ const MainLayout = () => {
               scrollButtons="auto"
               allowScrollButtonsMobile
               sx={{
-                minHeight: 36,
+                minHeight: 42,
                 '& .MuiTab-root': {
                   color: 'text.secondary',
-                  minHeight: 36,
+                  minHeight: 42,
                   py: 0,
-                  px: 2,
+                  px: 1.5,
                   fontSize: '0.8rem',
                   textTransform: 'none',
-                  fontWeight: 500
+                  fontWeight: 500,
+                  gap: 0.75
+                },
+                '& .MuiTab-iconWrapper': {
+                  marginBottom: '0 !important',
+                  marginRight: 0
                 },
                 '& .Mui-selected': { color: 'primary.main', fontWeight: 700 },
                 '& .MuiTabs-indicator': { backgroundColor: 'primary.main' },
@@ -380,6 +390,12 @@ const MainLayout = () => {
                 <Tab
                   key={cat._id}
                   value={cat.slug}
+                  icon={
+                    cat.icon ? (
+                      <CategoryIcon icon={cat.icon} color={cat.color} size={18} />
+                    ) : undefined
+                  }
+                  iconPosition="start"
                   label={getDisplayName(cat)}
                   onClick={() => handleCategoryClick(cat.slug)}
                 />

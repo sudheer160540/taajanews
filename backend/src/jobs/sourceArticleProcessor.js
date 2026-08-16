@@ -13,7 +13,7 @@ const languageCache = require('../utils/languageCache');
 
 // Hint removed — anchor language resolved via TELUGU_SOURCES / ENGLISH_SOURCES / detect
 const DEFAULT_FEATURED_IMAGE_URL =
-  'https://taajanews.blob.core.windows.net/images/default_breaking_news.png';
+  'https://taajanews.blob.core.windows.net/images/taajanews_defaultposter.png';
 
 const toMap = (obj) => new Map(Object.entries(obj || {}));
 
