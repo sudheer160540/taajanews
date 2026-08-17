@@ -22,6 +22,7 @@ import {
   AutoStories as ReadIcon,
   PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
+import { useLanguage } from '../contexts/LanguageContext';
 import { articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
 import { getYoutubeEmbedId } from '../utils/youtube';
@@ -30,6 +31,10 @@ import { buildWebSiteJsonLd } from '../utils/seo';
 
 const IMAGE_PLACEHOLDER =
   'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="240"%3E%3Crect fill="%23e8eef7" width="400" height="240"/%3E%3C/svg%3E';
+
+/** Title for cards: selected-language text only, never a cross-language fallback. */
+const articleHeadline = (article) =>
+  article?.title || article?.localization?.unavailableMessage || '';
 
 const PlayBadgeOverlay = () => (
   <Box
@@ -145,7 +150,7 @@ const HeroFeaturedCard = ({ article, onNavigate, t }) => {
       <Box
         component="img"
         src={imageUrl}
-        alt={article.title}
+        alt={articleHeadline(article)}
         sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
       />
       {hasVideo && <PlayBadgeOverlay />}
@@ -174,7 +179,7 @@ const HeroFeaturedCard = ({ article, onNavigate, t }) => {
             overflow: 'hidden'
           }}
         >
-          {article.title}
+          {articleHeadline(article)}
         </Typography>
         {article.summary && (
           <Typography
@@ -221,7 +226,7 @@ const HeroSideCard = ({ article, onNavigate, t }) => {
       <Box
         component="img"
         src={imageUrl}
-        alt={article.title}
+        alt={articleHeadline(article)}
         sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
       />
       {hasVideo && <PlayBadgeOverlay />}
@@ -249,7 +254,7 @@ const HeroSideCard = ({ article, onNavigate, t }) => {
             overflow: 'hidden'
           }}
         >
-          {article.title}
+          {articleHeadline(article)}
         </Typography>
       </Box>
     </CardActionArea>
@@ -319,7 +324,7 @@ const ArticleListRow = ({ article, onNavigate, t }) => {
             '&:hover': { color: 'primary.main' }
           }}
         >
-          {article.title}
+          {articleHeadline(article)}
         </Typography>
         {article.summary && (
           <Typography
@@ -397,7 +402,7 @@ const TrendingListItem = ({ article, rank, onNavigate, t }) => {
             '&:hover': { color: 'primary.main' }
           }}
         >
-          {article.title}
+          {articleHeadline(article)}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {formatTimeAgo(article.publishedAt, t)}
@@ -432,10 +437,11 @@ const SectionTitle = ({ children }) => (
 );
 
 const Home = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { language, localizeArticle, localizeField } = useLanguage();
   const navigate = useNavigate();
   const { city, area, coordinates } = useLocation();
-  const lang = i18n.language;
+  const lang = language;
 
   const [articles, setArticles] = useState([]);
   const [trendingArticles, setTrendingArticles] = useState([]);
@@ -448,11 +454,7 @@ const Home = () => {
 
   const getDisplayName = (item) => {
     if (!item) return '';
-    if (typeof item.name === 'string') return item.name;
-    if (typeof item.name === 'object' && item.name) {
-      return item.name[lang] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
-    }
-    return '';
+    return localizeField(item.name);
   };
 
   const getLocationCoords = () => {
@@ -493,7 +495,20 @@ const Home = () => {
 
       // Critical path: paint the feed as soon as it arrives
       const articlesRes = await articlesApi.getFeed(feedParams);
-      setArticles(articlesRes.data.articles || []);
+      const localized = (articlesRes.data.articles || []).map((a) => localizeArticle(a));
+      console.log('[Home] feed article sample (raw maps → localized)', {
+        lang,
+        rawTitle: articlesRes.data.articles?.[0]?.title,
+        rawAudio: articlesRes.data.articles?.[0]?.audio,
+        localized: localized[0]
+          ? {
+              title: localized[0].title,
+              summary: localized[0].summary?.slice?.(0, 80),
+              audioUrl: localized[0].audioUrl
+            }
+          : null
+      });
+      setArticles(localized);
       setPagination(articlesRes.data.pagination || { page: 1, hasMore: false });
       setLoading(false);
 
@@ -501,7 +516,9 @@ const Home = () => {
       articlesApi
         .getTrending({ limit: 5, lang })
         .then((trendingRes) => {
-          setTrendingArticles(trendingRes.data.articles || []);
+          setTrendingArticles(
+            (trendingRes.data.articles || []).map((a) => localizeArticle(a))
+          );
         })
         .catch((err) => {
           console.error('Failed to fetch trending:', err);
@@ -527,7 +544,8 @@ const Home = () => {
         feedParams.radiusKM = 50;
       }
       const articlesRes = await articlesApi.getFeed(feedParams);
-      setArticles((prev) => [...prev, ...articlesRes.data.articles]);
+      const more = (articlesRes.data.articles || []).map((a) => localizeArticle(a));
+      setArticles((prev) => [...prev, ...more]);
       setPagination(articlesRes.data.pagination);
     } catch (err) {
       console.error('Failed to fetch more articles:', err);

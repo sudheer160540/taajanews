@@ -40,6 +40,7 @@ import {
 } from '@mui/icons-material';
 import { epapersApi, uploadApi, locationsApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const INITIAL_FORM = {
   title: '',
@@ -49,15 +50,20 @@ const INITIAL_FORM = {
   status: 'active'
 };
 
-const getAreaName = (area) => {
+const getAreaName = (area, lang = 'te') => {
   if (!area) return '-';
   if (typeof area.name === 'string') return area.name;
-  if (area.name instanceof Map) return area.name.get('en') || [...area.name.values()][0] || '-';
-  return area.name?.en || area.name?.te || Object.values(area.name || {})[0] || '-';
+  if (area.name instanceof Map) {
+    const value = area.name.get(lang);
+    return (typeof value === 'string' && value.trim()) ? value.trim() : '-';
+  }
+  const value = area.name?.[lang];
+  return (typeof value === 'string' && value.trim()) ? value.trim() : '-';
 };
 
 const EPaperManager = () => {
   const { isAdmin, loading: authLoading } = useAuth();
+  const { language } = useLanguage();
   const [epapers, setEpapers] = useState([]);
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -317,7 +323,7 @@ const EPaperManager = () => {
                     <TableCell>{formatDate(epaper.date)}</TableCell>
                     <TableCell>
                       <Typography variant="caption" noWrap sx={{ maxWidth: 150, display: 'block' }}>
-                        {getAreaName(epaper.area)}
+                        {getAreaName(epaper.area, language)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -431,7 +437,7 @@ const EPaperManager = () => {
                   <MenuItem value="">None</MenuItem>
                   {areas.map((area) => (
                     <MenuItem key={area._id} value={area._id}>
-                      {getAreaName(area)}
+                      {getAreaName(area, language)}
                     </MenuItem>
                   ))}
                 </Select>

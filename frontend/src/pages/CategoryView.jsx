@@ -10,7 +10,6 @@ import {
   CardContent,
   CardMedia,
   CardActionArea,
-  Chip,
   Breadcrumbs,
   Skeleton,
   Pagination
@@ -18,6 +17,7 @@ import {
 import { NavigateNext as NavNextIcon, AccessTime as TimeIcon } from '@mui/icons-material';
 import { categoriesApi, articlesApi } from '../services/api';
 import { useLocation } from '../contexts/LocationContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
 import CategoryIcon from '../components/CategoryIcon';
@@ -25,12 +25,12 @@ import CategoryIcon from '../components/CategoryIcon';
 const CategoryView = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { city, area } = useLocation();
-  const lang = i18n.language;
+  const { language, localizeArticle, localizeField } = useLanguage();
+  const lang = language;
 
   const [category, setCategory] = useState(null);
-  const [children, setChildren] = useState([]);
   const [breadcrumb, setBreadcrumb] = useState([]);
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,6 @@ const CategoryView = () => {
     setPage(1);
     setArticles([]);
     setCategory(null);
-    setChildren([]);
     setBreadcrumb([]);
     fetchCategory();
   }, [slug]);
@@ -57,7 +56,6 @@ const CategoryView = () => {
     try {
       const response = await categoriesApi.getBySlug(slug);
       setCategory(response.data.category);
-      setChildren(response.data.children);
       setBreadcrumb(response.data.breadcrumb);
       // Keep loading true until articles finish fetching
     } catch (err) {
@@ -80,7 +78,7 @@ const CategoryView = () => {
       if (area) params.area = area._id;
 
       const response = await articlesApi.getAll(params);
-      setArticles(response.data.articles || []);
+      setArticles((response.data.articles || []).map((a) => localizeArticle(a)));
       setTotalPages(response.data.pagination?.pages || 1);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
@@ -91,7 +89,8 @@ const CategoryView = () => {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-IN', {
+    const locale = lang === 'hi' ? 'hi-IN' : lang === 'te' ? 'te-IN' : 'en-IN';
+    return new Date(dateString).toLocaleDateString(locale, {
       day: 'numeric',
       month: 'short',
       year: 'numeric'
@@ -123,15 +122,9 @@ const CategoryView = () => {
   }
 
   const categoryName =
-    (typeof category.name === 'string' ? category.name : null) ||
-    category.name?.[lang] ||
-    category.name?.en ||
-    category.name?.te ||
-    slug;
+    localizeField(category.name) || slug;
   const categoryDescRaw =
-    typeof category.description === 'string'
-      ? category.description
-      : category.description?.[lang] || category.description?.en || '';
+    localizeField(category.description) || '';
   const categoryDescription = truncate(
     categoryDescRaw || `${categoryName} news — latest articles on Taaja News`,
     160
@@ -145,24 +138,91 @@ const CategoryView = () => {
         path={`/category/${slug}`}
         lang={lang}
       />
-      {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 3 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          {t('home')}
-        </Link>
-        {breadcrumb.map((item, index) => (
-          <Link
-            key={item._id}
-            to={`/category/${item.slug}`}
-            style={{ 
-              textDecoration: 'none', 
-              color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
+      {/* Breadcrumb + mobile-only ad placeholder */}
+      <Box
+        className="category-breadcrumb-row"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: { xs: 1.5, sm: 1 },
+          mb: { xs: 4.5, sm: 3 },
+          mt: { xs: 1, sm: 0 },
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          overflow: 'hidden',
+          position: 'relative',
+          zIndex: 0,
+          boxSizing: 'border-box'
+        }}
+      >
+        <Breadcrumbs
+          separator={<NavNextIcon fontSize="small" />}
+          sx={{
+            mb: 0,
+            minWidth: 0,
+            flex: { xs: '0 1 auto', sm: '1 1 auto' },
+            maxWidth: { xs: '40%', sm: '100%' },
+            overflow: 'hidden',
+            whiteSpace: 'nowrap'
+          }}
+          className="page-breadcrumb"
+        >
+          <Link to="/" className="page-breadcrumb__home" style={{ textDecoration: 'none', color: 'inherit' }}>
+            {t('home')}
+          </Link>
+          {breadcrumb.map((item, index) => (
+            <Link
+              key={item._id}
+              to={`/category/${item.slug}`}
+              style={{
+                textDecoration: 'none',
+                color: index === breadcrumb.length - 1 ? 'inherit' : 'inherit'
+              }}
+            >
+              {localizeField(item.name)}
+            </Link>
+          ))}
+        </Breadcrumbs>
+        <Box
+          className="category-ad-placeholder"
+          aria-hidden
+          sx={{
+            display: { xs: 'flex', sm: 'none' },
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: '1 1 auto',
+            minWidth: 0,
+            px: 2,
+            py: 2.75,
+            minHeight: 76,
+            border: '1px dashed',
+            borderColor: 'divider',
+            bgcolor: 'action.hover',
+            borderRadius: 1,
+            position: 'relative',
+            zIndex: 0,
+            boxSizing: 'border-box',
+            overflow: 'hidden'
+          }}
+        >
+          <Typography
+            component="span"
+            sx={{
+              fontSize: '0.8rem',
+              fontWeight: 500,
+              letterSpacing: '0.04em',
+              color: 'text.disabled',
+              textTransform: 'uppercase',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap'
             }}
           >
-            {item.name?.[lang] || item.name?.en}
-          </Link>
-        ))}
-      </Breadcrumbs>
+            Advertisement
+          </Typography>
+        </Box>
+      </Box>
 
       {/* Category Header */}
       <Box sx={{ mb: 4 }}>
@@ -171,12 +231,12 @@ const CategoryView = () => {
             <CategoryIcon icon={category.icon} color={category.color} size={36} />
           )}
           <Typography variant="h4" component="h1" fontWeight={700}>
-            {category.name?.[lang] || category.name?.en}
+            {categoryName}
           </Typography>
         </Box>
-        {category.description?.[lang] && (
+        {categoryDescRaw && (
           <Typography variant="body1" color="text.secondary">
-            {category.description[lang]}
+            {categoryDescRaw}
           </Typography>
         )}
       </Box>

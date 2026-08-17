@@ -7,12 +7,14 @@ import {
 } from '@mui/material';
 import { AccessTime as TimeIcon, Visibility as ViewIcon, AutoStories as ReadIcon } from '@mui/icons-material';
 import { articlesApi, categoriesApi } from '../services/api';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const CategoryPage = () => {
   const { slug } = useParams();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
-  const lang = i18n.language;
+  const { language, localizeArticle, localizeField } = useLanguage();
+  const lang = language;
 
   const [articles, setArticles] = useState([]);
   const [category, setCategory] = useState(null);
@@ -22,11 +24,7 @@ const CategoryPage = () => {
 
   const getDisplayName = (item) => {
     if (!item) return '';
-    if (typeof item.name === 'string') return item.name;
-    if (typeof item.name === 'object' && item.name) {
-      return item.name[lang] || item.name.te || item.name.en || Object.values(item.name)[0] || '';
-    }
-    return '';
+    return localizeField(item.name);
   };
 
   useEffect(() => {
@@ -47,7 +45,7 @@ const CategoryPage = () => {
       if (matchedCat?._id) params.category = matchedCat._id;
 
       const artRes = await articlesApi.getFeed(params);
-      setArticles(artRes.data.articles || []);
+      setArticles((artRes.data.articles || []).map((a) => localizeArticle(a)));
       setPagination(artRes.data.pagination);
     } catch (err) {
       console.error('Failed to fetch category articles:', err);
@@ -65,7 +63,10 @@ const CategoryPage = () => {
       if (category?._id) params.category = category._id;
 
       const artRes = await articlesApi.getFeed(params);
-      setArticles((prev) => [...prev, ...(artRes.data.articles || [])]);
+      setArticles((prev) => [
+        ...prev,
+        ...(artRes.data.articles || []).map((a) => localizeArticle(a))
+      ]);
       setPagination(artRes.data.pagination);
     } catch (err) {
       console.error('Failed to fetch more articles:', err);

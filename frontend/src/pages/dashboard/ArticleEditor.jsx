@@ -47,6 +47,8 @@ import { articlesApi, categoriesApi, uploadApi, usersApi } from '../../services/
 import { articleTranslateApi } from '../../services/articleTranslateApi';
 import languageService, { getLocalizedValue } from '../../services/languageService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { normalizeLang } from '../../utils/articleLocalization';
 
 const FEATURED_IMAGE_VARIANTS = {
   web: { label: 'Website', width: 800, height: 700, aspect: 800 / 700 },
@@ -58,6 +60,7 @@ const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { language: selectedLanguage } = useLanguage();
   const { canPublish, user, isEditor } = useAuth();
   const isEditing = !!id;
 
@@ -121,6 +124,14 @@ const ArticleEditor = () => {
     initializeEditor();
   }, [id]);
 
+  // Keep the editor language tab aligned with the website-selected language
+  useEffect(() => {
+    if (!languages.length) return;
+    const code = normalizeLang(selectedLanguage);
+    const idx = languages.findIndex((l) => normalizeLang(l.code) === code);
+    if (idx >= 0) setLangTab(idx);
+  }, [selectedLanguage, languages]);
+
   useEffect(() => () => {
     if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
   }, [cropImageUrl]);
@@ -131,6 +142,10 @@ const ArticleEditor = () => {
       // Fetch languages first
       const langs = await languageService.getLanguages();
       setLanguages(langs);
+
+      const selectedCode = normalizeLang(selectedLanguage);
+      const selectedIdx = langs.findIndex((l) => normalizeLang(l.code) === selectedCode);
+      if (selectedIdx >= 0) setLangTab(selectedIdx);
       
       const defLang = await languageService.getDefaultLanguageCode();
       setDefaultLang(defLang);
@@ -165,24 +180,28 @@ const ArticleEditor = () => {
         const response = await articlesApi.getById(id);
         const articleData = response.data.article;
         
-        // Convert Map-like objects to plain objects with all languages
+        // Convert Map-like / plain objects to plain objects with all languages
+        const toPlainEntries = (field) => {
+          if (!field) return [];
+          if (field instanceof Map) return [...field.entries()];
+          if (typeof field === 'object') return Object.entries(field);
+          return [];
+        };
+
         const convertField = (field) => {
           const result = { ...emptyMultilingual };
-          if (field) {
-            Object.keys(field).forEach(key => {
-              result[key] = field[key] || '';
-            });
-          }
+          toPlainEntries(field).forEach(([key, value]) => {
+            result[key] = value || '';
+          });
           return result;
         };
 
         const loc = articleData.location || null;
 
-        const audioData = articleData.audio || {};
         const audioObj = {};
-        if (audioData instanceof Map || (typeof audioData === 'object' && audioData !== null)) {
-          Object.entries(audioData).forEach(([k, v]) => { if (v) audioObj[k] = v; });
-        }
+        toPlainEntries(articleData.audio).forEach(([k, v]) => {
+          if (v) audioObj[k] = v;
+        });
 
         setArticle({
           title: convertField(articleData.title),
@@ -564,14 +583,67 @@ const ArticleEditor = () => {
       const mergedSummary = mergeInto(article, 'summary', translated.summary);
       const mergedContent = mergeInto(article, 'content', translated.content);
 
+      let nextAudio = { ...(article.audio || {}) };
+      if (generateAudio) {
+        const audioRes = await translateApi.translate({
+          content: mergedContent,
+          generateAudio: true
+        });
+        if (audioRes.data?.audio) {
+          nextAudio = { ...nextAudio, ...audioRes.data.audio };
+        }
+      }
+
+      // Apply merged fields in one update so audio/translation stay in sync
       setArticle((prev) => ({
         ...prev,
         title: mergedTitle,
         summary: mergedSummary,
-        content: mergedContent
+        content: mergedContent,
+        audio: nextAudio
       }));
 
-      setSuccess('Translation completed successfully');
+      // Persist to DB for existing articles so My Articles / re-open keep audio + translations.
+      // Do not auto-create a new article on the create page.
+      if (isEditing) {
+        const cleanMultilingual = (obj) => {
+          const cleaned = {};
+          Object.entries(obj || {}).forEach(([key, value]) => {
+            if (value && String(value).trim()) cleaned[key] = value;
+          });
+          return cleaned;
+        };
+
+        const persistPayload = {
+          title: cleanMultilingual(mergedTitle),
+          summary: cleanMultilingual(mergedSummary),
+          content: cleanMultilingual(mergedContent)
+        };
+        if (Object.keys(nextAudio).length > 0) {
+          persistPayload.audio = nextAudio;
+        }
+
+        try {
+          await articlesApi.update(id, persistPayload);
+          setSuccess(
+            generateAudio
+              ? 'Translation and audio saved to this article'
+              : 'Translation saved to this article'
+          );
+        } catch (persistErr) {
+          setApiError(
+            persistErr,
+            'Generated in the editor but failed to save. Please click Save to keep your changes.'
+          );
+          return;
+        }
+      } else {
+        setSuccess(
+          generateAudio
+            ? 'Translation and audio ready — save the article to keep them'
+            : 'Translation ready — save the article to keep it'
+        );
+      }
     } catch (err) {
       setApiError(err, 'Translation failed. Please try again.');
       console.error(err);
@@ -1069,7 +1141,7 @@ const ArticleEditor = () => {
                   <MenuItem value="">None</MenuItem>
                   {categories.map((cat) => (
                     <MenuItem key={cat._id} value={cat._id}>
-                      {getLocalizedValue(cat.name, defaultLang)}
+                      {getLocalizedValue(cat.name, selectedLanguage)}
                     </MenuItem>
                   ))}
                 </Select>

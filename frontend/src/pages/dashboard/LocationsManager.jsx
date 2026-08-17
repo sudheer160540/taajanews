@@ -34,8 +34,10 @@ import {
 } from '@mui/icons-material';
 import { locationsApi } from '../../services/api';
 import api from '../../services/api';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const LocationsManager = () => {
+  const { localizeField } = useLanguage();
   const [tab, setTab] = useState(0);
   const [cities, setCities] = useState([]);
   const [areas, setAreas] = useState([]);
@@ -236,8 +238,8 @@ const LocationsManager = () => {
               <TableBody>
                 {cities.map((city) => (
                   <TableRow key={city._id}>
-                    <TableCell>{city._multilingual?.name?.te || city.name}</TableCell>
-                    <TableCell>{city._multilingual?.state?.te || city.state}</TableCell>
+                    <TableCell>{localizeField(city._multilingual?.name) || city.name || '-'}</TableCell>
+                    <TableCell>{localizeField(city._multilingual?.state) || city.state || '-'}</TableCell>
                     <TableCell>
                       <Chip
                         label={city.isActive ? 'Active' : 'Inactive'}
@@ -274,7 +276,7 @@ const LocationsManager = () => {
               >
                 {cities.map((city) => (
                   <MenuItem key={city._id} value={city._id}>
-                    {city._multilingual?.name?.te || city.name}
+                    {localizeField(city._multilingual?.name) || city.name || '-'}
                   </MenuItem>
                 ))}
               </Select>
@@ -301,7 +303,7 @@ const LocationsManager = () => {
               <TableBody>
                 {areas.map((area) => (
                   <TableRow key={area._id}>
-                    <TableCell>{area._multilingual?.name?.te || area.name}</TableCell>
+                    <TableCell>{localizeField(area._multilingual?.name) || area.name || '-'}</TableCell>
                     <TableCell>{area.pincode || '-'}</TableCell>
                     <TableCell>
                       <Chip

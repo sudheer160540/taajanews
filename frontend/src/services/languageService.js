@@ -211,9 +211,11 @@ class LanguageService {
 const languageService = new LanguageService();
 export default languageService;
 
-// Export helper function
-export const getLocalizedValue = (field, lang, fallbackLang = 'en') => {
+// Export helper — selected language only (no cross-language fallback)
+export const getLocalizedValue = (field, lang) => {
   if (!field) return '';
   if (typeof field === 'string') return field;
-  return field[lang] || field[fallbackLang] || Object.values(field)[0] || '';
+  const code = String(lang || 'te').split('-')[0].toLowerCase();
+  const value = field[code];
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
 };

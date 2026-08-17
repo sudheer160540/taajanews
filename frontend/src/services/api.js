@@ -23,14 +23,19 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Add language header (same source as i18n: localStorage taaja_lang)
-    let lang = 'en';
+    // Prefer localStorage (i18n source of truth), then cookie, so Accept-Language
+    // always matches the Home page language selector.
+    let lang = null;
     try {
-      lang = localStorage.getItem('taaja_lang') || 'en';
+      lang = localStorage.getItem('taaja_lang');
     } catch {
-      lang = 'en';
+      lang = null;
     }
-    config.headers['Accept-Language'] = lang;
+    if (!lang) {
+      lang = Cookies.get('taaja_lang');
+    }
+    const normalized = String(lang || 'en').split('-')[0].toLowerCase();
+    config.headers['Accept-Language'] = normalized;
     
     return config;
   },
@@ -69,7 +74,11 @@ export const articlesApi = {
   delete: (id) => api.delete(`/articles/${id}`),
   getManaged: (params) => api.get('/articles/manage/list', { params }),
   getStats: () => api.get('/articles/manage/stats'),
-  translateAll: (data) => api.post('/articles/translate-all', data)
+  translateAll: (data) => api.post('/articles/translate-all', data),
+  downloadAudio: (id, params) => api.get(`/articles/${id}/audio/download`, {
+    params,
+    responseType: 'blob'
+  })
 };
 
 export const categoriesApi = {

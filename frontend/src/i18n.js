@@ -1,5 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import Cookies from 'js-cookie';
+import { DEFAULT_LANGUAGE, normalizeLang, SUPPORTED_LANGUAGES } from './utils/articleLocalization';
 
 const resources = {
   te: {
@@ -85,7 +87,19 @@ const resources = {
       editArticle: 'వ్యాసం సవరించండి',
       manageCategories: 'వర్గాలు నిర్వహించండి',
       manageUsers: 'వినియోగదారులను నిర్వహించండి',
+      manageLanguages: 'భాషలు నిర్వహించండి',
+      promotions: 'ప్రమోషన్లు',
+      epapers: 'ఈ-పేపర్లు',
+      videos: 'వీడియోలు',
       analytics: 'అనలిటిక్స్',
+      welcomeUser: 'స్వాగతం, {{name}}!',
+      dashboardOverview: 'ఇక్కడ మీ డాష్‌బోర్డ్ అవలోకనం ఉంది',
+      recentArticles: 'ఇటీవలి వ్యాసాలు',
+      viewAll: 'అన్నీ చూడండి',
+      noArticlesYet: 'ఇంకా వ్యాసాలు లేవు',
+      versionUnavailable: 'ఈ భాషలో అందుబాటులో లేదు',
+      audioUnavailable: 'ఈ భాషకు ఆడియో అందుబాటులో లేదు',
+      audio: 'ఆడియో',
       
       // Status
       published: 'ప్రచురించబడింది',
@@ -197,7 +211,19 @@ const resources = {
       editArticle: 'Edit Article',
       manageCategories: 'Manage Categories',
       manageUsers: 'Manage Users',
+      manageLanguages: 'Manage Languages',
+      promotions: 'Promotions',
+      epapers: 'E-Papers',
+      videos: 'Videos',
       analytics: 'Analytics',
+      welcomeUser: 'Welcome, {{name}}!',
+      dashboardOverview: "Here's your dashboard overview",
+      recentArticles: 'Recent Articles',
+      viewAll: 'View All',
+      noArticlesYet: 'No articles yet',
+      versionUnavailable: 'Version unavailable',
+      audioUnavailable: 'Audio unavailable for this language',
+      audio: 'Audio',
       
       // Status
       published: 'Published',
@@ -309,7 +335,19 @@ const resources = {
       editArticle: 'लेख संपादित करें',
       manageCategories: 'श्रेणियां प्रबंधित करें',
       manageUsers: 'उपयोगकर्ता प्रबंधित करें',
+      manageLanguages: 'भाषाएं प्रबंधित करें',
+      promotions: 'प्रमोशन',
+      epapers: 'ई-पेपर',
+      videos: 'वीडियो',
       analytics: 'एनालिटिक्स',
+      welcomeUser: 'नमस्ते, {{name}}!',
+      dashboardOverview: 'यहाँ आपका डैशबोर्ड अवलोकन है',
+      recentArticles: 'हाल के लेख',
+      viewAll: 'सभी देखें',
+      noArticlesYet: 'अभी तक कोई लेख नहीं',
+      versionUnavailable: 'संस्करण उपलब्ध नहीं है',
+      audioUnavailable: 'इस भाषा के लिए ऑडियो उपलब्ध नहीं है',
+      audio: 'ऑडियो',
       
       // Status
       published: 'प्रकाशित',
@@ -340,47 +378,25 @@ const resources = {
   }
 };
 
-// SSR-safe: these globals only exist in the browser.
-const isBrowser = typeof window !== 'undefined';
-
-/** Normalize lang codes like `te`, `te-IN`, `TE` → `te` */
-export const normalizeLangCode = (code) => {
-  if (!code || typeof code !== 'string') return null;
-  const normalized = code.trim().toLowerCase().split(/[-_]/)[0];
-  if (!/^[a-z]{2,3}$/.test(normalized)) return null;
-  return normalized;
-};
-
-const getLangFromUrl = () => {
-  if (!isBrowser) return null;
-  try {
-    return normalizeLangCode(new URLSearchParams(window.location.search).get('lang'));
-  } catch {
-    return null;
-  }
-};
-
-const persistLanguage = (lng) => {
-  if (!isBrowser) return;
-  try {
-    localStorage.setItem('taaja_lang', lng);
-  } catch (e) {
-    console.warn('Failed to save language preference:', e);
-  }
-};
-
-// Prefer ?lang= (shared links) over storage; persist so it becomes default
+// Get saved language from localStorage or default to 'te' (Telugu)
 const getSavedLanguage = () => {
-  const fromUrl = getLangFromUrl();
-  if (fromUrl) {
-    persistLanguage(fromUrl);
-    return fromUrl;
+  try {
+    const fromStorage = localStorage.getItem('taaja_lang');
+    if (fromStorage && SUPPORTED_LANGUAGES.includes(normalizeLang(fromStorage))) {
+      return normalizeLang(fromStorage);
+    }
+  } catch {
+    // ignore
   }
   try {
-    return localStorage.getItem('taaja_lang') || 'en';
+    const fromCookie = Cookies.get('taaja_lang');
+    if (fromCookie && SUPPORTED_LANGUAGES.includes(normalizeLang(fromCookie))) {
+      return normalizeLang(fromCookie);
+    }
   } catch {
-    return 'en';
+    // ignore
   }
+  return DEFAULT_LANGUAGE;
 };
 
 const savedLanguage = getSavedLanguage();
@@ -390,7 +406,9 @@ i18n
   .init({
     resources,
     lng: savedLanguage,
-    fallbackLng: 'en', // English as fallback
+    // Do not silently switch UI strings to another language
+    fallbackLng: false,
+    supportedLngs: SUPPORTED_LANGUAGES,
     interpolation: {
       escapeValue: false
     },
@@ -399,18 +417,28 @@ i18n
     }
   });
 
-// Save language preference to localStorage when changed
+// Persist so Home → Article → Back keeps the same active language
 i18n.on('languageChanged', (lng) => {
-  if (!isBrowser) return;
-  const code = normalizeLangCode(lng) || lng;
-  persistLanguage(code);
+  const code = normalizeLang(lng);
+  try {
+    localStorage.setItem('taaja_lang', code);
+  } catch (e) {
+    console.warn('Failed to save language preference:', e);
+  }
+  try {
+    Cookies.set('taaja_lang', code, { expires: 365, path: '/' });
+  } catch (e) {
+    console.warn('Failed to save language cookie:', e);
+  }
   document.documentElement.lang = code;
-  document.documentElement.dir = code === 'ar' || code === 'ur' ? 'rtl' : 'ltr';
+  document.documentElement.dir = 'ltr';
 });
 
-// Set initial document language (browser only).
-if (isBrowser) {
-  document.documentElement.lang = savedLanguage;
+document.documentElement.lang = savedLanguage;
+try {
+  Cookies.set('taaja_lang', savedLanguage, { expires: 365, path: '/' });
+} catch {
+  // ignore
 }
 
 export default i18n;

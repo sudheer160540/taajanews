@@ -39,17 +39,20 @@ import {
 import { articlesApi, engagementApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSRData } from '../contexts/SSRDataContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { v4 as uuidv4 } from 'uuid';
 import { getYoutubeEmbedId, buildYoutubeEmbedUrl } from '../utils/youtube';
 import Seo from '../components/Seo';
 import { buildNewsArticleJsonLd, truncate, toAbsoluteUrl } from '../utils/seo';
+import { getUnavailableMessage } from '../utils/articleLocalization';
 
 const ArticleView = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { language, localizeArticle, localizeField } = useLanguage();
   const { isAuthenticated, isEditor } = useAuth();
-  const lang = i18n.language;
+  const lang = language;
 
   // Data prefetched by the SSR server for this slug (null on client navigation).
   const seed = useSSRData(`article:${slug}`);
@@ -80,8 +83,29 @@ const ArticleView = () => {
     setPlayingVideo(false);
     try {
       const response = await articlesApi.getBySlug(slug, lang);
-      setArticle(response.data.article);
-      setRelatedArticles(response.data.relatedArticles || []);
+      console.log('[ArticleView] slug API raw multilingual fields', {
+        lang,
+        title: response.data.article?.title,
+        summary: response.data.article?.summary,
+        contentType: typeof response.data.article?.content,
+        contentKeys:
+          response.data.article?.content && typeof response.data.article.content === 'object'
+            ? Object.keys(response.data.article.content)
+            : null,
+        audio: response.data.article?.audio
+      });
+      const localized = localizeArticle(response.data.article);
+      console.log('[ArticleView] localized pack', {
+        lang,
+        title: localized?.title,
+        summary: localized?.summary?.slice?.(0, 80),
+        content: localized?.content?.slice?.(0, 80),
+        audioUrl: localized?.audioUrl
+      });
+      setArticle(localized);
+      setRelatedArticles(
+        (response.data.relatedArticles || []).map((a) => localizeArticle(a))
+      );
       setBreadcrumb(response.data.breadcrumb || []);
 
       // Record view
@@ -98,6 +122,7 @@ const ArticleView = () => {
       }
     } catch (err) {
       console.error('Failed to fetch article:', err);
+      setArticle(null);
     } finally {
       setLoading(false);
     }
@@ -251,7 +276,7 @@ const ArticleView = () => {
   const categoryName =
     typeof article.category?.name === 'string'
       ? article.category.name
-      : article.category?.name?.[lang] || article.category?.name?.en;
+      : localizeField(article.category?.name);
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -274,8 +299,8 @@ const ArticleView = () => {
         })}
       />
       {/* Breadcrumb */}
-      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+      <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }} className="page-breadcrumb">
+        <Link to="/" className="page-breadcrumb__home" style={{ textDecoration: 'none', color: 'inherit' }}>
           {t('home')}
         </Link>
         {breadcrumb.map((item, index) => (
@@ -287,7 +312,7 @@ const ArticleView = () => {
               color: index === breadcrumb.length - 1 ? 'primary' : 'inherit'
             }}
           >
-            {item.name?.[lang] || item.name?.en}
+            {localizeField(item.name)}
           </Link>
         ))}
       </Breadcrumbs>
@@ -370,23 +395,49 @@ const ArticleView = () => {
         {article.isBreaking && (
           <Chip label={t('breakingNews')} color="error" size="small" sx={{ mb: 2 }} />
         )}
-        
+
         <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-          {article.title}
+          {article.title || article.localization?.unavailableMessage || ''}
         </Typography>
 
-        <Typography
-          variant="subtitle1"
-          paragraph
-          sx={{
-            color: 'error.main',
-            fontStyle: 'italic',
-            fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
-            fontSize: { xs: '1.15rem', sm: '1.3rem' }
-          }}
-        >
-          {`"${article.summary}"`}
-        </Typography>
+        {article.summary ? (
+          <Typography
+            variant="subtitle1"
+            paragraph
+            sx={{
+              color: 'error.main',
+              fontStyle: 'italic',
+              fontFamily: 'Mallanna, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+              fontSize: { xs: '1.15rem', sm: '1.3rem' }
+            }}
+          >
+            {`"${article.summary}"`}
+          </Typography>
+        ) : article.localization?.missing?.summary ? (
+          <Typography variant="body2" color="text.secondary" paragraph>
+            {article.localization.unavailableMessage}
+          </Typography>
+        ) : null}
+
+        {article.audioUrl ? (
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+              {t('audio')}
+            </Typography>
+            <audio
+              key={`${article._id}-${lang}-${article.audioUrl}`}
+              controls
+              style={{ width: '100%' }}
+              src={article.audioUrl}
+            >
+              Your browser does not support audio playback.
+            </audio>
+          </Box>
+        ) : article.localization?.missing?.audio ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            {t('audioUnavailable')}
+          </Typography>
+        ) : null}
 
         {/* Stats and Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
@@ -418,17 +469,23 @@ const ArticleView = () => {
       <Divider sx={{ mb: 3 }} />
 
       {/* Article Content */}
-      <Typography
-        variant="body1"
-        sx={{
-          lineHeight: 1.8,
-          '& p': { mb: 2 },
-          whiteSpace: 'pre-wrap',
-          fontSize: '1.1rem'
-        }}
-      >
-        {article.content}
-      </Typography>
+      {article.content ? (
+        <Typography
+          variant="body1"
+          sx={{
+            lineHeight: 1.8,
+            '& p': { mb: 2 },
+            whiteSpace: 'pre-wrap',
+            fontSize: '1.1rem'
+          }}
+        >
+          {article.content}
+        </Typography>
+      ) : (
+        <Typography variant="body1" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+          {article.localization?.unavailableMessage || getUnavailableMessage(lang)}
+        </Typography>
+      )}
 
       {/* Source Attribution */}
       {article.source && (

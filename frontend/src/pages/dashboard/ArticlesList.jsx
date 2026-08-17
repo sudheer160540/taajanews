@@ -37,16 +37,116 @@ import {
   Edit as EditIcon,
   Visibility as ViewIcon,
   Delete as DeleteIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Download as DownloadIcon
 } from '@mui/icons-material';
 import { articlesApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { getLocalizedField } from '../../utils/articleLocalization';
+
+/**
+ * Persisted audio lives on article.audio as a lang→URL map
+ * (same shape Edit Article uses: article.audio[currentLang]).
+ * Example: { te: 'https://...wav', en: 'https://...wav', hi: '...' }
+ */
+const normalizeAudioMap = (audio) => {
+  if (!audio) return {};
+  if (audio instanceof Map) {
+    return Object.fromEntries(
+      [...audio.entries()].filter(([, v]) => typeof v === 'string' && v.trim())
+    );
+  }
+  if (typeof audio !== 'object') return {};
+  const out = {};
+  Object.entries(audio).forEach(([lang, url]) => {
+    if (typeof url === 'string' && url.trim()) out[lang] = url.trim();
+  });
+  return out;
+};
+
+/** Resolve download URL the same way ArticleEditor picks the player src. */
+const resolveArticleAudioUrl = (article, preferredLang = 'en') => {
+  if (!article) return null;
+  const audio = normalizeAudioMap(article.audio);
+  const lang = String(preferredLang || 'en').split('-')[0];
+  return (
+    audio[lang] ||
+    audio.en ||
+    audio.te ||
+    audio.hi ||
+    Object.values(audio).find(Boolean) ||
+    (typeof article.audioUrl === 'string' && article.audioUrl.trim() ? article.audioUrl.trim() : null) ||
+    null
+  );
+};
+
+const downloadArticleAudio = async (article, preferredLang = 'en') => {
+  const audioUrl = resolveArticleAudioUrl(article, preferredLang);
+  if (!audioUrl) return;
+
+  const title =
+    getLocalizedField(article.title, preferredLang) ||
+    (typeof article.title === 'string' ? article.title : '') ||
+    'article-audio';
+  const safeName = String(title || 'article-audio')
+    .replace(/[^\w\u0C00-\u0C7F\u0900-\u097F\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 80) || 'article-audio';
+
+  const triggerBlobDownload = (blob, filename) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  // Try authenticated proxy when available; otherwise download the Azure URL directly
+  if (article?._id) {
+    try {
+      const response = await articlesApi.downloadAudio(article._id, {
+        lang: String(preferredLang || 'en').split('-')[0]
+      });
+      const blob = response.data;
+      const contentType = response.headers?.['content-type'] || blob.type || '';
+      if (!contentType.includes('application/json')) {
+        const ext = contentType.includes('mpeg') ? 'mp3' : 'wav';
+        triggerBlobDownload(blob, `${safeName}.${ext}`);
+        return;
+      }
+    } catch (err) {
+      console.warn('[My Articles] proxy download unavailable, using article.audio URL', err?.message || err);
+    }
+  }
+
+  try {
+    const response = await fetch(audioUrl);
+    if (!response.ok) throw new Error('Audio fetch failed');
+    const blob = await response.blob();
+    const ext = blob.type?.includes('mpeg') ? 'mp3' : blob.type?.includes('wav') ? 'wav' : 'audio';
+    triggerBlobDownload(blob, `${safeName}.${ext}`);
+  } catch {
+    const link = document.createElement('a');
+    link.href = audioUrl;
+    link.download = `${safeName}.wav`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+};
 
 const ArticlesList = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { isEditor, canPublish, canDeleteArticles, user } = useAuth();
-  const lang = i18n.language;
+  const { language, localizeField } = useLanguage();
+  const lang = language;
 
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +168,7 @@ const ArticlesList = () => {
 
   useEffect(() => {
     fetchArticles();
-  }, [page, rowsPerPage, statusFilter, fromDate, toDate, search]);
+  }, [page, rowsPerPage, statusFilter, fromDate, toDate, search, lang]);
 
   useEffect(() => () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -82,9 +182,27 @@ const ArticlesList = () => {
       if (fromDate) params.fromDate = fromDate;
       if (toDate) params.toDate = toDate;
       if (search) params.search = search;
+      if (lang) params.lang = String(lang).split('-')[0];
 
       const response = await articlesApi.getManaged(params);
-      setArticles(response.data.articles);
+      const rawList = response.data.articles || [];
+
+      // TEMP: inspect actual manage/list payload (production historically omits `audio`)
+      if (rawList[0]) {
+        console.log('[My Articles] list API sample keys:', Object.keys(rawList[0]));
+        console.log('[My Articles] list API audio fields:', {
+          hasAudioKey: Object.prototype.hasOwnProperty.call(rawList[0], 'audio'),
+          audio: rawList[0].audio,
+          audioUrl: rawList[0].audioUrl
+        });
+      }
+
+      const list = rawList.map((a) => ({
+        ...a,
+        audio: normalizeAudioMap(a.audio)
+      }));
+
+      setArticles(list);
       setTotal(response.data.pagination.total);
     } catch (err) {
       console.error('Failed to fetch articles:', err);
@@ -93,9 +211,33 @@ const ArticlesList = () => {
     }
   };
 
-  const handleMenuOpen = (event, article) => {
+  const handleMenuOpen = async (event, article) => {
+    event.preventDefault();
+    event.stopPropagation();
     setMenuAnchor(event.currentTarget);
     setSelectedArticle(article);
+
+    console.log('[My Articles] menu open — list article audio:', {
+      audio: article?.audio,
+      audioUrl: article?.audioUrl,
+      resolved: resolveArticleAudioUrl(article, lang)
+    });
+
+    // List API may omit `audio`. Edit API returns the real persisted field: article.audio[lang]
+    if (resolveArticleAudioUrl(article, lang)) return;
+
+    try {
+      const res = await articlesApi.getById(article._id);
+      const audio = normalizeAudioMap(res.data?.article?.audio);
+      console.log('[My Articles] edit API article.audio:', audio);
+      const enriched = { ...article, audio };
+      setSelectedArticle(enriched);
+      if (Object.keys(audio).length > 0) {
+        setArticles((prev) => prev.map((a) => (a._id === article._id ? enriched : a)));
+      }
+    } catch (err) {
+      console.warn('[My Articles] failed to load article.audio from edit API', err?.message || err);
+    }
   };
 
   const handleMenuClose = () => {
@@ -153,9 +295,10 @@ const ArticlesList = () => {
 
   const handleDeleteArticle = async () => {
     if (!selectedArticle) return;
-    const title = typeof selectedArticle.title === 'string'
-      ? selectedArticle.title
-      : (selectedArticle.title?.te || selectedArticle.title?.en || 'this article');
+    const title =
+      localizeField(selectedArticle.title) ||
+      (typeof selectedArticle.title === 'string' ? selectedArticle.title : '') ||
+      'this article';
     if (!window.confirm(`Permanently delete "${title}"? This removes all images, audio, and videos from storage and cannot be undone.`)) {
       return;
     }
@@ -168,6 +311,15 @@ const ArticlesList = () => {
       alert(err.response?.data?.error || 'Failed to delete article');
     }
     handleMenuClose();
+  };
+
+  const handleDownloadAudio = (article, event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (!resolveArticleAudioUrl(article, lang)) return;
+    downloadArticleAudio(article, lang);
   };
 
   const getStatusColor = (status) => {
@@ -331,7 +483,9 @@ const ArticlesList = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                articles.map((article) => (
+                articles.map((article) => {
+                  const hasAudio = Boolean(resolveArticleAudioUrl(article, lang));
+                  return (
                   <TableRow key={article._id} hover>
                     <TableCell>
                       <Typography
@@ -344,14 +498,14 @@ const ArticlesList = () => {
                           whiteSpace: 'nowrap'
                         }}
                       >
-                        {typeof article.title === 'string' ? article.title : (article.title?.te || article.title?.en || article.title)}
+                        {localizeField(article.title) ||
+                          (typeof article.title === 'string' ? article.title : '') ||
+                          t('versionUnavailable')}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={typeof article.category?.name === 'string' 
-                          ? article.category.name 
-                          : (article.category?.name?.te || article.category?.name?.en || '-')}
+                        label={localizeField(article.category?.name) || '-'}
                         size="small"
                         variant="outlined"
                       />
@@ -380,7 +534,17 @@ const ArticlesList = () => {
                       >
                         <ViewIcon fontSize="small" />
                       </IconButton>
-                      {(canEditArticle(article) || canPublish || canDeleteArticles) && (
+                      {hasAudio && (
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleDownloadAudio(article, e)}
+                          aria-label="Download Audio"
+                          title="Download Audio"
+                        >
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      {(canEditArticle(article) || canPublish || canDeleteArticles || hasAudio) && (
                         <IconButton
                           size="small"
                           onClick={(e) => handleMenuOpen(e, article)}
@@ -390,7 +554,8 @@ const ArticlesList = () => {
                       )}
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -416,6 +581,19 @@ const ArticlesList = () => {
         open={Boolean(menuAnchor)}
         onClose={handleMenuClose}
       >
+        {resolveArticleAudioUrl(selectedArticle, lang) && (
+          <MenuItem
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDownloadAudio(selectedArticle, e);
+              handleMenuClose();
+            }}
+          >
+            <DownloadIcon fontSize="small" sx={{ mr: 1 }} />
+            Download Audio
+          </MenuItem>
+        )}
         {/* Any role: submit draft for review */}
         {selectedArticle?.status === 'draft' && (
           <MenuItem onClick={() => handleStatusChange('pending')}>
