@@ -228,6 +228,20 @@ const articleSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  /** External feed/source name when auto-imported (e.g. eenadu, sakshi). */
+  referenceSource: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    default: ''
+  },
+  /** Lexical + phrase match % (0–100) between source text and AI rewrite. Lower is better. */
+  plagiarismScore: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: null
+  },
   seo: {
     metaTitle: String,
     metaDescription: String,
