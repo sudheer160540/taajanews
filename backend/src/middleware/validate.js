@@ -226,6 +226,9 @@ const schemas = {
         'string.uri': 'youtubeUrl must be a valid URL'
       }),
     tags: Joi.array().items(Joi.string().max(50)),
+    plagiarismScore: Joi.number().min(0).max(100).allow(null),
+    referenceSource: Joi.string().max(100).allow('', null),
+    sourceOriginalText: Joi.string().max(50000).allow('', null),
     status: Joi.string().valid('draft', 'pending', 'published', 'archived'),
     isFeatured: Joi.boolean(),
     isBreaking: Joi.boolean(),

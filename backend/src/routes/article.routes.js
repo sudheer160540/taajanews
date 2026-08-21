@@ -14,6 +14,35 @@ const { notifyArticlePublished } = require('../utils/pushNotification');
 const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
 const { translateArticleFields, generateAndTranslateArticle } = require('../utils/articleTranslate');
 const { generateAudioForLanguages, getFilledAudioLanguages } = require('../utils/sarvamAudio');
+const { calculatePlagiarismMatchPercentage } = require('../utils/plagiarismAnalysis');
+
+const pickRewrittenContent = (content) => {
+  if (!content) return '';
+  if (content instanceof Map) {
+    return (
+      content.get('en') ||
+      content.get('te') ||
+      content.get('hi') ||
+      [...content.values()].find((value) => String(value || '').trim()) ||
+      ''
+    );
+  }
+  const plain = content || {};
+  return (
+    plain.en ||
+    plain.te ||
+    plain.hi ||
+    Object.values(plain).find((value) => String(value || '').trim()) ||
+    ''
+  );
+};
+
+async function resolvePlagiarismScore(sourceOriginalText, content) {
+  const original = String(sourceOriginalText || '').trim();
+  const rewritten = pickRewrittenContent(content).trim();
+  if (!original || !rewritten) return null;
+  return calculatePlagiarismMatchPercentage(original, rewritten);
+}
 
 // Fire-and-forget mobile push (FCM) + Telegram. NEVER blocks the HTTP response
 // and NEVER throws; notification outages must not break the article API.
@@ -756,8 +785,16 @@ router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to view this article' });
     }
 
-    // Return full multilingual data for editing
-    res.json({ article });
+    // toJSON flattens Map fields (title/summary/content); plain toObject() returns them empty.
+    const articlePayload = typeof article.toJSON === 'function'
+      ? article.toJSON()
+      : article.toObject?.({ flattenMaps: true, virtuals: true }) || article;
+    if (!['chief-editor', 'admin'].includes(req.user.role)) {
+      delete articlePayload.plagiarismScore;
+      delete articlePayload.referenceSource;
+    }
+
+    res.json({ article: articlePayload });
   } catch (error) {
     console.error('Get article by ID error:', error);
     res.status(500).json({ error: 'Failed to fetch article' });
@@ -816,6 +853,14 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
     if (req.body.audio) {
       articleData.audio = new Map(Object.entries(req.body.audio));
     }
+
+    if (req.body.sourceOriginalText) {
+      articleData.plagiarismScore = await resolvePlagiarismScore(
+        req.body.sourceOriginalText,
+        req.body.content
+      );
+    }
+    delete articleData.sourceOriginalText;
 
     const article = await Article.create(articleData);
 
@@ -922,6 +967,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     if (updateData.audio) {
       updateData.audio = new Map(Object.entries(updateData.audio));
     }
+
+    if (req.body.sourceOriginalText) {
+      updateData.plagiarismScore = await resolvePlagiarismScore(
+        req.body.sourceOriginalText,
+        updateData.content || article.content
+      );
+    }
+    delete updateData.sourceOriginalText;
 
     if (!updateData.source) {
       updateData.source = 'Taaja News Network';

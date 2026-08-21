@@ -3,7 +3,8 @@ const {
   geminiGenerateText,
   openaiGenerateText,
   getTranslateProvider,
-  cleanNewsText
+  cleanNewsText,
+  slugifyTag
 } = require('./translateService');
 
 const TITLE_LIMIT = 200;
@@ -18,6 +19,9 @@ const FIELD_LIMITS = {
 
 const FIELD_NAMES = ['title', 'summary', 'content'];
 const ALL_LANGS = ['te', 'hi', 'en'];
+
+const MIN_TAGS = 4;
+const MAX_TAGS = 5;
 
 const LANGUAGE_NAMES = {
   te: 'Telugu',
@@ -76,7 +80,8 @@ const createGenerator = () => {
       generate: (system, user, options = {}) =>
         geminiGenerateText(system, user, {
           temperature: options.temperature,
-          maxOutputTokens: options.maxTokens
+          maxOutputTokens: options.maxTokens,
+          json: options.json
         })
     };
   }
@@ -225,6 +230,67 @@ async function translateFieldsToAllLanguages(sourceParts, sourceLang, generate) 
   return result;
 }
 
+const TAGS_SYSTEM_PROMPT =
+  'You are a news SEO editor. Read a news article and extract its key topic tags: ' +
+  'the people, places, organizations, and themes a reader would search for. ' +
+  'Tags must be in ENGLISH, lowercase, 1 to 3 words each, no hashtags and no punctuation. ' +
+  'Return ONLY valid JSON in the form {"tags": ["tag one", "tag two"]}. No markdown, no code fences, no commentary.';
+
+/**
+ * Pull the tag list out of a model response. Providers occasionally wrap JSON in
+ * code fences or answer with a plain list, so both shapes are accepted.
+ */
+const parseTags = (rawText) => {
+  const text = String(rawText || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+  if (!text) return [];
+
+  let values = [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) values = parsed;
+    else if (Array.isArray(parsed?.tags)) values = parsed.tags;
+  } catch {
+    // Not JSON — fall back to a comma or newline separated list.
+    values = text.split(/[,\n]/);
+  }
+
+  const seen = new Set();
+  const tags = [];
+  for (const value of values) {
+    const slug = slugifyTag(value);
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    tags.push(slug);
+    if (tags.length >= MAX_TAGS) break;
+  }
+  return tags;
+};
+
+/**
+ * Generate English topic tags from the English version of the story. Tags are a
+ * nice-to-have, so any failure returns an empty list instead of failing the
+ * whole translation request.
+ */
+async function generateEnglishTags({ title, content, summary }, generate) {
+  const source = [title, content || summary].filter(Boolean).join('\n\n').trim();
+  if (!source) return [];
+
+  try {
+    const raw = await generate(
+      TAGS_SYSTEM_PROMPT,
+      `Generate ${MIN_TAGS} to ${MAX_TAGS} English tags for this article. Return ONLY {"tags": [...]}.\n\n${source.slice(0, 6000)}`,
+      { temperature: 0.3, maxTokens: 512, json: true }
+    );
+    return parseTags(raw);
+  } catch (err) {
+    console.error('[translate] Tag generation failed:', err.message);
+    return [];
+  }
+}
+
 const resolveSourceLang = (title, summary, content, preferredLang = 'te') => {
   const fields = [title, summary, content];
   if (fields.some((f) => f?.[preferredLang]?.trim())) return preferredLang;
@@ -261,8 +327,16 @@ async function translateArticleFields({ title, summary, content, sourceLang = 't
   );
 
   const translated = await translateFieldsToAllLanguages(sourceParts, resolvedSourceLang, generate);
+  const tags = await generateEnglishTags(
+    {
+      title: translated.title.en,
+      summary: translated.summary.en,
+      content: translated.content.en
+    },
+    generate
+  );
 
-  return { ...translated, sourceLang: resolvedSourceLang, provider };
+  return { ...translated, tags, sourceLang: resolvedSourceLang, provider };
 }
 
 /**
@@ -296,8 +370,16 @@ async function generateAndTranslateArticle({ text, sourceLang = 'te' }) {
   }
 
   const translated = await translateFieldsToAllLanguages(generated, resolvedSourceLang, generate);
+  const tags = await generateEnglishTags(
+    {
+      title: translated.title.en,
+      summary: translated.summary.en,
+      content: translated.content.en
+    },
+    generate
+  );
 
-  return { ...translated, sourceLang: resolvedSourceLang, provider };
+  return { ...translated, tags, sourceLang: resolvedSourceLang, provider };
 }
 
 module.exports = {

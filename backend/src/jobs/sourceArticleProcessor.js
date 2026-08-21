@@ -3,6 +3,7 @@ const SourceArticle = require('../models/SourceArticle');
 const Article = require('../models/Article');
 const User = require('../models/User');
 const { buildSourceArticleMultilingual } = require('../utils/translateService');
+const { calculatePlagiarismMatchPercentage } = require('../utils/plagiarismAnalysis');
 const {
   notifySourceArticleProcessedTelegram,
   notifySourceArticleFailedTelegram
@@ -53,7 +54,7 @@ async function markSourceComplete(sourceDoc, articleId) {
  * Scraped source title is context only — saved Article.title comes from AI rewrite.
  */
 async function buildMultilingualFields(sourceDoc) {
-  const { title, summary, content, tags } = await buildSourceArticleMultilingual({
+  const { title, summary, content, tags, anchorLang } = await buildSourceArticleMultilingual({
     title: sourceDoc.title,
     contentText: sourceDoc.contentText,
     source: sourceDoc.source
@@ -63,7 +64,8 @@ async function buildMultilingualFields(sourceDoc) {
     title: toMap(title),
     summary: toMap(summary),
     content: toMap(content),
-    tags: Array.isArray(tags) ? tags : []
+    tags: Array.isArray(tags) ? tags : [],
+    anchorLang
   };
 }
 
@@ -103,7 +105,17 @@ const buildShortLinks = async (title, content) => {
 };
 
 async function createArticleFromSource(sourceDoc, authorId) {
-  const { title, summary, content, tags } = await buildMultilingualFields(sourceDoc);
+  const { title, summary, content, tags, anchorLang } = await buildMultilingualFields(sourceDoc);
+
+  const rewrittenText =
+    content.get(anchorLang) ||
+    content.get('en') ||
+    content.get('te') ||
+    '';
+  const plagiarismScore = await calculatePlagiarismMatchPercentage(
+    sourceDoc.contentText,
+    rewrittenText
+  );
 
   // Dynamic identity: TJ-{nanoid}, shortId, slug from English headline (create only if missing)
   const { articleId, shortId, slug } = await ensureArticleIdentity(title, {});
@@ -122,12 +134,14 @@ async function createArticleFromSource(sourceDoc, authorId) {
     status: 'draft',
     source: 'Taaja News Network',
     sourceUrl: '',
+    referenceSource: sourceDoc.source || '',
     featuredImage: {
       url: getDefaultFeaturedImageUrl(),
       alt: 'default_breaking_news',
       caption: new Map()
     },
     tags: tags || [],
+    plagiarismScore,
     isFeatured: false,
     isBreaking: false,
     youtubeUrl: '',
@@ -185,7 +199,8 @@ async function processNewSourceArticles() {
       summary.succeeded++;
       console.log(
         `[source-cron] OK ${label} → article ${article._id} ` +
-        `articleId=${article.articleId} slug=${article.slug}`
+        `articleId=${article.articleId} slug=${article.slug} ` +
+        `referenceSource=${article.referenceSource || 'n/a'} plagiarism=${article.plagiarismScore ?? 'n/a'}`
       );
       notifySourceArticleProcessedTelegram(article, sourceDoc).catch((tgErr) => {
         console.error(`[source-cron] Telegram notify failed for ${label}:`, tgErr.message);

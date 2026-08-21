@@ -6,11 +6,13 @@ const sharp = require('sharp');
 const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../config/azure');
 const { protect, reporterOrAdmin } = require('../middleware/auth');
 
-const MAX_FEATURED_IMAGE_WIDTH = 1600;
-const WEBP_QUALITY = 85;
+const MAX_FEATURED_IMAGE_WIDTH = 2400;
+const WEBP_QUALITY = 92;
+const WEBP_OPTIONS = { quality: WEBP_QUALITY, effort: 4, smartSubsample: false };
+// Retina-ready outputs: ~2x display size for crisp web and mobile rendering.
 const FEATURED_IMAGE_VARIANTS = {
-  web: { width: 800, height: 700 },
-  app: { width: 750, height: 750 }
+  web: { width: 1600, height: 1400 },
+  app: { width: 1200, height: 1200 }
 };
 
 // Configure multer for memory storage (50MB for e-paper PDFs)
@@ -132,13 +134,19 @@ const cropAndConvertToWebp = async (orientedBuffer, metadata, crop, targetSize =
   );
 
   const resizeOptions = targetSize
-    ? { width: targetSize.width, height: targetSize.height, fit: 'cover' }
+    ? {
+        width: targetSize.width,
+        height: targetSize.height,
+        fit: 'cover',
+        kernel: sharp.kernel.lanczos3,
+        withoutEnlargement: false
+      }
     : { width: MAX_FEATURED_IMAGE_WIDTH, withoutEnlargement: true };
 
   return sharp(orientedBuffer)
     .extract({ left, top, width, height })
     .resize(resizeOptions)
-    .webp({ quality: WEBP_QUALITY })
+    .webp(WEBP_OPTIONS)
     .toBuffer();
 };
 
