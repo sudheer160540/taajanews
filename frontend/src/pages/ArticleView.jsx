@@ -302,11 +302,12 @@ const ArticleView = () => {
             mb: 3,
             borderRadius: 2,
             overflow: 'hidden',
-            // 16:9 aspect ratio when the iframe is active; falls back to the
-            // image's natural-ish 400px height when only the photo is shown.
+            bgcolor: playingVideo && hasVideo ? 'black' : 'transparent',
             ...(playingVideo && hasVideo
-              ? { aspectRatio: '16 / 9', bgcolor: 'black' }
-              : { height: 400 })
+              ? { aspectRatio: '16 / 9' }
+              : hasImage
+                ? { height: { xs: 240, sm: 320, md: 420 } }
+                : {})
           }}
         >
           {playingVideo && hasVideo ? (
@@ -333,8 +334,8 @@ const ArticleView = () => {
                   src={article.featuredImage.url}
                   alt={article.featuredImage.alt || article.title}
                   sx={{
-                    width: '100%',
-                    height: '100%',
+                    width: '100% !important',
+                    height: '100% !important',
                     objectFit: 'cover',
                     display: 'block'
                   }}

@@ -29,7 +29,8 @@ import {
   DialogContent,
   DialogActions,
   Divider,
-  Tooltip
+  Tooltip,
+  LinearProgress
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -41,7 +42,8 @@ import {
   Translate as TranslateIcon,
   LocationOn as LocationIcon,
   Close as CloseIcon,
-  VolumeUp as VolumeUpIcon
+  VolumeUp as VolumeUpIcon,
+  Download as DownloadIcon
 } from '@mui/icons-material';
 import { articlesApi, categoriesApi, uploadApi, usersApi } from '../../services/api';
 import { articleTranslateApi } from '../../services/articleTranslateApi';
@@ -49,16 +51,27 @@ import languageService, { getLocalizedValue } from '../../services/languageServi
 import { useAuth } from '../../contexts/AuthContext';
 
 const FEATURED_IMAGE_VARIANTS = {
-  web: { label: 'Website', width: 800, height: 700, aspect: 800 / 700 },
-  app: { label: 'App / Mobile', width: 750, height: 750, aspect: 1 }
+  web: { label: 'Website', width: 1600, height: 1400, aspect: 1600 / 1400 },
+  app: { label: 'App / Mobile', width: 1200, height: 1200, aspect: 1 }
 };
+const MIN_SOURCE_IMAGE_WIDTH = 1200;
 const SUPPORTED_CROP_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const AUDIO_LANG_LABELS = { te: 'Telugu', hi: 'Hindi', en: 'English' };
+const AUDIO_LANG_ORDER = ['te', 'hi', 'en'];
+
+const getPlagiarismProgressColor = (score) => {
+  if (score == null) return 'inherit';
+  if (score <= 30) return 'success';
+  if (score <= 60) return 'warning';
+  return 'error';
+};
 
 const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { canPublish, user, isEditor } = useAuth();
+  const canViewImportMetadata = canPublish;
   const isEditing = !!id;
 
   // Languages state
@@ -88,6 +101,8 @@ const ArticleEditor = () => {
     reporterName: '',
     source: 'Taaja News Network',
     sourceUrl: '',
+    referenceSource: '',
+    plagiarismScore: null,
     youtubeUrl: ''
   });
   const [convertingAudio, setConvertingAudio] = useState(false);
@@ -108,6 +123,7 @@ const ArticleEditor = () => {
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const [cropImageFile, setCropImageFile] = useState(null);
   const [cropImageUrl, setCropImageUrl] = useState('');
+  const [cropSourceSize, setCropSourceSize] = useState({ width: 0, height: 0 });
   const [cropVariant, setCropVariant] = useState('web');
   const [variantCrops, setVariantCrops] = useState({ web: null, app: null });
   const [translating, setTranslating] = useState(false);
@@ -200,6 +216,8 @@ const ArticleEditor = () => {
           reporterName: articleData.reporterName || '',
           source: articleData.source || 'Taaja News Network',
           sourceUrl: articleData.sourceUrl || '',
+          referenceSource: articleData.referenceSource || '',
+          plagiarismScore: articleData.plagiarismScore ?? null,
           youtubeUrl: articleData.youtubeUrl || ''
         });
 
@@ -341,6 +359,17 @@ const ArticleEditor = () => {
     }));
   };
 
+  // AI-suggested tags are added to whatever the reporter already typed, never replacing them.
+  const mergeTags = (existing, incoming) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return existing;
+    const merged = [...(existing || [])];
+    incoming.forEach((tag) => {
+      const clean = String(tag || '').trim().toLowerCase();
+      if (clean && !merged.includes(clean)) merged.push(clean);
+    });
+    return merged;
+  };
+
   const handleImageSelect = (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -357,20 +386,22 @@ const ArticleEditor = () => {
 
     setCropImageFile(file);
     setCropImageUrl(URL.createObjectURL(file));
+    setCropSourceSize({ width: 0, height: 0 });
     setCropVariant('web');
     setVariantCrops({ web: null, app: null });
     setCropDialogOpen(true);
   };
 
   const handleCropImageLoad = (e) => {
-    const { width, height } = e.currentTarget;
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    setCropSourceSize({ width: naturalWidth, height: naturalHeight });
     const initialCrops = Object.fromEntries(
       Object.entries(FEATURED_IMAGE_VARIANTS).map(([name, variant]) => [
         name,
         centerCrop(
-          makeAspectCrop({ unit: '%', width: 90 }, variant.aspect, width, height),
-          width,
-          height
+          makeAspectCrop({ unit: '%', width: 90 }, variant.aspect, naturalWidth, naturalHeight),
+          naturalWidth,
+          naturalHeight
         )
       ])
     );
@@ -386,6 +417,7 @@ const ArticleEditor = () => {
     setCropDialogOpen(false);
     setCropImageFile(null);
     setCropImageUrl('');
+    setCropSourceSize({ width: 0, height: 0 });
     setCropVariant('web');
     setVariantCrops({ web: null, app: null });
   };
@@ -411,10 +443,11 @@ const ArticleEditor = () => {
         featuredImage: { url: blobUrl, appUrl: appBlobUrl, alt: cropImageFile.name }
       }));
 
-      setSuccess('Website and app images cropped, converted to WebP, and uploaded successfully');
+      setSuccess('High-quality website and mobile WebP images uploaded successfully');
       setCropDialogOpen(false);
       setCropImageFile(null);
       setCropImageUrl('');
+      setCropSourceSize({ width: 0, height: 0 });
       setCropVariant('web');
       setVariantCrops({ web: null, app: null });
     } catch (err) {
@@ -487,13 +520,20 @@ const ArticleEditor = () => {
       mergeField('title');
       mergeField('summary');
       mergeField('content');
+      updated.tags = mergeTags(prev.tags, translatePreview.tags);
       return updated;
     });
+
+    const appliedTags = translatePreview.tags?.length || 0;
 
     setTranslateDialogOpen(false);
     setTranslatePreview(null);
     setTranslateError(null);
-    setSuccess('Translation applied to all languages');
+    setSuccess(
+      appliedTags
+        ? `Translation applied to all languages. ${appliedTags} tag(s) added.`
+        : 'Translation applied to all languages'
+    );
   };
 
   const handleCloseTranslateDialog = () => {
@@ -568,10 +608,15 @@ const ArticleEditor = () => {
         ...prev,
         title: mergedTitle,
         summary: mergedSummary,
-        content: mergedContent
+        content: mergedContent,
+        tags: mergeTags(prev.tags, translated.tags)
       }));
 
-      setSuccess('Translation completed successfully');
+      setSuccess(
+        translated.tags?.length
+          ? `Translation completed successfully. ${translated.tags.length} tag(s) added.`
+          : 'Translation completed successfully'
+      );
     } catch (err) {
       setApiError(err, 'Translation failed. Please try again.');
       console.error(err);
@@ -583,6 +628,53 @@ const ArticleEditor = () => {
   // Audio is spoken from the summary, so only languages with a summary can be converted.
   const audioLangs = ['te', 'hi', 'en'].filter((lang) => article.summary?.[lang]?.trim());
   const canConvertAudio = audioLangs.length > 0;
+  const availableAudioTracks = AUDIO_LANG_ORDER
+    .filter((lang) => article.audio?.[lang]?.trim())
+    .map((lang) => ({
+      lang,
+      url: article.audio[lang].trim(),
+      label: AUDIO_LANG_LABELS[lang] || lang.toUpperCase()
+    }));
+
+  const handleDownloadAudio = async (url, lang) => {
+    const filename = `summary-audio-${lang}.wav`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const renderAudioTrack = (lang, url, label) => (
+    <Box key={lang} sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.75 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight={600}>
+          {label}
+        </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={() => handleDownloadAudio(url, lang)}
+        >
+          Download
+        </Button>
+      </Box>
+      <Box component="audio" controls sx={{ width: '100%', display: 'block' }} src={url}>
+        Your browser does not support audio playback.
+      </Box>
+    </Box>
+  );
 
   const handleConvertAudio = async () => {
     setError(null);
@@ -786,7 +878,7 @@ const ArticleEditor = () => {
               onClick={handleOpenTranslateDialog}
               disabled={saving || translating}
             >
-              Translate
+              Re write
             </Button>
             <Button
               variant="outlined"
@@ -938,15 +1030,14 @@ const ArticleEditor = () => {
                 />
               </Box>
 
-              {/* Audio Preview */}
+              {/* Audio preview for current language tab */}
               {article.audio[currentLang] && (
                 <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                    Audio ({languages[langTab]?.name || currentLang})
-                  </Typography>
-                  <audio controls style={{ width: '100%' }} src={article.audio[currentLang]}>
-                    Your browser does not support audio playback.
-                  </audio>
+                  {renderAudioTrack(
+                    currentLang,
+                    article.audio[currentLang],
+                    languages[langTab]?.name || AUDIO_LANG_LABELS[currentLang] || currentLang
+                  )}
                 </Box>
               )}
 
@@ -1000,25 +1091,37 @@ const ArticleEditor = () => {
                   <Grid container spacing={1}>
                     <Grid item xs={article.featuredImage.appUrl ? 7 : 12}>
                       <Typography variant="caption" color="text.secondary">
-                        Website · 800×700
+                        Website · {FEATURED_IMAGE_VARIANTS.web.width}×{FEATURED_IMAGE_VARIANTS.web.height}
                       </Typography>
                       <Box
                         component="img"
                         src={article.featuredImage.url}
                         alt="Website featured"
-                        sx={{ width: '100%', aspectRatio: '8 / 7', objectFit: 'cover', borderRadius: 1 }}
+                        sx={{
+                          width: '100%',
+                          aspectRatio: `${FEATURED_IMAGE_VARIANTS.web.width} / ${FEATURED_IMAGE_VARIANTS.web.height}`,
+                          objectFit: 'cover',
+                          borderRadius: 1,
+                          imageRendering: 'auto'
+                        }}
                       />
                     </Grid>
                     {article.featuredImage.appUrl && (
                       <Grid item xs={5}>
                         <Typography variant="caption" color="text.secondary">
-                          App · 750×750
+                          App · {FEATURED_IMAGE_VARIANTS.app.width}×{FEATURED_IMAGE_VARIANTS.app.height}
                         </Typography>
                         <Box
                           component="img"
                           src={article.featuredImage.appUrl}
                           alt="App featured"
-                          sx={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 1 }}
+                          sx={{
+                            width: '100%',
+                            aspectRatio: '1 / 1',
+                            objectFit: 'cover',
+                            borderRadius: 1,
+                            imageRendering: 'auto'
+                          }}
                         />
                       </Grid>
                     )}
@@ -1033,24 +1136,44 @@ const ArticleEditor = () => {
                   )}
                 </Box>
               ) : (
-                <Button
-                  variant="outlined"
-                  component="label"
-                  fullWidth
-                  startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
-                  disabled={uploading || isReporterLockedOut}
-                >
-                  {uploading ? 'Uploading...' : 'Upload Image'}
-                  <input
-                    type="file"
-                    hidden
-                    accept={SUPPORTED_CROP_IMAGE_TYPES.join(',')}
-                    onChange={handleImageSelect}
-                  />
-                </Button>
+                <>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    fullWidth
+                    startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
+                    disabled={uploading || isReporterLockedOut}
+                  >
+                    {uploading ? 'Uploading...' : 'Upload Image'}
+                    <input
+                      type="file"
+                      hidden
+                      accept={SUPPORTED_CROP_IMAGE_TYPES.join(',')}
+                      onChange={handleImageSelect}
+                    />
+                  </Button>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    Upload a high-resolution JPEG, PNG, or WebP (at least {MIN_SOURCE_IMAGE_WIDTH}px wide recommended).
+                    Two retina-ready images are generated: website ({FEATURED_IMAGE_VARIANTS.web.width}×{FEATURED_IMAGE_VARIANTS.web.height}) and mobile ({FEATURED_IMAGE_VARIANTS.app.width}×{FEATURED_IMAGE_VARIANTS.app.height}).
+                  </Typography>
+                </>
               )}
             </CardContent>
           </Card>
+
+          {availableAudioTracks.length > 0 && (
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                  Summary Audio
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Play or download audio generated from the article summary
+                </Typography>
+                {availableAudioTracks.map(({ lang, url, label }) => renderAudioTrack(lang, url, label))}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Category & Location */}
           <Card sx={{ mb: 3 }}>
@@ -1216,6 +1339,58 @@ const ArticleEditor = () => {
             </CardContent>
           </Card>
 
+          {canViewImportMetadata && isEditing && (article.referenceSource || article.plagiarismScore != null) && (
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                  Import Metadata
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Visible to Chief Editor and Admin only
+                </Typography>
+
+                {article.referenceSource && (
+                  <Box sx={{ mb: article.plagiarismScore != null ? 2.5 : 0 }}>
+                    <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                      Reference Source
+                    </Typography>
+                    <Chip
+                      label={article.referenceSource}
+                      size="small"
+                      sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+                    />
+                  </Box>
+                )}
+
+                {article.plagiarismScore != null && (
+                  <Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Plagiarism Match
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        color={`${getPlagiarismProgressColor(article.plagiarismScore)}.main`}
+                      >
+                        {article.plagiarismScore}%
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, Math.max(0, article.plagiarismScore))}
+                      color={getPlagiarismProgressColor(article.plagiarismScore)}
+                      sx={{ height: 10, borderRadius: 1 }}
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                      Lower is better — lexical overlap between source feed and rewritten story
+                    </Typography>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* YouTube Video (optional) */}
           <Card sx={{ mb: 3 }}>
             <CardContent>
@@ -1314,9 +1489,20 @@ const ArticleEditor = () => {
       >
         <DialogTitle>Crop Featured Image</DialogTitle>
         <DialogContent dividers>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Set both crop areas. Two optimized WebP images will be generated from this upload.
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Set both crop areas. The original file is used for cropping — upload the highest resolution you have.
           </Typography>
+          {cropSourceSize.width > 0 && cropSourceSize.width < MIN_SOURCE_IMAGE_WIDTH && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Source image is {cropSourceSize.width}×{cropSourceSize.height}px. For best quality on web and mobile,
+              use an image at least {MIN_SOURCE_IMAGE_WIDTH}px wide.
+            </Alert>
+          )}
+          {cropSourceSize.width >= MIN_SOURCE_IMAGE_WIDTH && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Source: {cropSourceSize.width}×{cropSourceSize.height}px · Output: high-quality WebP at 92% quality
+            </Typography>
+          )}
           <Tabs
             value={cropVariant}
             onChange={(_, value) => setCropVariant(value)}
@@ -1344,7 +1530,13 @@ const ArticleEditor = () => {
                   src={cropImageUrl}
                   alt="Crop preview"
                   onLoad={handleCropImageLoad}
-                  style={{ maxWidth: '100%', maxHeight: '65vh', display: 'block' }}
+                  decoding="async"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '70vh',
+                    display: 'block',
+                    imageRendering: 'auto'
+                  }}
                 />
               </ReactCrop>
             </Box>
@@ -1457,6 +1649,20 @@ const ArticleEditor = () => {
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
                       {translatePreview.content?.[langCode] || '—'}
                     </Typography>
+
+                    {translatePreview.tags?.length > 0 && (
+                      <>
+                        <Divider sx={{ my: 2 }} />
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Suggested Tags
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {translatePreview.tags.map((tag) => (
+                            <Chip key={tag} label={tag} size="small" />
+                          ))}
+                        </Box>
+                      </>
+                    )}
                   </Box>
                 );
               })()}
