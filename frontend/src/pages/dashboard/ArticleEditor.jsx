@@ -70,8 +70,8 @@ const ArticleEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { canPublish, user, isEditor } = useAuth();
-  const canViewImportMetadata = canPublish;
+  const { canPublish, user, isEditor, isAdmin } = useAuth();
+  const canViewImportMetadata = user?.role === 'chief-editor' || isAdmin;
   const isEditing = !!id;
 
   // Languages state

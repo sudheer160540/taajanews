@@ -988,14 +988,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
       updateData.youtubeUrl = trimmed;
     }
 
-    // Reporter can only save as draft or pending; sub-editor same.
-    // Only chief-editor/admin can set published/archived via update.
+    // Reporter can only save as draft or pending.
+    // Sub-Editor can publish; only Chief Editor / Admin can archive.
     if (updateData.status) {
       if (req.user.role === 'reporter' && !['draft', 'pending'].includes(updateData.status)) {
         return res.status(403).json({ error: 'Reporters can only save as draft or submit for review' });
       }
-      if (req.user.role === 'sub-editor' && !['draft', 'pending'].includes(updateData.status)) {
-        return res.status(403).json({ error: 'Sub-Editors cannot publish directly' });
+      if (req.user.role === 'sub-editor' && !['draft', 'pending', 'published'].includes(updateData.status)) {
+        return res.status(403).json({ error: 'Sub-Editors cannot archive articles' });
       }
     }
 
@@ -1030,7 +1030,7 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 // @route   PUT /api/articles/:id/status
 // @desc    Update article status (role-based)
 // @access  Private/Editor+
-//   sub-editor  → can set draft, pending
+//   sub-editor  → can set draft, pending, published
 //   chief-editor, admin → can set draft, pending, published, archived
 router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   try {
@@ -1044,9 +1044,8 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
     // flag is omitted so existing callers keep their current behavior.
     const shouldNotify = sendNotification !== false;
 
-    if (['published', 'archived'].includes(status) &&
-        !['chief-editor', 'admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Chief Editor or Admin can publish or archive articles' });
+    if (status === 'archived' && !['chief-editor', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Chief Editor or Admin can archive articles' });
     }
 
     // Read the prior status so we only fire a push on a true transition.

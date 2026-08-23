@@ -129,7 +129,8 @@ export const AuthProvider = ({ children }) => {
 
   const isReporter = ['reporter', 'sub-editor', 'chief-editor', 'admin'].includes(user?.role);
   const isEditor = ['sub-editor', 'chief-editor', 'admin'].includes(user?.role);
-  const canPublish = ['chief-editor', 'admin'].includes(user?.role);
+  const canPublish = ['sub-editor', 'chief-editor', 'admin'].includes(user?.role);
+  const canArchiveArticles = ['chief-editor', 'admin'].includes(user?.role);
   const canDeleteArticles = ['chief-editor', 'admin'].includes(user?.role);
   const isAdmin = user?.role === 'admin';
 
@@ -141,6 +142,7 @@ export const AuthProvider = ({ children }) => {
     isAdmin,
     isEditor,
     canPublish,
+    canArchiveArticles,
     canDeleteArticles,
     isReporter,
     login,
