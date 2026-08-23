@@ -30,6 +30,8 @@ import {
   Select,
   CircularProgress,
   Snackbar,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -56,6 +58,7 @@ const UsersManager = () => {
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState(0);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
@@ -81,12 +84,16 @@ const UsersManager = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, [page, rowsPerPage, searchQuery]);
+  }, [page, rowsPerPage, searchQuery, activeTab]);
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const params = { page: page + 1, limit: rowsPerPage };
+      const params = {
+        page: page + 1,
+        limit: rowsPerPage,
+        roleGroup: activeTab === 0 ? 'app' : 'staff'
+      };
       if (searchQuery) params.search = searchQuery;
       const response = await usersApi.getAll(params);
       setUsers(response.data.users);
@@ -96,6 +103,11 @@ const UsersManager = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTabChange = (_, value) => {
+    setActiveTab(value);
+    setPage(0);
   };
 
   // ── Actions menu ────────────────────────────────────────
@@ -235,7 +247,10 @@ const UsersManager = () => {
       <TextField
         placeholder="Search users..."
         value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
+        onChange={(e) => {
+          setSearchQuery(e.target.value);
+          setPage(0);
+        }}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -243,9 +258,18 @@ const UsersManager = () => {
             </InputAdornment>
           )
         }}
-        sx={{ mb: 3, width: 300 }}
+        sx={{ mb: 2, width: 300 }}
         size="small"
       />
+
+      <Tabs
+        value={activeTab}
+        onChange={handleTabChange}
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab label="App Users" />
+        <Tab label="Editorial & Staff" />
+      </Tabs>
 
       {/* Users Table */}
       <Card>

@@ -13,10 +13,16 @@ const { validate, schemas } = require('../middleware/validate');
 // @access  Private/Admin
 router.get('/', protect, adminOnly, async (req, res) => {
   try {
-    const { page = 1, limit = 20, role, search } = req.query;
+    const { page = 1, limit = 20, role, roleGroup, search } = req.query;
 
     const query = {};
-    if (role) query.role = role;
+    if (roleGroup === 'app') {
+      query.role = 'user';
+    } else if (roleGroup === 'staff') {
+      query.role = { $ne: 'user' };
+    } else if (role) {
+      query.role = role;
+    }
     if (search) {
       query.$or = [
         { name: new RegExp(search, 'i') },

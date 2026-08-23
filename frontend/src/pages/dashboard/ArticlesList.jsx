@@ -45,7 +45,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const ArticlesList = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { isEditor, canPublish, canDeleteArticles, user } = useAuth();
+  const { isEditor, canPublish, canArchiveArticles, canDeleteArticles, user } = useAuth();
   const lang = i18n.language;
 
   const [articles, setArticles] = useState([]);
@@ -428,20 +428,20 @@ const ArticlesList = () => {
             Send Back to Draft
           </MenuItem>
         )}
-        {/* Chief editor / Admin: publish pending article */}
+        {/* Sub-Editor+: publish pending article */}
         {canPublish && selectedArticle?.status === 'pending' && (
           <MenuItem onClick={openPublishDialog}>
             Publish
           </MenuItem>
         )}
-        {/* Chief editor / Admin: archive published article */}
-        {canPublish && selectedArticle?.status === 'published' && (
+        {/* Chief Editor / Admin: archive published article */}
+        {canArchiveArticles && selectedArticle?.status === 'published' && (
           <MenuItem onClick={() => handleStatusChange('archived')}>
             Archive
           </MenuItem>
         )}
-        {/* Chief editor / Admin: restore archived article */}
-        {canPublish && selectedArticle?.status === 'archived' && (
+        {/* Chief Editor / Admin: restore archived article */}
+        {canArchiveArticles && selectedArticle?.status === 'archived' && (
           <MenuItem onClick={() => handleStatusChange('draft')}>
             Restore to Draft
           </MenuItem>
