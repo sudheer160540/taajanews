@@ -77,10 +77,19 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
  * Taaja News editorial standards (Super Lead + Detailed Story).
  * Used for source-article generation and news-mode translation.
  */
+const SOURCE_PLAGIARISM_TARGET = Math.min(
+  100,
+  Math.max(1, parseInt(process.env.SOURCE_PLAGIARISM_MAX, 10) || 10)
+);
+const SOURCE_PLAGIARISM_RETRIES = Math.min(
+  5,
+  Math.max(0, parseInt(process.env.SOURCE_PLAGIARISM_RETRIES, 10) || 2)
+);
+
 const NEWS_EDITORIAL_PERSONA =
-  'You are a highly creative, professional, elite Short-News Journalist for the TAAJA News App. ' +
-  'You transform raw news data, scraped feeds, or breaking items into professional short news stories. ' +
-  'You write with a neutral, journalistic, professional tone, completely avoiding sensationalism while keeping the content highly engaging.';
+  'You are a Senior Generalist Editor at a national news desk with 20+ years of experience. ' +
+  'You read wire copies, agency feeds, and rival reports, extract verified facts, then publish an entirely original story in a natural human newsroom voice. ' +
+  'You never file copy that mirrors source wording, sentence rhythm, or paragraph order.';
 
 const NEWS_EDITORIAL_CORE_RULES = `
 EDITORIAL STANDARDS (apply to every language output):
@@ -88,13 +97,13 @@ EDITORIAL STANDARDS (apply to every language output):
 - Sub-headings are OPTIONAL. Add a sub-heading ONLY when the story is long and clearly covers multiple distinct points that benefit from separation. Short or single-topic stories must have NO sub-headings at all — write them as plain paragraphs only.
 - Inverted Pyramid: most critical and latest facts first; least important details last.
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
-- Complete plagiarism-free rewrite: read the source fully, then narrate a brand-new story. Do NOT reuse the source's sentence structure or vocabulary. Ensure zero lexical overlap while keeping 100% factual accuracy. No copy-pasting of sentences.
+- Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target under 10% lexical overlap while keeping 100% factual accuracy.
 - Use ACTIVE VOICE.
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
 - NEVER use the word "and" (or "మరియు" / "और" / "maruyu") anywhere in any language. Always use a comma (,) to separate items, ideas, or clauses.
 - No honorifics, titles, or suffixes next to names of politicians, celebrities, or any individuals (e.g. NEVER use Garu, Sri, Mr., Mrs., श्री, श्रीमति, Honorable, or official titles like Minister). Use direct names only.
 - Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number, and do not repeat the number in words in any language.
-- Do not invent facts, names, dates, places, or quotes not supported by the source.
+- Do not invent facts, names, dates, places, or quotes not supported by the fact sheet.
 
 CHARACTER & SPACE CONSTRAINTS:
 - The Super Lead is strictly restricted to 500 characters. To keep within this limit in English, always use short forms: "CPS" (Contributory Pension Scheme), "Govt." (Government), "EHS" (Employees Health Scheme), "DA" (Dearness Allowance).
@@ -118,18 +127,35 @@ FORMATTING (STRICT — plain text only):
 
 const NEWS_ORIGINALITY_RULES = `
 ORIGINALITY & HUMAN VOICE (apply to every language output):
-- You are also an expert investigative journalist and master wordsmith. Completely transform the source into an original, freshly written story.
-- Core objective: rewrite so thoroughly that it reads as 0% plagiarism, feels entirely human-written, and bypasses AI-content detectors.
-- Zero literal matching: never copy phrases, clauses, or sentence structures from the source. Replace the vocabulary entirely with synonyms, dynamic verbs, and varied phrasing.
-- Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder how facts are presented (weave in background differently, shift the emphasis of the lead) while keeping all core facts, dates, names, and quotes 100% accurate.
-- Active voice and engaging tone: write primarily in active voice. Keep it punchy, journalistic, and engaging for a blog audience. Avoid robotic, formulaic, or repetitive sentence patterns.
-- No AI clichés: strictly avoid overused AI filler words and transitions such as "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry".
+- Think like a senior desk editor on deadline: sharp, neutral, readable, unmistakably human.
+- Core objective: the finished copy must score under ${SOURCE_PLAGIARISM_TARGET}% lexical and phrase overlap if compared to the original feed, while remaining fact-perfect.
+- Zero literal matching: never copy phrases, clauses, or sentence structures. Replace vocabulary entirely with synonyms, strong verbs, and varied phrasing.
+- Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder facts, change the lead emphasis, weave background differently.
+- Active voice and engaging tone: punchy, journalistic, never robotic or template-like.
+- No AI clichés: avoid "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry", "In a significant development".
 `.trim();
 
-const buildNewsGenerationSystemPrompt = () =>
+const ANTI_PLAGIARISM_RULES = `
+ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the source must stay under ${SOURCE_PLAGIARISM_TARGET}%):
+- Write ONLY from the fact sheet provided. Treat the original source as already discarded.
+- Forbidden: any copied phrase of 3+ consecutive words, mirroring sentence order, keeping the same paragraph sequence, or lightly editing the source.
+- Required: a fresh headline angle, a new lead hook, reordered paragraphs, new verbs and collocations, varied sentence length, and a human editor's cadence.
+- Quotes: keep speaker names and quote meaning exact, but express attribution in fresh words when the fact sheet allows.
+- Facts, names, numbers, dates, and places must stay 100% accurate.
+`.trim();
+
+const FACT_EXTRACTION_SYSTEM_PROMPT =
+  'You are a senior news desk fact checker. Read the source once and extract verified facts only. ' +
+  'Do NOT copy sentences or phrases from the source. Use short neutral fact strings. ' +
+  'Return ONLY valid JSON with keys: "who" (array), "what", "when", "where", "why", "how", "background" (array), ' +
+  '"quotes" (array of {"speaker","text"}), "numbers" (array). No markdown.';
+
+const buildNewsGenerationSystemPrompt = (strictRewrite = false) =>
   `${NEWS_EDITORIAL_PERSONA}
 ${NEWS_EDITORIAL_CORE_RULES}
 ${NEWS_ORIGINALITY_RULES}
+${ANTI_PLAGIARISM_RULES}
+${strictRewrite ? 'STRICT REWRITE PASS: your previous draft scored too high on plagiarism. Change the headline completely, reorder every paragraph, and replace all verbs and noun phrases. Target under 5% overlap.\n' : ''}
 Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
@@ -559,12 +585,81 @@ const parseJsonObject = (raw) => {
 };
 
 /**
+ * Pass 1 — pull neutral facts out of the scraped source without keeping its wording.
+ * The writer pass never sees the raw source, which keeps lexical overlap low.
+ */
+async function extractSourceFacts(rawText) {
+  const trimmed = String(rawText || '').trim();
+  if (!trimmed) {
+    throw new Error('Cannot extract facts from empty source text');
+  }
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: FACT_EXTRACTION_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content:
+          'Extract verified facts only. Do not copy any sentence from the source.\n\n' +
+          trimmed.slice(0, 12000)
+      }
+    ],
+    temperature: 0.1,
+    response_format: { type: 'json_object' }
+  });
+
+  const responseText = completion.choices[0]?.message?.content?.trim();
+  if (!responseText) {
+    throw new Error('OpenAI returned empty fact extraction response');
+  }
+
+  try {
+    return parseJsonObject(responseText);
+  } catch {
+    throw new Error('Failed to parse fact extraction JSON from OpenAI');
+  }
+}
+
+const buildGenerationUserPrompt = ({
+  languageName,
+  headline,
+  superLead,
+  detailed,
+  sourceTitle,
+  factSheet,
+  strictRewrite
+}) => {
+  const sourceTitleNote = sourceTitle
+    ? `\nOriginal feed headline (context only — never copy or lightly rephrase): "${sourceTitle}"\n`
+    : '';
+
+  const strictNote = strictRewrite
+    ? '\nSTRICT REWRITE: the prior draft was too close to the source. Use a completely different headline, lead, and paragraph order. Replace every shared phrase.\n'
+    : '';
+
+  return (
+    `You are the Senior Generalist Editor. Write a fresh ${languageName} news story using ONLY the fact sheet below — not the original feed wording.\n\n` +
+    `Plagiarism target: under ${SOURCE_PLAGIARISM_TARGET}% lexical and phrase overlap with any source.\n\n` +
+    `Return ONLY JSON with:\n` +
+    `1) "title" — HEADLINE: complete, compelling, fresh angle; single line; max ${headline.maxChars} characters.\n` +
+    `2) "summary" — SUPER LEAD: ${superLead.minWords}-${superLead.maxWords} words OR ${superLead.minSentences}-${superLead.maxSentences} short sentences; inverted pyramid; 5W-1H.\n` +
+    `3) "content" — DETAILED STORY: ${detailed.minWords}-${detailed.maxWords} words; background where needed; new paragraph every 4-5 sentences; sub-headings only if truly needed.\n\n` +
+    `Write like a human editor. Vary sentence length. Do not mirror the fact-sheet bullet order paragraph by paragraph.\n` +
+    `${strictNote}` +
+    `${sourceTitleNote}\n` +
+    `Fact sheet (your ONLY source of truth):\n${JSON.stringify(factSheet, null, 2)}\n\n` +
+    'Return ONLY: {"title":"...","summary":"...","content":"..."}'
+  );
+};
+
+/**
  * OpenAI: rewrite source into headline + Super Lead + Detailed Story in anchor language.
  * Sarvam cannot summarize; this step always uses OpenAI.
  *
  * @param {string} rawText - full source article body
  * @param {string} anchorLang - te | en | hi
- * @param {{ sourceTitle?: string }} [options] - scraped headline (context only; not copied)
+ * @param {{ sourceTitle?: string, strictRewrite?: boolean }} [options]
  */
 async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const trimmed = String(rawText || '').trim();
@@ -580,39 +675,28 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const headline = getHeadlineLimits();
   const languageName = SUPPORTED_LANGUAGES[anchorLang];
   const sourceTitle = String(options.sourceTitle || '').trim();
+  const strictRewrite = Boolean(options.strictRewrite);
 
-  const sourceTitleNote = sourceTitle
-    ? `\nSource headline (for context only — do NOT copy or lightly rephrase; write a fresh headline from the facts):\n"${sourceTitle}"\n`
-    : '';
+  const factSheet = await extractSourceFacts(trimmed);
 
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: buildNewsGenerationSystemPrompt() },
+      { role: 'system', content: buildNewsGenerationSystemPrompt(strictRewrite) },
       {
         role: 'user',
-        content:
-          `Read the source article below, summarize it mentally, then rewrite it in ${languageName} as three JSON fields.\n\n` +
-          `1) "title" — HEADLINE:\n` +
-          `   - A complete, compelling news headline that states the core story (Who, What, and the key hook).\n` +
-          `   - Write it fresh from the article facts — never copy the source headline verbatim or with minor edits.\n` +
-          `   - Single line only; max ${headline.maxChars} characters; no sub-headings or markdown.\n` +
-          `   - Active voice; specific names, places, or numbers when they are the story hook.\n\n` +
-          `2) "summary" — SUPER LEAD:\n` +
-          `   - Either ${superLead.minWords} to ${superLead.maxWords} words OR ${superLead.minSentences} to ${superLead.maxSentences} short sentences (choose whichever fits the story better).\n` +
-          `   - Brief summary of the main news; inverted pyramid; full 5W-1H where possible.\n\n` +
-          `3) "content" — DETAILED STORY:\n` +
-          `   - ${detailed.minWords} to ${detailed.maxWords} words.\n` +
-          `   - Same 5W-1H and inverted pyramid; include background/context so readers understand linked past events.\n` +
-          `   - Engaging, not overly terse. Write without plagiarism (fresh wording, do not copy source phrases).\n` +
-          `   - Start a new paragraph every four to five sentences (depending on the need); never write one long block.\n` +
-          `   - Add a sub-heading (a short plain-text label on its own line) ONLY if the story is long and covers multiple distinct points; for short or single-topic stories use plain paragraphs with NO sub-headings.\n` +
-          `   - When one event follows another, briefly explain prior context.\n\n` +
-          `Return ONLY: {"title":"...","summary":"...","content":"..."}\n` +
-          `${sourceTitleNote}\nSource article:\n\n${trimmed}`
+        content: buildGenerationUserPrompt({
+          languageName,
+          headline,
+          superLead,
+          detailed,
+          sourceTitle,
+          factSheet,
+          strictRewrite
+        })
       }
     ],
-    temperature: 0.35,
+    temperature: strictRewrite ? 0.62 : 0.52,
     response_format: { type: 'json_object' }
   });
 
@@ -753,19 +837,59 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
 /**
  * Build title, summary, and content maps for source-article → Article conversion.
  * Title is AI-generated from content (not the scraped RSS headline).
+ *
+ * @param {{ title?: string, contentText: string, source?: string }} input
+ * @param {{ checkPlagiarism?: (original: string, rewritten: string) => Promise<number|null> }} [options]
  */
-async function buildSourceArticleMultilingual({ title, contentText, source }) {
+async function buildSourceArticleMultilingual(input, options = {}) {
+  const { title, contentText, source } = input;
   const titleTrimmed = String(title || '').trim();
   const contentTrimmed = String(contentText || '').trim();
 
   if (!contentTrimmed) throw new Error('Source article has no contentText');
 
   const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
-  const { title: anchorTitle, summary, content } = await generateSummaryAndContent(
-    contentTrimmed,
-    anchorLang,
-    { sourceTitle: titleTrimmed }
-  );
+  const checkPlagiarism = typeof options.checkPlagiarism === 'function'
+    ? options.checkPlagiarism
+    : null;
+
+  let bestDraft = null;
+  let bestScore = 101;
+  const maxAttempts = checkPlagiarism ? SOURCE_PLAGIARISM_RETRIES + 1 : 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const strictRewrite = attempt > 0;
+    const draft = await generateSummaryAndContent(contentTrimmed, anchorLang, {
+      sourceTitle: titleTrimmed,
+      strictRewrite
+    });
+
+    if (!checkPlagiarism) {
+      bestDraft = draft;
+      break;
+    }
+
+    const score = await checkPlagiarism(contentTrimmed, draft.content);
+    const normalizedScore = score == null ? 101 : score;
+
+    if (normalizedScore < bestScore) {
+      bestScore = normalizedScore;
+      bestDraft = draft;
+    }
+
+    console.log(
+      `[source-translate] plagiarism=${normalizedScore}% attempt=${attempt + 1}/${maxAttempts} ` +
+      `source=${String(source || 'unknown')} lang=${anchorLang}`
+    );
+
+    if (normalizedScore <= SOURCE_PLAGIARISM_TARGET) break;
+  }
+
+  if (!bestDraft) {
+    throw new Error('Failed to generate rewritten source article');
+  }
+
+  const { title: anchorTitle, summary, content } = bestDraft;
 
   // Sequential to keep provider request bursts low (avoids 429 rate limits).
   const titleMap = await toTrilingual(anchorTitle, anchorLang, 'title');
@@ -782,7 +906,14 @@ async function buildSourceArticleMultilingual({ title, contentText, source }) {
     .join('\n\n');
   const tags = await generateTags(tagSourceText);
 
-  return { title: titleMap, summary: summaryMap, content: contentMap, tags, anchorLang };
+  return {
+    title: titleMap,
+    summary: summaryMap,
+    content: contentMap,
+    tags,
+    anchorLang,
+    plagiarismScore: bestScore <= 100 ? bestScore : null
+  };
 }
 
 module.exports = {
@@ -807,6 +938,9 @@ module.exports = {
   slugifyTag,
   toTrilingual,
   buildSourceArticleMultilingual,
+  SOURCE_PLAGIARISM_TARGET,
+  SOURCE_PLAGIARISM_RETRIES,
+  extractSourceFacts,
   NEWS_EDITORIAL_CORE_RULES,
   buildNewsGenerationSystemPrompt,
   buildNewsTranslationSystemPrompt

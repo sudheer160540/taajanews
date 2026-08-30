@@ -54,18 +54,22 @@ async function markSourceComplete(sourceDoc, articleId) {
  * Scraped source title is context only — saved Article.title comes from AI rewrite.
  */
 async function buildMultilingualFields(sourceDoc) {
-  const { title, summary, content, tags, anchorLang } = await buildSourceArticleMultilingual({
-    title: sourceDoc.title,
-    contentText: sourceDoc.contentText,
-    source: sourceDoc.source
-  });
+  const result = await buildSourceArticleMultilingual(
+    {
+      title: sourceDoc.title,
+      contentText: sourceDoc.contentText,
+      source: sourceDoc.source
+    },
+    { checkPlagiarism: calculatePlagiarismMatchPercentage }
+  );
 
   return {
-    title: toMap(title),
-    summary: toMap(summary),
-    content: toMap(content),
-    tags: Array.isArray(tags) ? tags : [],
-    anchorLang
+    title: toMap(result.title),
+    summary: toMap(result.summary),
+    content: toMap(result.content),
+    tags: Array.isArray(result.tags) ? result.tags : [],
+    anchorLang: result.anchorLang,
+    plagiarismScore: result.plagiarismScore ?? null
   };
 }
 
@@ -105,17 +109,7 @@ const buildShortLinks = async (title, content) => {
 };
 
 async function createArticleFromSource(sourceDoc, authorId) {
-  const { title, summary, content, tags, anchorLang } = await buildMultilingualFields(sourceDoc);
-
-  const rewrittenText =
-    content.get(anchorLang) ||
-    content.get('en') ||
-    content.get('te') ||
-    '';
-  const plagiarismScore = await calculatePlagiarismMatchPercentage(
-    sourceDoc.contentText,
-    rewrittenText
-  );
+  const { title, summary, content, tags, plagiarismScore } = await buildMultilingualFields(sourceDoc);
 
   // Dynamic identity: TJ-{nanoid}, shortId, slug from English headline (create only if missing)
   const { articleId, shortId, slug } = await ensureArticleIdentity(title, {});
