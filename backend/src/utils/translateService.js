@@ -77,10 +77,18 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
  * Taaja News editorial standards (Super Lead + Detailed Story).
  * Used for source-article generation and news-mode translation.
  */
-const SOURCE_PLAGIARISM_TARGET = Math.min(
-  100,
-  Math.max(1, parseInt(process.env.SOURCE_PLAGIARISM_MAX, 10) || 10)
-);
+const parsePlagiarismTarget = () => {
+  const raw = process.env.SOURCE_PLAGIARISM_MAX;
+  if (raw === undefined || raw === '') return 10;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return 10;
+  return Math.min(100, Math.max(0, parsed));
+};
+const SOURCE_PLAGIARISM_TARGET = parsePlagiarismTarget();
+const SOURCE_PLAGIARISM_TARGET_LABEL =
+  SOURCE_PLAGIARISM_TARGET === 0
+    ? 'zero (0%)'
+    : `under ${SOURCE_PLAGIARISM_TARGET}%`;
 const SOURCE_PLAGIARISM_RETRIES = Math.min(
   5,
   Math.max(0, parseInt(process.env.SOURCE_PLAGIARISM_RETRIES, 10) || 2)
@@ -97,7 +105,7 @@ EDITORIAL STANDARDS (apply to every language output):
 - Sub-headings are OPTIONAL. Add a sub-heading ONLY when the story is long and clearly covers multiple distinct points that benefit from separation. Short or single-topic stories must have NO sub-headings at all — write them as plain paragraphs only.
 - Inverted Pyramid: most critical and latest facts first; least important details last.
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
-- Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target under 10% lexical overlap while keeping 100% factual accuracy.
+- Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical overlap while keeping 100% factual accuracy.
 - Use ACTIVE VOICE.
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
 - NEVER use the word "and" (or "మరియు" / "और" / "maruyu") anywhere in any language. Always use a comma (,) to separate items, ideas, or clauses.
@@ -128,7 +136,7 @@ FORMATTING (STRICT — plain text only):
 const NEWS_ORIGINALITY_RULES = `
 ORIGINALITY & HUMAN VOICE (apply to every language output):
 - Think like a senior desk editor on deadline: sharp, neutral, readable, unmistakably human.
-- Core objective: the finished copy must score under ${SOURCE_PLAGIARISM_TARGET}% lexical and phrase overlap if compared to the original feed, while remaining fact-perfect.
+- Core objective: the finished copy must score ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical and phrase overlap if compared to the original feed, while remaining fact-perfect.
 - Zero literal matching: never copy phrases, clauses, or sentence structures. Replace vocabulary entirely with synonyms, strong verbs, and varied phrasing.
 - Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder facts, change the lead emphasis, weave background differently.
 - Active voice and engaging tone: punchy, journalistic, never robotic or template-like.
@@ -136,7 +144,7 @@ ORIGINALITY & HUMAN VOICE (apply to every language output):
 `.trim();
 
 const ANTI_PLAGIARISM_RULES = `
-ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the source must stay under ${SOURCE_PLAGIARISM_TARGET}%):
+ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the source must stay ${SOURCE_PLAGIARISM_TARGET_LABEL}):
 - Write ONLY from the fact sheet provided. Treat the original source as already discarded.
 - Forbidden: any copied phrase of 3+ consecutive words, mirroring sentence order, keeping the same paragraph sequence, or lightly editing the source.
 - Required: a fresh headline angle, a new lead hook, reordered paragraphs, new verbs and collocations, varied sentence length, and a human editor's cadence.
@@ -155,7 +163,7 @@ const buildNewsGenerationSystemPrompt = (strictRewrite = false) =>
 ${NEWS_EDITORIAL_CORE_RULES}
 ${NEWS_ORIGINALITY_RULES}
 ${ANTI_PLAGIARISM_RULES}
-${strictRewrite ? 'STRICT REWRITE PASS: your previous draft scored too high on plagiarism. Change the headline completely, reorder every paragraph, and replace all verbs and noun phrases. Target under 5% overlap.\n' : ''}
+${strictRewrite ? `STRICT REWRITE PASS: your previous draft scored too high on plagiarism. Change the headline completely, reorder every paragraph, and replace all verbs and noun phrases. Target ${SOURCE_PLAGIARISM_TARGET === 0 ? '0% overlap (no shared phrases with the source)' : `${SOURCE_PLAGIARISM_TARGET_LABEL} overlap`}.\n` : ''}
 Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 
 const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
@@ -640,7 +648,7 @@ const buildGenerationUserPrompt = ({
 
   return (
     `You are the Senior Generalist Editor. Write a fresh ${languageName} news story using ONLY the fact sheet below — not the original feed wording.\n\n` +
-    `Plagiarism target: under ${SOURCE_PLAGIARISM_TARGET}% lexical and phrase overlap with any source.\n\n` +
+    `Plagiarism target: ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical and phrase overlap with any source.\n\n` +
     `Return ONLY JSON with:\n` +
     `1) "title" — HEADLINE: complete, compelling, fresh angle; single line; max ${headline.maxChars} characters.\n` +
     `2) "summary" — SUPER LEAD: ${superLead.minWords}-${superLead.maxWords} words OR ${superLead.minSentences}-${superLead.maxSentences} short sentences; inverted pyramid; 5W-1H.\n` +
