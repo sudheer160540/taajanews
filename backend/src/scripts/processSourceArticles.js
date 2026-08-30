@@ -6,7 +6,7 @@
  *   0 * * * * cd /path/to/taaja_news/backend && npm run process-source-articles
  */
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const languageCache = require('../utils/languageCache');
 const { processNewSourceArticles } = require('../jobs/sourceArticleProcessor');

@@ -3,7 +3,6 @@ const SourceArticle = require('../models/SourceArticle');
 const Article = require('../models/Article');
 const User = require('../models/User');
 const { buildSourceArticleMultilingual } = require('../utils/translateService');
-const { calculatePlagiarismMatchPercentage } = require('../utils/plagiarismAnalysis');
 const {
   notifySourceArticleProcessedTelegram,
   notifySourceArticleFailedTelegram
@@ -54,14 +53,11 @@ async function markSourceComplete(sourceDoc, articleId) {
  * Scraped source title is context only — saved Article.title comes from AI rewrite.
  */
 async function buildMultilingualFields(sourceDoc) {
-  const result = await buildSourceArticleMultilingual(
-    {
-      title: sourceDoc.title,
-      contentText: sourceDoc.contentText,
-      source: sourceDoc.source
-    },
-    { checkPlagiarism: calculatePlagiarismMatchPercentage }
-  );
+  const result = await buildSourceArticleMultilingual({
+    title: sourceDoc.title,
+    contentText: sourceDoc.contentText,
+    source: sourceDoc.source
+  });
 
   return {
     title: toMap(result.title),

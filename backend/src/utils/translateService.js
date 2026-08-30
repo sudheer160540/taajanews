@@ -84,28 +84,57 @@ const parsePlagiarismTarget = () => {
   if (Number.isNaN(parsed)) return 10;
   return Math.min(100, Math.max(0, parsed));
 };
+
+const parsePlagiarismRetries = () => {
+  const raw = process.env.SOURCE_PLAGIARISM_RETRIES;
+  if (raw === undefined || raw === '') return 2;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return 2;
+  return Math.min(5, Math.max(0, parsed));
+};
+
+const getPlagiarismTargetLabel = () => {
+  const target = parsePlagiarismTarget();
+  return target === 0 ? 'zero (0%)' : `under ${target}%`;
+};
+
+const getSourcePlagiarismConfig = () => {
+  const target = parsePlagiarismTarget();
+  const retries = parsePlagiarismRetries();
+  return {
+    target,
+    retries,
+    maxAttempts: retries + 1,
+    targetLabel: getPlagiarismTargetLabel()
+  };
+};
+
+// Backward-compatible snapshots (prefer getSourcePlagiarismConfig() at runtime).
 const SOURCE_PLAGIARISM_TARGET = parsePlagiarismTarget();
-const SOURCE_PLAGIARISM_TARGET_LABEL =
-  SOURCE_PLAGIARISM_TARGET === 0
-    ? 'zero (0%)'
-    : `under ${SOURCE_PLAGIARISM_TARGET}%`;
-const SOURCE_PLAGIARISM_RETRIES = Math.min(
-  5,
-  Math.max(0, parseInt(process.env.SOURCE_PLAGIARISM_RETRIES, 10) || 2)
-);
+const SOURCE_PLAGIARISM_RETRIES = parsePlagiarismRetries();
+
+let defaultPlagiarismChecker = null;
+const resolvePlagiarismChecker = (options = {}) => {
+  if (options.checkPlagiarism === false) return null;
+  if (typeof options.checkPlagiarism === 'function') return options.checkPlagiarism;
+  if (!defaultPlagiarismChecker) {
+    defaultPlagiarismChecker = require('./plagiarismAnalysis').calculatePlagiarismMatchPercentage;
+  }
+  return defaultPlagiarismChecker;
+};
 
 const NEWS_EDITORIAL_PERSONA =
   'You are a Senior Generalist Editor at a national news desk with 20+ years of experience. ' +
   'You read wire copies, agency feeds, and rival reports, extract verified facts, then publish an entirely original story in a natural human newsroom voice. ' +
   'You never file copy that mirrors source wording, sentence rhythm, or paragraph order.';
 
-const NEWS_EDITORIAL_CORE_RULES = `
+const buildNewsEditorialCoreRules = () => `
 EDITORIAL STANDARDS (apply to every language output):
 - The story has two parts: (1) "Super Lead" — brief lead summary; (2) "Detailed Story" — full report.
 - Sub-headings are OPTIONAL. Add a sub-heading ONLY when the story is long and clearly covers multiple distinct points that benefit from separation. Short or single-topic stories must have NO sub-headings at all — write them as plain paragraphs only.
 - Inverted Pyramid: most critical and latest facts first; least important details last.
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
-- Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical overlap while keeping 100% factual accuracy.
+- Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target ${getPlagiarismTargetLabel()} lexical overlap while keeping 100% factual accuracy.
 - Use ACTIVE VOICE.
 - Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
 - NEVER use the word "and" (or "మరియు" / "और" / "maruyu") anywhere in any language. Always use a comma (,) to separate items, ideas, or clauses.
@@ -133,18 +162,18 @@ FORMATTING (STRICT — plain text only):
 - Do not use repeated punctuation such as ".." or "...". End sentences with a single period.
 `.trim();
 
-const NEWS_ORIGINALITY_RULES = `
+const buildNewsOriginalityRules = () => `
 ORIGINALITY & HUMAN VOICE (apply to every language output):
 - Think like a senior desk editor on deadline: sharp, neutral, readable, unmistakably human.
-- Core objective: the finished copy must score ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical and phrase overlap if compared to the original feed, while remaining fact-perfect.
+- Core objective: the finished copy must score ${getPlagiarismTargetLabel()} lexical and phrase overlap if compared to the original feed, while remaining fact-perfect.
 - Zero literal matching: never copy phrases, clauses, or sentence structures. Replace vocabulary entirely with synonyms, strong verbs, and varied phrasing.
 - Restructure the narrative: do NOT follow the source's paragraph-by-paragraph flow. Reorder facts, change the lead emphasis, weave background differently.
 - Active voice and engaging tone: punchy, journalistic, never robotic or template-like.
 - No AI clichés: avoid "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry", "In a significant development".
 `.trim();
 
-const ANTI_PLAGIARISM_RULES = `
-ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the source must stay ${SOURCE_PLAGIARISM_TARGET_LABEL}):
+const buildAntiPlagiarismRules = () => `
+ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the source must stay ${getPlagiarismTargetLabel()}):
 - Write ONLY from the fact sheet provided. Treat the original source as already discarded.
 - Forbidden: any copied phrase of 3+ consecutive words, mirroring sentence order, keeping the same paragraph sequence, or lightly editing the source.
 - Required: a fresh headline angle, a new lead hook, reordered paragraphs, new verbs and collocations, varied sentence length, and a human editor's cadence.
@@ -152,26 +181,32 @@ ANTI-PLAGIARISM MANDATE (non-negotiable — lexical and phrase overlap with the 
 - Facts, names, numbers, dates, and places must stay 100% accurate.
 `.trim();
 
+// Static snapshot for callers that import the string constant directly.
+const NEWS_EDITORIAL_CORE_RULES = buildNewsEditorialCoreRules();
+
+const buildNewsGenerationSystemPrompt = (strictRewrite = false) => {
+  const plagiarismTarget = parsePlagiarismTarget();
+  const targetLabel = getPlagiarismTargetLabel();
+  return `${NEWS_EDITORIAL_PERSONA}
+${buildNewsEditorialCoreRules()}
+${buildNewsOriginalityRules()}
+${buildAntiPlagiarismRules()}
+${strictRewrite ? `STRICT REWRITE PASS: your previous draft scored too high on plagiarism. Change the headline completely, reorder every paragraph, and replace all verbs and noun phrases. Target ${plagiarismTarget === 0 ? '0% overlap (no shared phrases with the source)' : `${targetLabel} overlap`}.\n` : ''}
+Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
+};
+
+const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
+  `${NEWS_EDITORIAL_PERSONA}
+Translate/adapt the following ${fieldLabel} into ${targetLangName}, applying ALL rules below to the ${targetLangName} output.
+${buildNewsEditorialCoreRules()}
+Preserve the inverted-pyramid structure and factual meaning. Keep the same paragraph and sub-heading structure as the source: if the source has sub-headings, keep them as plain-text lines on their own with a blank line before and after; if it has none, do NOT add any.
+Return ONLY the translated text in ${targetLangName} as PLAIN TEXT, nothing else.`;
+
 const FACT_EXTRACTION_SYSTEM_PROMPT =
   'You are a senior news desk fact checker. Read the source once and extract verified facts only. ' +
   'Do NOT copy sentences or phrases from the source. Use short neutral fact strings. ' +
   'Return ONLY valid JSON with keys: "who" (array), "what", "when", "where", "why", "how", "background" (array), ' +
   '"quotes" (array of {"speaker","text"}), "numbers" (array). No markdown.';
-
-const buildNewsGenerationSystemPrompt = (strictRewrite = false) =>
-  `${NEWS_EDITORIAL_PERSONA}
-${NEWS_EDITORIAL_CORE_RULES}
-${NEWS_ORIGINALITY_RULES}
-${ANTI_PLAGIARISM_RULES}
-${strictRewrite ? `STRICT REWRITE PASS: your previous draft scored too high on plagiarism. Change the headline completely, reorder every paragraph, and replace all verbs and noun phrases. Target ${SOURCE_PLAGIARISM_TARGET === 0 ? '0% overlap (no shared phrases with the source)' : `${SOURCE_PLAGIARISM_TARGET_LABEL} overlap`}.\n` : ''}
-Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
-
-const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
-  `${NEWS_EDITORIAL_PERSONA}
-Translate/adapt the following ${fieldLabel} into ${targetLangName}, applying ALL rules below to the ${targetLangName} output.
-${NEWS_EDITORIAL_CORE_RULES}
-Preserve the inverted-pyramid structure and factual meaning. Keep the same paragraph and sub-heading structure as the source: if the source has sub-headings, keep them as plain-text lines on their own with a blank line before and after; if it has none, do NOT add any.
-Return ONLY the translated text in ${targetLangName} as PLAIN TEXT, nothing else.`;
 
 /**
  * Strip Markdown / stray formatting from AI-generated news text and normalize
@@ -596,24 +631,30 @@ const parseJsonObject = (raw) => {
  * Pass 1 — pull neutral facts out of the scraped source without keeping its wording.
  * The writer pass never sees the raw source, which keeps lexical overlap low.
  */
-async function extractSourceFacts(rawText) {
+async function extractSourceFacts(rawText, options = {}) {
   const trimmed = String(rawText || '').trim();
   if (!trimmed) {
     throw new Error('Cannot extract facts from empty source text');
   }
 
+  const strictRewrite = Boolean(options.strictRewrite);
+  const systemPrompt = strictRewrite
+    ? `${FACT_EXTRACTION_SYSTEM_PROMPT} Restate every fact in completely different neutral wording. Shuffle the order of array items.`
+    : FACT_EXTRACTION_SYSTEM_PROMPT;
+  const userPrefix = strictRewrite
+    ? 'Extract verified facts only. Restate each fact in fresh words. Do not copy any sentence from the source.\n\n'
+    : 'Extract verified facts only. Do not copy any sentence from the source.\n\n';
+
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: FACT_EXTRACTION_SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       {
         role: 'user',
-        content:
-          'Extract verified facts only. Do not copy any sentence from the source.\n\n' +
-          trimmed.slice(0, 12000)
+        content: userPrefix + trimmed.slice(0, 12000)
       }
     ],
-    temperature: 0.1,
+    temperature: strictRewrite ? 0.35 : 0.1,
     response_format: { type: 'json_object' }
   });
 
@@ -648,7 +689,7 @@ const buildGenerationUserPrompt = ({
 
   return (
     `You are the Senior Generalist Editor. Write a fresh ${languageName} news story using ONLY the fact sheet below — not the original feed wording.\n\n` +
-    `Plagiarism target: ${SOURCE_PLAGIARISM_TARGET_LABEL} lexical and phrase overlap with any source.\n\n` +
+    `Plagiarism target: ${getPlagiarismTargetLabel()} lexical and phrase overlap with any source.\n\n` +
     `Return ONLY JSON with:\n` +
     `1) "title" — HEADLINE: complete, compelling, fresh angle; single line; max ${headline.maxChars} characters.\n` +
     `2) "summary" — SUPER LEAD: ${superLead.minWords}-${superLead.maxWords} words OR ${superLead.minSentences}-${superLead.maxSentences} short sentences; inverted pyramid; 5W-1H.\n` +
@@ -685,7 +726,7 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const sourceTitle = String(options.sourceTitle || '').trim();
   const strictRewrite = Boolean(options.strictRewrite);
 
-  const factSheet = await extractSourceFacts(trimmed);
+  const factSheet = await extractSourceFacts(trimmed, { strictRewrite });
 
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
@@ -857,13 +898,19 @@ async function buildSourceArticleMultilingual(input, options = {}) {
   if (!contentTrimmed) throw new Error('Source article has no contentText');
 
   const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
-  const checkPlagiarism = typeof options.checkPlagiarism === 'function'
-    ? options.checkPlagiarism
-    : null;
+  const checkPlagiarism = resolvePlagiarismChecker(options);
+  const { target: plagiarismTarget, retries: plagiarismRetries } = getSourcePlagiarismConfig();
+  const maxAttempts = checkPlagiarism ? plagiarismRetries + 1 : 1;
 
   let bestDraft = null;
   let bestScore = 101;
-  const maxAttempts = checkPlagiarism ? SOURCE_PLAGIARISM_RETRIES + 1 : 1;
+
+  if (checkPlagiarism) {
+    console.log(
+      `[source-translate] config target=${plagiarismTarget}% retries=${plagiarismRetries} ` +
+      `maxAttempts=${maxAttempts} source=${String(source || 'unknown')} lang=${anchorLang}`
+    );
+  }
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const strictRewrite = attempt > 0;
@@ -887,10 +934,11 @@ async function buildSourceArticleMultilingual(input, options = {}) {
 
     console.log(
       `[source-translate] plagiarism=${normalizedScore}% attempt=${attempt + 1}/${maxAttempts} ` +
-      `source=${String(source || 'unknown')} lang=${anchorLang}`
+      `target=${plagiarismTarget}% source=${String(source || 'unknown')} lang=${anchorLang}` +
+      (normalizedScore <= plagiarismTarget ? ' PASS' : ' RETRY')
     );
 
-    if (normalizedScore <= SOURCE_PLAGIARISM_TARGET) break;
+    if (normalizedScore <= plagiarismTarget) break;
   }
 
   if (!bestDraft) {
@@ -946,6 +994,9 @@ module.exports = {
   slugifyTag,
   toTrilingual,
   buildSourceArticleMultilingual,
+  getSourcePlagiarismConfig,
+  parsePlagiarismTarget,
+  parsePlagiarismRetries,
   SOURCE_PLAGIARISM_TARGET,
   SOURCE_PLAGIARISM_RETRIES,
   extractSourceFacts,
