@@ -178,11 +178,22 @@ export const epapersApi = {
 export const videosApi = {
   getAll: (params) => api.get('/videos', { params }),
   getPublic: (params) => api.get('/videos/public', { params }),
+  getPublicGrouped: (params) => api.get('/videos/public/grouped', { params }),
+  getPublicGroup: (category, params) => api.get(`/videos/public/group/${category}`, { params }),
   getPublicById: (id) => api.get(`/videos/public/${id}`),
   getById: (id) => api.get(`/videos/${id}`),
   create: (data) => api.post('/videos', data),
   update: (id, data) => api.put(`/videos/${id}`, data),
   delete: (id) => api.delete(`/videos/${id}`)
+};
+
+export const videoCategoriesApi = {
+  getAll: (params) => api.get('/video-categories', { params }),
+  getPublic: () => api.get('/video-categories/public'),
+  getById: (id) => api.get(`/video-categories/${id}`),
+  create: (data) => api.post('/video-categories', data),
+  update: (id, data) => api.put(`/video-categories/${id}`, data),
+  delete: (id) => api.delete(`/video-categories/${id}`)
 };
 
 export const yellowPagesApi = {

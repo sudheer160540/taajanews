@@ -31,6 +31,7 @@ import {
   Campaign as CampaignIcon,
   PictureAsPdf as EPaperIcon,
   VideoLibrary as VideoIcon,
+  MovieFilter as VideoCategoryIcon,
   AccountCircle as AccountCircleIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,7 +45,7 @@ const DashboardLayout = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, canManageVideos, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const menuItems = [
@@ -60,7 +61,6 @@ const DashboardLayout = () => {
     { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
     { path: '/dashboard/promotions', label: 'Promotions', icon: <CampaignIcon /> },
     { path: '/dashboard/epapers', label: 'E-Papers', icon: <EPaperIcon /> },
-    { path: '/dashboard/videos', label: 'Videos', icon: <VideoIcon /> },
   ];
 
   const drawer = (
@@ -128,6 +128,41 @@ const DashboardLayout = () => {
           </ListItem>
         ))}
       </List>
+
+      {canManageVideos && (
+        <>
+          <Divider />
+          <Typography variant="overline" sx={{ px: 2, py: 1, display: 'block' }}>
+            {isAdmin ? 'Admin' : 'Editorial'}
+          </Typography>
+          <List>
+            <ListItem disablePadding>
+              <ListItemButton
+                selected={location.pathname === '/dashboard/videos'}
+                onClick={() => {
+                  navigate('/dashboard/videos');
+                  if (isMobile) setMobileOpen(false);
+                }}
+              >
+                <ListItemIcon><VideoIcon /></ListItemIcon>
+                <ListItemText primary="Videos" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem disablePadding>
+              <ListItemButton
+                selected={location.pathname === '/dashboard/video-categories'}
+                onClick={() => {
+                  navigate('/dashboard/video-categories');
+                  if (isMobile) setMobileOpen(false);
+                }}
+              >
+                <ListItemIcon><VideoCategoryIcon /></ListItemIcon>
+                <ListItemText primary="Video Categories" />
+              </ListItemButton>
+            </ListItem>
+          </List>
+        </>
+      )}
 
       {isAdmin && (
         <>
