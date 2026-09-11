@@ -21,6 +21,11 @@ const videoSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  videoCategory: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'VideoCategory',
+    default: null
+  },
   status: {
     type: String,
     enum: ['draft', 'published', 'archived'],
@@ -39,6 +44,7 @@ const videoSchema = new mongoose.Schema({
 
 videoSchema.index({ status: 1, createdAt: -1 });
 videoSchema.index({ createdBy: 1 });
+videoSchema.index({ videoCategory: 1, status: 1, createdAt: -1 });
 
 const Video = mongoose.model('Video', videoSchema);
 

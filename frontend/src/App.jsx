@@ -35,6 +35,7 @@ const LanguagesManager = lazy(() => import('./pages/dashboard/LanguagesManager')
 const PromotionsManager = lazy(() => import('./pages/dashboard/PromotionsManager'));
 const EPaperManager = lazy(() => import('./pages/dashboard/EPaperManager'));
 const VideosManager = lazy(() => import('./pages/dashboard/VideosManager'));
+const VideoCategoriesManager = lazy(() => import('./pages/dashboard/VideoCategoriesManager'));
 const Profile = lazy(() => import('./pages/dashboard/Profile'));
 
 const LoadingScreen = () => (
@@ -51,8 +52,8 @@ const LoadingScreen = () => (
   </Box>
 );
 
-const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false, requireAdmin = false }) => {
-  const { loading, isAuthenticated, isReporter, isAdmin } = useAuth();
+const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false, requireAdmin = false, requireManageVideos = false }) => {
+  const { loading, isAuthenticated, isReporter, isAdmin, canManageVideos } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -67,6 +68,10 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
   }
 
   if (requireAdmin && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireManageVideos && !canManageVideos) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -131,7 +136,8 @@ function App() {
           <Route path="languages" element={<ProtectedRoute requireAdmin><LanguagesManager /></ProtectedRoute>} />
           <Route path="promotions" element={<ProtectedRoute requireAdmin><PromotionsManager /></ProtectedRoute>} />
           <Route path="epapers" element={<EPaperManager />} />
-          <Route path="videos" element={<ProtectedRoute requireAdmin><VideosManager /></ProtectedRoute>} />
+          <Route path="videos" element={<ProtectedRoute requireManageVideos><VideosManager /></ProtectedRoute>} />
+          <Route path="video-categories" element={<ProtectedRoute requireManageVideos><VideoCategoriesManager /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
 

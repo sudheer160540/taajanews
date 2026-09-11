@@ -132,6 +132,7 @@ export const AuthProvider = ({ children }) => {
   const canPublish = ['sub-editor', 'chief-editor', 'admin'].includes(user?.role);
   const canArchiveArticles = ['chief-editor', 'admin'].includes(user?.role);
   const canDeleteArticles = ['chief-editor', 'admin'].includes(user?.role);
+  const canManageVideos = ['chief-editor', 'admin'].includes(user?.role);
   const isAdmin = user?.role === 'admin';
 
   const value = {
@@ -140,6 +141,7 @@ export const AuthProvider = ({ children }) => {
     error,
     isAuthenticated: !!user,
     isAdmin,
+    canManageVideos,
     isEditor,
     canPublish,
     canArchiveArticles,
