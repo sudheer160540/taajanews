@@ -7,9 +7,9 @@ const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../co
 const { protect, reporterOrAdmin } = require('../middleware/auth');
 
 const MAX_FEATURED_IMAGE_WIDTH = 2400;
-const WEBP_QUALITY = 92;
+const WEBP_QUALITY = 100;
 const WEBP_OPTIONS = { quality: WEBP_QUALITY, effort: 4, smartSubsample: false };
-// Retina-ready outputs: ~2x display size for crisp web and mobile rendering.
+// Legacy dual-variant sizes (kept for older clients that still send `crops`).
 const FEATURED_IMAGE_VARIANTS = {
   web: { width: 1600, height: 1400 },
   app: { width: 1200, height: 1200 }
@@ -133,21 +133,27 @@ const cropAndConvertToWebp = async (orientedBuffer, metadata, crop, targetSize =
     Math.max(1, Math.round((crop.height / 100) * metadata.height))
   );
 
-  const resizeOptions = targetSize
-    ? {
-        width: targetSize.width,
-        height: targetSize.height,
-        fit: 'cover',
-        kernel: sharp.kernel.lanczos3,
-        withoutEnlargement: false
-      }
-    : { width: MAX_FEATURED_IMAGE_WIDTH, withoutEnlargement: true };
+  let pipeline = sharp(orientedBuffer).extract({ left, top, width, height });
 
-  return sharp(orientedBuffer)
-    .extract({ left, top, width, height })
-    .resize(resizeOptions)
-    .webp(WEBP_OPTIONS)
-    .toBuffer();
+  if (targetSize) {
+    // Legacy dual-variant path: never upscale (upscale = blur).
+    pipeline = pipeline.resize({
+      width: targetSize.width,
+      height: targetSize.height,
+      fit: 'cover',
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: true
+    });
+  } else if (width > MAX_FEATURED_IMAGE_WIDTH) {
+    // Single mobile crop: keep extracted pixels; only shrink huge sources.
+    pipeline = pipeline.resize({
+      width: MAX_FEATURED_IMAGE_WIDTH,
+      withoutEnlargement: true,
+      kernel: sharp.kernel.lanczos3
+    });
+  }
+
+  return pipeline.webp(WEBP_OPTIONS).toBuffer();
 };
 
 // @route   POST /api/upload/file

@@ -504,7 +504,15 @@ const PromotionsManager = () => {
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>Location</TableCell>
-                <TableCell>Start Date</TableCell>
+                <TableCell sortDirection={sortBy === 'startDate' ? sortOrder : false}>
+                  <TableSortLabel
+                    active={sortBy === 'startDate'}
+                    direction={sortBy === 'startDate' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('startDate')}
+                  >
+                    Start Date
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell sortDirection={sortBy === 'endDate' ? sortOrder : false}>
                   <TableSortLabel
                     active={sortBy === 'endDate'}
