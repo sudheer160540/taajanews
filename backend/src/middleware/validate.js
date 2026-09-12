@@ -232,7 +232,13 @@ const schemas = {
     status: Joi.string().valid('draft', 'pending', 'published', 'archived'),
     isFeatured: Joi.boolean(),
     isBreaking: Joi.boolean(),
-    isPremium: Joi.boolean()
+    isPremium: Joi.boolean(),
+    sendNotification: Joi.boolean(),
+    socialPublish: Joi.object({
+      facebook: Joi.boolean(),
+      x: Joi.boolean(),
+      instagram: Joi.boolean()
+    })
   }),
 
   // Comment schemas

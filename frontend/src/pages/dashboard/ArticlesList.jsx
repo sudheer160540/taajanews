@@ -45,7 +45,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const ArticlesList = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { isEditor, canPublish, canArchiveArticles, canDeleteArticles, user } = useAuth();
+  const { isEditor, canPublish, canArchiveArticles, canDeleteArticles, isAdmin, user } = useAuth();
   const lang = i18n.language;
 
   const [articles, setArticles] = useState([]);
@@ -63,7 +63,11 @@ const ArticlesList = () => {
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishArticle, setPublishArticle] = useState(null);
   const [sendNotification, setSendNotification] = useState(true);
+  const [socialPublish, setSocialPublish] = useState({ facebook: false, x: false, instagram: false });
   const [publishing, setPublishing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const searchDebounceRef = useRef(null);
 
   useEffect(() => {
@@ -86,6 +90,9 @@ const ArticlesList = () => {
       const response = await articlesApi.getManaged(params);
       setArticles(response.data.articles);
       setTotal(response.data.pagination.total);
+      setSelectedIds((prev) => prev.filter((id) =>
+        (response.data.articles || []).some((article) => article._id === id)
+      ));
     } catch (err) {
       console.error('Failed to fetch articles:', err);
     } finally {
@@ -116,6 +123,7 @@ const ArticlesList = () => {
   const openPublishDialog = () => {
     setPublishArticle(selectedArticle);
     setSendNotification(true);
+    setSocialPublish({ facebook: false, x: false, instagram: false });
     setPublishDialogOpen(true);
     // Close the menu but keep the target article captured in publishArticle.
     setMenuAnchor(null);
@@ -132,7 +140,7 @@ const ArticlesList = () => {
     if (!publishArticle) return;
     setPublishing(true);
     try {
-      await articlesApi.updateStatus(publishArticle._id, 'published', { sendNotification });
+      await articlesApi.updateStatus(publishArticle._id, 'published', { sendNotification, socialPublish });
       fetchArticles();
       setPublishDialogOpen(false);
       setPublishArticle(null);
@@ -205,6 +213,54 @@ const ArticlesList = () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
   };
 
+  const pageIds = articles.map((article) => article._id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+  const somePageSelected = pageIds.some((id) => selectedIds.includes(id));
+
+  const toggleSelectAllPage = () => {
+    if (allPageSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+      return;
+    }
+    setSelectedIds((prev) => [...new Set([...prev, ...pageIds])]);
+  };
+
+  const toggleSelectArticle = (id) => {
+    setSelectedIds((prev) => (
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    ));
+  };
+
+  const openBulkDeleteDialog = () => {
+    if (!isAdmin || selectedIds.length === 0) return;
+    setBulkDeleteOpen(true);
+  };
+
+  const closeBulkDeleteDialog = () => {
+    if (bulkDeleting) return;
+    setBulkDeleteOpen(false);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (!isAdmin || selectedIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const response = await articlesApi.bulkDelete(selectedIds);
+      const deleted = response.data.deleted || 0;
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      await fetchArticles();
+      if (articles.length === deleted && page > 0) {
+        setPage((prev) => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.error('Failed to delete articles:', err);
+      alert(err.response?.data?.error || 'Failed to delete articles');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleClearFilters = () => {
     setFromDate('');
     setToDate('');
@@ -222,13 +278,25 @@ const ArticlesList = () => {
         <Typography variant="h5" fontWeight={700}>
           {t('myArticles')}
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/dashboard/articles/new')}
-        >
-          {t('createArticle')}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          {isAdmin && selectedIds.length > 0 && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={openBulkDeleteDialog}
+            >
+              Delete {selectedIds.length} selected
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/dashboard/articles/new')}
+          >
+            {t('createArticle')}
+          </Button>
+        </Box>
       </Box>
 
       {/* Search */}
@@ -309,6 +377,16 @@ const ArticlesList = () => {
           <Table>
             <TableHead>
               <TableRow>
+                {isAdmin && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={allPageSelected}
+                      indeterminate={somePageSelected && !allPageSelected}
+                      onChange={toggleSelectAllPage}
+                      inputProps={{ 'aria-label': 'Select all articles on this page' }}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>Title</TableCell>
                 <TableCell>Category</TableCell>
                 <TableCell>Status</TableCell>
@@ -320,19 +398,28 @@ const ArticlesList = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 7 : 6} align="center" sx={{ py: 4 }}>
                     {t('loading')}
                   </TableCell>
                 </TableRow>
               ) : articles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 7 : 6} align="center" sx={{ py: 4 }}>
                     {t('noResults')}
                   </TableCell>
                 </TableRow>
               ) : (
                 articles.map((article) => (
-                  <TableRow key={article._id} hover>
+                  <TableRow key={article._id} hover selected={selectedIds.includes(article._id)}>
+                    {isAdmin && (
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={selectedIds.includes(article._id)}
+                          onChange={() => toggleSelectArticle(article._id)}
+                          inputProps={{ 'aria-label': 'Select article' }}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Typography
                         variant="body2"
@@ -474,6 +561,36 @@ const ArticlesList = () => {
             }
             label="Send push notification to users"
           />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5, mb: 0.5 }}>
+            Also post to
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.facebook}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, facebook: e.target.checked }))}
+              />
+            }
+            label="Facebook"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.x}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, x: e.target.checked }))}
+              />
+            }
+            label="X"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.instagram}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, instagram: e.target.checked }))}
+              />
+            }
+            label="Instagram"
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={closePublishDialog} disabled={publishing}>
@@ -485,6 +602,29 @@ const ArticlesList = () => {
             disabled={publishing}
           >
             {publishing ? 'Publishing...' : 'Publish'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onClose={closeBulkDeleteDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete {selectedIds.length} article{selectedIds.length === 1 ? '' : 's'}?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Permanently delete {selectedIds.length} article{selectedIds.length === 1 ? '' : 's'}?
+            This removes all images, audio, and videos from storage and cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeBulkDeleteDialog} disabled={bulkDeleting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleConfirmBulkDelete}
+            disabled={bulkDeleting}
+          >
+            {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.length} article${selectedIds.length === 1 ? '' : 's'}`}
           </Button>
         </DialogActions>
       </Dialog>

@@ -111,6 +111,7 @@ const ArticleEditor = () => {
   const [saving, setSaving] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [sendNotification, setSendNotification] = useState(true);
+  const [socialPublish, setSocialPublish] = useState({ facebook: false, x: false, instagram: false });
   const [error, setError] = useState(null);
   const [errorDetails, setErrorDetails] = useState([]);
   const [success, setSuccess] = useState(null);
@@ -781,9 +782,15 @@ const ArticleEditor = () => {
         youtubeUrl: (article.youtubeUrl || '').trim()
       };
 
-      // Only relevant when publishing: controls the push notification fan-out.
+      // Only relevant when publishing: controls the push notification fan-out
+      // and optional first-publish social posts.
       if (targetStatus === 'published') {
         articleData.sendNotification = options.sendNotification !== false;
+        articleData.socialPublish = {
+          facebook: options.socialPublish?.facebook === true,
+          x: options.socialPublish?.x === true,
+          instagram: options.socialPublish?.instagram === true
+        };
       }
 
       if (article.category) articleData.category = article.category;
@@ -808,6 +815,7 @@ const ArticleEditor = () => {
 
   const openPublishDialog = () => {
     setSendNotification(true);
+    setSocialPublish({ facebook: false, x: false, instagram: false });
     setPublishDialogOpen(true);
   };
 
@@ -818,7 +826,7 @@ const ArticleEditor = () => {
 
   const handleConfirmPublish = async () => {
     setPublishDialogOpen(false);
-    await handleSave('published', { sendNotification });
+    await handleSave('published', { sendNotification, socialPublish });
   };
 
   // Check if language has content
@@ -1658,6 +1666,36 @@ const ArticleEditor = () => {
               />
             }
             label="Send push notification to users"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5, mb: 0.5 }}>
+            Also post to
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.facebook}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, facebook: e.target.checked }))}
+              />
+            }
+            label="Facebook"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.x}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, x: e.target.checked }))}
+              />
+            }
+            label="X"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={socialPublish.instagram}
+                onChange={(e) => setSocialPublish((prev) => ({ ...prev, instagram: e.target.checked }))}
+              />
+            }
+            label="Instagram"
           />
         </DialogContent>
         <DialogActions>
