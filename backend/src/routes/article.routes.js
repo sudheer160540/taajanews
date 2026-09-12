@@ -6,12 +6,13 @@ const Category = require('../models/Category');
 const User = require('../models/User');
 const Comment = require('../models/Comment');
 const Engagement = require('../models/Engagement');
-const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, chiefEditorOnly } = require('../middleware/auth');
+const { protect, optionalAuth, reporterOrAdmin, editorOrAdmin, chiefEditorOnly, adminOnly } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
 const { deleteArticleMediaFromAzure } = require('../utils/articleMediaCleanup');
 const { notifyArticlePublished } = require('../utils/pushNotification');
 const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
+const { publishToSocialMedia } = require('../utils/socialMediaPublish');
 const { translateArticleFields, generateAndTranslateArticle } = require('../utils/articleTranslate');
 const { generateAudioForLanguages, getFilledAudioLanguages } = require('../utils/sarvamAudio');
 const { calculatePlagiarismMatchPercentage } = require('../utils/plagiarismAnalysis');
@@ -86,6 +87,38 @@ const firePublishedNotification = (article, trigger = 'unknown') => {
             tgOutcome.reason && tgOutcome.reason.message
           );
         }
+      });
+  });
+};
+
+const parseSocialPublish = (raw) => ({
+  facebook: raw?.facebook === true,
+  x: raw?.x === true,
+  instagram: raw?.instagram === true
+});
+
+const hasSocialPublish = (flags) =>
+  Boolean(flags && (flags.facebook || flags.x || flags.instagram));
+
+// Fire-and-forget Facebook / X / Instagram. NEVER blocks the HTTP response.
+const fireSocialPublish = (article, flags, trigger = 'unknown') => {
+  if (!article || article.status !== 'published') return;
+  if (!hasSocialPublish(flags)) return;
+  const aid = String(article._id);
+  console.log(
+    `[social] articleId=${aid} trigger=${trigger} ` +
+    `facebook=${flags.facebook} x=${flags.x} instagram=${flags.instagram} → queuing`
+  );
+  setImmediate(() => {
+    publishToSocialMedia(article, flags)
+      .then((result) => {
+        console.log(`[social] articleId=${aid} trigger=${trigger}`, result);
+      })
+      .catch((err) => {
+        console.error(
+          `[social] articleId=${aid} trigger=${trigger} error:`,
+          err && err.message
+        );
       });
   });
 };
@@ -766,6 +799,7 @@ router.post('/convert-audio', protect, reporterOrAdmin, async (req, res) => {
 // @route   GET /api/articles/:id
 // @desc    Get article by ID (for editing)
 // @access  Private/Reporter
+// NOTE: static paths like /bulk-delete must stay registered above this param route.
 router.get('/:id', protect, reporterOrAdmin, async (req, res) => {
   try {
     const article = await Article.findById(req.params.id)
@@ -822,6 +856,7 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
     // Only send a push when explicitly requested. Defaults to true when the
     // flag is omitted so existing callers keep their current behavior.
     const shouldNotify = req.body.sendNotification !== false;
+    const socialFlags = parseSocialPublish(req.body.socialPublish);
 
     // Convert plain objects to Maps for multilingual fields
     const articleData = {
@@ -836,8 +871,9 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
       source: req.body.source || 'Taaja News Network',
       sourceUrl: req.body.sourceUrl || ''
     };
-    // Not a persisted field — remove before saving.
+    // Not persisted — remove before saving.
     delete articleData.sendNotification;
+    delete articleData.socialPublish;
 
     // Get category ancestors if category provided
     if (req.body.category) {
@@ -868,6 +904,9 @@ router.post('/', protect, reporterOrAdmin, validate(schemas.createArticle), asyn
     // admin), kick off the push notification fan-out.
     if (shouldNotify) {
       firePublishedNotification(article, 'POST /articles');
+    }
+    if (article.status === 'published') {
+      fireSocialPublish(article, socialFlags, 'POST /articles');
     }
 
     // Update category article count
@@ -928,12 +967,14 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     // Only send a push when explicitly requested. Defaults to true when the
     // flag is omitted so existing callers keep their current behavior.
     const shouldNotify = req.body.sendNotification !== false;
+    const socialFlags = parseSocialPublish(req.body.socialPublish);
 
     // Convert plain objects to Maps for multilingual fields
     const updateData = { ...req.body };
     delete updateData.createdBy;
     delete updateData.updatedBy;
     delete updateData.sendNotification;
+    delete updateData.socialPublish;
     updateData.updatedBy = req.user._id;
 
     if (updateData.author) {
@@ -1009,6 +1050,9 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
     // so re-saves of an already-published article don't re-trigger pushes.
     if (shouldNotify && previousStatus !== 'published' && updatedArticle && updatedArticle.status === 'published') {
       firePublishedNotification(updatedArticle, 'PUT /articles/:id');
+    }
+    if (previousStatus !== 'published' && updatedArticle && updatedArticle.status === 'published') {
+      fireSocialPublish(updatedArticle, socialFlags, 'PUT /articles/:id');
     } else if (updatedArticle && updatedArticle.status === 'published') {
       // Helpful trace for re-saves: confirms why we did NOT send a push.
       console.log(
@@ -1034,7 +1078,8 @@ router.put('/:id', protect, reporterOrAdmin, async (req, res) => {
 //   chief-editor, admin → can set draft, pending, published, archived
 router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   try {
-    const { status, sendNotification } = req.body;
+    const { status, sendNotification, socialPublish } = req.body;
+    const socialFlags = parseSocialPublish(socialPublish);
 
     if (!['draft', 'pending', 'published', 'archived'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -1071,6 +1116,9 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
     if (shouldNotify && prior.status !== 'published' && article.status === 'published') {
       firePublishedNotification(article, 'PUT /articles/:id/status');
     }
+    if (prior.status !== 'published' && article.status === 'published') {
+      fireSocialPublish(article, socialFlags, 'PUT /articles/:id/status');
+    }
 
     res.json({
       message: `Article ${status}`,
@@ -1082,6 +1130,72 @@ router.put('/:id/status', protect, editorOrAdmin, async (req, res) => {
   }
 });
 
+const permanentlyDeleteArticle = async (article) => {
+  const mediaCleanup = await deleteArticleMediaFromAzure(article);
+  await Promise.all([
+    Comment.deleteMany({ article: article._id }),
+    Engagement.deleteMany({ article: article._id })
+  ]);
+  await Article.findByIdAndDelete(article._id);
+  return mediaCleanup;
+};
+
+const MAX_BULK_DELETE = 50;
+
+const handleBulkDeleteArticles = async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+    const uniqueIds = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))];
+
+    if (uniqueIds.length === 0) {
+      return res.status(400).json({ error: 'Select at least one article to delete' });
+    }
+    if (uniqueIds.length > MAX_BULK_DELETE) {
+      return res.status(400).json({ error: `You can delete at most ${MAX_BULK_DELETE} articles at a time` });
+    }
+    if (uniqueIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ error: 'One or more article IDs are invalid' });
+    }
+
+    const articles = await Article.find({ _id: { $in: uniqueIds } });
+    const foundIds = new Set(articles.map((a) => String(a._id)));
+    const missing = uniqueIds.filter((id) => !foundIds.has(id));
+
+    const results = [];
+    for (const article of articles) {
+      try {
+        const mediaCleanup = await permanentlyDeleteArticle(article);
+        results.push({ id: String(article._id), deleted: true, mediaCleanup });
+      } catch (err) {
+        console.error(`[bulk-delete] articleId=${article._id}`, err && err.message);
+        results.push({ id: String(article._id), deleted: false, error: 'Failed to delete article' });
+      }
+    }
+
+    const deleted = results.filter((r) => r.deleted).length;
+    res.json({
+      message: `${deleted} article${deleted === 1 ? '' : 's'} permanently deleted`,
+      requested: uniqueIds.length,
+      deleted,
+      missing,
+      results
+    });
+  } catch (error) {
+    console.error('Bulk delete articles error:', error);
+    res.status(500).json({ error: 'Failed to delete articles' });
+  }
+};
+
+// @route   POST /api/articles/bulk-delete
+// @desc    Permanently delete many articles + Azure media (Admin only)
+// @access  Private/Admin
+router.post('/bulk-delete', protect, adminOnly, handleBulkDeleteArticles);
+
+// @route   DELETE /api/articles/bulk
+// @desc    Same as POST /bulk-delete (kept for older clients)
+// @access  Private/Admin
+router.delete('/bulk', protect, adminOnly, handleBulkDeleteArticles);
+
 // @route   DELETE /api/articles/:id
 // @desc    Permanently delete article and remove Azure media (Chief Editor / Admin only)
 // @access  Private/Chief Editor
@@ -1092,14 +1206,7 @@ router.delete('/:id', protect, chiefEditorOnly, async (req, res) => {
       return res.status(404).json({ error: 'Article not found' });
     }
 
-    const mediaCleanup = await deleteArticleMediaFromAzure(article);
-
-    await Promise.all([
-      Comment.deleteMany({ article: article._id }),
-      Engagement.deleteMany({ article: article._id })
-    ]);
-
-    await Article.findByIdAndDelete(article._id);
+    const mediaCleanup = await permanentlyDeleteArticle(article);
 
     res.json({
       message: 'Article permanently deleted',
