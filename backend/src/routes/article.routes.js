@@ -11,7 +11,7 @@ const { validate, schemas } = require('../middleware/validate');
 const languageCache = require('../utils/languageCache');
 const { deleteArticleMediaFromAzure } = require('../utils/articleMediaCleanup');
 const { notifyArticlePublished } = require('../utils/pushNotification');
-const { notifyArticlePublishedTelegram } = require('../utils/telegramNotification');
+const { notifyArticlePublishedTelegram, notifySocialPublishTelegram } = require('../utils/telegramNotification');
 const { publishToSocialMedia } = require('../utils/socialMediaPublish');
 const { translateArticleFields, generateAndTranslateArticle } = require('../utils/articleTranslate');
 const { generateAudioForLanguages, getFilledAudioLanguages } = require('../utils/sarvamAudio');
@@ -111,8 +111,21 @@ const fireSocialPublish = (article, flags, trigger = 'unknown') => {
   );
   setImmediate(() => {
     publishToSocialMedia(article, flags)
-      .then((result) => {
+      .then(async (result) => {
         console.log(`[social] articleId=${aid} trigger=${trigger}`, result);
+        try {
+          const tg = await notifySocialPublishTelegram(article, result);
+          console.log(
+            `[social] articleId=${aid} trigger=${trigger} Telegram log: ` +
+            `sent=${tg.sent || 0} failed=${tg.failed || 0} ` +
+            `${tg.skipped ? `skipped=${tg.skipped}` : 'OK'}`
+          );
+        } catch (tgErr) {
+          console.error(
+            `[social] articleId=${aid} trigger=${trigger} Telegram log error:`,
+            tgErr && tgErr.message
+          );
+        }
       })
       .catch((err) => {
         console.error(

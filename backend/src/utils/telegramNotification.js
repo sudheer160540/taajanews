@@ -312,8 +312,72 @@ const notifySourceBatchSummaryTelegram = async (result) => {
   }
 };
 
+const formatSocialLine = (row) => {
+  const name = escapeHtml(String(row.platform || 'unknown'));
+  if (row.failed) {
+    return `• <b>${name}</b>: failed — ${escapeHtml(truncate(row.error || 'error', 180))}`;
+  }
+  if (row.skipped) {
+    return `• <b>${name}</b>: skipped (${escapeHtml(String(row.skipped))})`;
+  }
+  if (row.posted) {
+    const id = row.id ? ` <code>${escapeHtml(String(row.id))}</code>` : '';
+    return `• <b>${name}</b>: posted${id}`;
+  }
+  return `• <b>${name}</b>: unknown`;
+};
+
+/**
+ * Log social auto-post results to Telegram after Facebook / X / Instagram run.
+ */
+const notifySocialPublishTelegram = async (article, socialResult) => {
+  const aid = article && article._id ? String(article._id) : '<unknown>';
+
+  try {
+    if (!isPublishNotifyEnabled()) {
+      return { sent: 0, failed: 0, skipped: 'publish-notify-disabled' };
+    }
+
+    const headline =
+      pickFirstNonEmpty(article?.summary, ['te'], 'te') ||
+      pickFirstNonEmpty(article?.summary, BODY_LANG_ORDER, 'te') ||
+      pickFirstNonEmpty(article?.title, ['te'], 'te') ||
+      'Untitled';
+    const url = buildArticleUrl(article);
+    const rows = Array.isArray(socialResult?.results) ? socialResult.results : [];
+    const selected = rows.filter((row) => row.skipped !== 'not_selected');
+
+    if (socialResult?.skipped && selected.length === 0) {
+      return { sent: 0, failed: 0, skipped: socialResult.skipped };
+    }
+
+    const lines = (selected.length ? selected : rows).map(formatSocialLine);
+    const imageUrl = article?.featuredImage?.url || article?.featuredImage?.appUrl || '';
+    const safeTitle = escapeHtml(truncate(headline, HEADLINE_LIMIT));
+    const safeUrl = escapeHtml(url);
+
+    let text =
+      `<b>📣 Social publish</b>\n\n` +
+      `${safeTitle}\n` +
+      `<a href="${safeUrl}">Read article</a>\n` +
+      `Image: ${imageUrl ? 'yes' : 'no'}\n\n` +
+      (lines.length ? lines.join('\n') : `• skipped (${escapeHtml(String(socialResult?.skipped || 'none'))})`);
+
+    if (text.length > MESSAGE_LIMIT) {
+      text = `${text.slice(0, MESSAGE_LIMIT - 1)}…`;
+    }
+
+    console.log(`[telegram] articleId=${aid} social-publish START`);
+    return await sendTelegramHtml(text, `articleId=${aid} social-publish`);
+  } catch (err) {
+    console.error(`[telegram] articleId=${aid} notifySocialPublishTelegram error:`, err.message);
+    return { sent: 0, failed: 0, skipped: 'error' };
+  }
+};
+
 module.exports = {
   notifyArticlePublishedTelegram,
+  notifySocialPublishTelegram,
   notifySourceArticleProcessedTelegram,
   notifySourceArticleFailedTelegram,
   notifySourceBatchSummaryTelegram,
