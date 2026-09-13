@@ -12,16 +12,23 @@
  *   X_ACCESS_TOKEN_SECRET
  *   FRONTEND_URL — article link base
  *
- * Instagram needs a public image URL (Business/Creator + Facebook Page).
+ * Facebook Page photo only — never user profile /me/feed, never publish_actions.
+ * Page token from GET /me/accounts (pages_show_list, pages_read_engagement, pages_manage_posts).
+ * Instagram: create container → require id → media_publish (public HTTPS image_url).
  * X media uses upload.twitter.com v1.1 (OAuth 1.0a) then api.x.com/2/tweets.
  */
 
 const crypto = require('crypto');
 const axios = require('axios');
-const languageCache = require('./languageCache');
+const { getFacebookPageAuth, markFacebookStale, isGraph190 } = require('./facebookToken');
 
-const GRAPH_VERSION = 'v21.0';
+const GRAPH_VERSION = 'v26.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+const instagramGraphBase = (token) => (
+  String(token || '').startsWith('IG') ? INSTAGRAM_GRAPH_BASE : GRAPH_BASE
+);
 const X_TWEET_URL = 'https://api.x.com/2/tweets';
 const X_MEDIA_UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json';
 const BODY_LANG_ORDER = ['te', 'en', 'hi'];
@@ -30,6 +37,15 @@ const X_URL_WEIGHT = 23;
 const INSTAGRAM_CAPTION_LIMIT = 2200;
 
 const env = (key) => String(process.env[key] || '').trim();
+
+/** Telugu summary for social captions; fallback other summary langs, then Telugu title. */
+const pickSocialText = (article) => {
+  const teSummary = pickFirstNonEmpty(article?.summary, ['te'], 'te');
+  if (teSummary) return teSummary;
+  const anySummary = pickFirstNonEmpty(article?.summary, BODY_LANG_ORDER, 'te');
+  if (anySummary) return anySummary;
+  return pickFirstNonEmpty(article?.title, ['te'], 'te');
+};
 
 const pickFirstNonEmpty = (mapLike, langOrder, defaultLang) => {
   if (!mapLike) return '';
@@ -106,8 +122,82 @@ const xOAuthHeader = (method, url, extraParams = {}) => {
     .join(', ')}`;
 };
 
-const graphError = (err) =>
-  err.response?.data?.error?.message || err.message || 'Unknown Graph API error';
+const graphError = (err) => {
+  const e = err.response?.data?.error;
+  if (!e) return err.message || 'Unknown Graph API error';
+  const parts = [e.message || 'Graph API error'];
+  if (e.error_user_msg) parts.push(e.error_user_msg);
+  if (e.code != null) parts.push(`code ${e.code}`);
+  if (e.error_subcode != null) parts.push(`subcode ${e.error_subcode}`);
+  return parts.join(' — ');
+};
+
+const isPublicHttpsUrl = (value) => {
+  try {
+    const parsed = new URL(String(value || ''));
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host !== 'localhost' && host !== '127.0.0.1' && host !== '::1';
+  } catch {
+    return false;
+  }
+};
+
+const graphFormPost = (url, fields) =>
+  axios.post(url, new URLSearchParams(fields), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout: 30000
+  });
+
+const resolveFacebookPageAuth = async () => {
+  const auth = await getFacebookPageAuth();
+  if (auth.skipped) {
+    return {
+      skipped: auth.skipped,
+      error: auth.error || (auth.skipped === 'facebook_reconnect_required'
+        ? 'Facebook session expired — reconnect'
+        : undefined)
+    };
+  }
+  return auth;
+};
+
+const resolveInstagramUserId = async (token) => {
+  const configured = env('INSTAGRAM_BUSINESS_ACCOUNT_ID');
+  if (configured) return configured;
+
+  const pageId = env('FACEBOOK_PAGE_ID');
+  const pageToken = env('FACEBOOK_PAGE_ACCESS_TOKEN');
+  if (!pageId || !pageToken) return '';
+
+  const { data } = await axios.get(`${GRAPH_BASE}/${pageId}`, {
+    params: { fields: 'instagram_business_account', access_token: pageToken },
+    timeout: 15000
+  });
+  const igId = data?.instagram_business_account?.id || '';
+  if (igId) console.log(`[social] instagram resolved ig-user-id from Page ${pageId}`);
+  return igId;
+};
+
+const waitForIgContainer = async (igBase, containerId, token) => {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const { data } = await axios.get(`${igBase}/${containerId}`, {
+      params: { fields: 'status_code,status', access_token: token },
+      timeout: 15000
+    });
+    const code = data?.status_code;
+    console.log(`[social] instagram container ${containerId} status_code=${code || 'none'}`);
+    if (!code || code === 'FINISHED') return data;
+    if (code === 'ERROR' || code === 'EXPIRED') {
+      const error = new Error(data.status || `Instagram container ${code}`);
+      error.response = { data: { error: { message: data.status || `container ${code}` } } };
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return {};
+};
 
 const xError = (err) => {
   const data = err.response?.data;
@@ -118,56 +208,90 @@ const xError = (err) => {
 };
 
 const postFacebook = async ({ headline, url, imageUrl }) => {
-  const pageId = env('FACEBOOK_PAGE_ID');
-  const token = env('FACEBOOK_PAGE_ACCESS_TOKEN');
-  if (!pageId || !token) {
-    return { skipped: 'missing_credentials' };
+  const auth = await resolveFacebookPageAuth();
+  if (auth.skipped) {
+    return { skipped: auth.skipped, error: auth.error };
+  }
+  if (!imageUrl || !isPublicHttpsUrl(imageUrl)) {
+    return { skipped: 'missing_image', error: 'Facebook publish requires a public HTTPS image (Page /photos only)' };
   }
 
   const caption = buildCaption(headline, url);
-  if (imageUrl) {
-    const { data } = await axios.post(`${GRAPH_BASE}/${pageId}/photos`, {
+  const photoUrl = `${GRAPH_BASE}/${auth.pageId}/photos`;
+  console.log(`[social] facebook POST ${photoUrl} url=${imageUrl} source=${auth.source || 'unknown'}`);
+  try {
+    const { data } = await graphFormPost(photoUrl, {
       url: imageUrl,
       caption,
-      access_token: token
+      access_token: auth.token
     });
+    console.log('[social] facebook photos response', { id: data.id, post_id: data.post_id });
     return { posted: true, id: data.id || data.post_id };
+  } catch (err) {
+    if (isGraph190(err)) {
+      await markFacebookStale('Facebook session expired — reconnect');
+      return { failed: true, error: 'Facebook session expired — reconnect' };
+    }
+    throw err;
   }
-
-  const { data } = await axios.post(`${GRAPH_BASE}/${pageId}/feed`, {
-    message: caption,
-    link: url,
-    access_token: token
-  });
-  return { posted: true, id: data.id };
 };
 
 const postInstagram = async ({ headline, url, imageUrl }) => {
-  const igUserId = env('INSTAGRAM_BUSINESS_ACCOUNT_ID');
   const token = env('INSTAGRAM_ACCESS_TOKEN');
-  if (!igUserId || !token) {
+  if (!token) {
     return { skipped: 'missing_credentials' };
   }
   if (!imageUrl) {
     return { skipped: 'missing_image' };
   }
-
-  const caption = truncate(buildCaption(headline, url), INSTAGRAM_CAPTION_LIMIT);
-  const container = await axios.post(`${GRAPH_BASE}/${igUserId}/media`, {
-    image_url: imageUrl,
-    caption,
-    access_token: token
-  });
-  const creationId = container.data?.id;
-  if (!creationId) {
-    return { skipped: 'instagram_container_failed' };
+  if (!isPublicHttpsUrl(imageUrl)) {
+    return { failed: true, error: 'Instagram image_url must be public HTTPS (not localhost)' };
   }
 
-  const published = await axios.post(`${GRAPH_BASE}/${igUserId}/media_publish`, {
+  const igUserId = await resolveInstagramUserId(token);
+  if (!igUserId) {
+    return { skipped: 'missing_credentials' };
+  }
+
+  const caption = truncate(buildCaption(headline, url), INSTAGRAM_CAPTION_LIMIT);
+  const igBase = instagramGraphBase(token);
+  const createUrl = `${igBase}/${igUserId}/media`;
+  console.log(`[social] instagram POST ${createUrl} image_url=${imageUrl}`);
+
+  let container;
+  try {
+    container = await graphFormPost(createUrl, {
+      image_url: imageUrl,
+      caption,
+      access_token: token
+    });
+  } catch (err) {
+    console.error('[social] instagram container create failed', err.response?.data || err.message);
+    throw err;
+  }
+
+  const creationId = container.data?.id;
+  console.log('[social] instagram container response', container.data);
+  if (!creationId) {
+    const message = graphError({
+      response: { data: container.data }
+    }) || 'Instagram container create returned no id';
+    return { failed: true, error: message };
+  }
+
+  await waitForIgContainer(igBase, creationId, token);
+
+  const publishUrl = `${igBase}/${igUserId}/media_publish`;
+  console.log(`[social] instagram POST ${publishUrl} creation_id=${creationId}`);
+  const published = await graphFormPost(publishUrl, {
     creation_id: creationId,
     access_token: token
   });
-  return { posted: true, id: published.data?.id };
+  console.log('[social] instagram publish response', published.data);
+  if (!published.data?.id) {
+    return { failed: true, error: 'Instagram media_publish returned no media id' };
+  }
+  return { posted: true, id: published.data.id };
 };
 
 const uploadXMedia = async (imageUrl) => {
@@ -238,8 +362,7 @@ const publishToSocialMedia = async (article, flags = {}) => {
     return { skipped: 'none_selected' };
   }
 
-  const defaultLang = await languageCache.getDefaultLanguageCode().catch(() => 'te');
-  const headline = pickFirstNonEmpty(article.title, BODY_LANG_ORDER, defaultLang);
+  const headline = pickSocialText(article);
   const url = buildArticleUrl(article);
   if (!headline && !url) {
     return { skipped: 'missing_headline' };
