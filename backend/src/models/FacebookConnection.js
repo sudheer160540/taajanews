@@ -9,12 +9,20 @@ const pageSchema = new mongoose.Schema({
 
 const facebookConnectionSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
-  facebookUserTokenLong: { type: String, default: '' },
+  facebookUserAccessTokenLong: { type: String, default: '' },
   facebookUserTokenExpiresAt: { type: Date, default: null },
+  facebookPageId: { type: String, default: '' },
+  facebookPageAccessToken: { type: String, default: '' },
+  facebookPageName: { type: String, default: '' },
+  facebookConnectionStatus: {
+    type: String,
+    enum: ['connected', 'expired', 'disconnected'],
+    default: 'disconnected'
+  },
+  facebookConnectedAt: { type: Date, default: null },
+  facebookLastError: { type: String, default: '' },
   pages: { type: [pageSchema], default: [] },
   selectedPageId: { type: String, default: '' },
-  stale: { type: Boolean, default: false },
-  staleReason: { type: String, default: '' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
 }, { timestamps: true });
 

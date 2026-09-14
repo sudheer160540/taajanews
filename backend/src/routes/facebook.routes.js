@@ -1,55 +1,69 @@
 /**
- * Facebook token admin API.
+ * Facebook Page connect (admin).
  *
- * POST /api/facebook/tokens/exchange
- *   Body: { "shortLivedUserToken": "EAA..." }
- *   Exchange Explorer/login token → long-lived user token → Page tokens (stored in Mongo).
+ * POST /api/facebook/connect
+ *   { "shortLivedUserToken": "EAA..." }
+ *   Exchanges short user token → long-lived user token → stores Page token.
+ *   Scopes on the short token: pages_show_list, pages_read_engagement, pages_manage_posts
  *
- * Permissions on the short token: pages_show_list, pages_read_engagement, pages_manage_posts
+ * GET  /api/facebook/status
+ * POST /api/facebook/pages/select  { pageId }
+ * POST /api/facebook/disconnect
+ * GET  /api/facebook/tokens/debug
+ *
+ * Tokens never returned to the client.
  */
 
 const express = require('express');
 const router = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
 const {
-  exchangeAndStore,
+  connectWithShortLivedToken,
   getConnection,
+  publicConnectionView,
   selectPage,
+  disconnectFacebook,
   debugToken
 } = require('../utils/facebookToken');
 
-router.post('/tokens/exchange', protect, adminOnly, async (req, res) => {
+const handleConnect = async (req, res) => {
   try {
     const shortLivedUserToken = String(req.body.shortLivedUserToken || '').trim();
-    const result = await exchangeAndStore(shortLivedUserToken, req.user._id);
+    const result = await connectWithShortLivedToken(shortLivedUserToken, req.user._id);
     res.json({
       ok: true,
-      message: 'Facebook Page token stored. Social publish will use the Page token.',
+      message: 'Facebook connected. Social publish uses the stored Page token.',
       ...result
     });
   } catch (err) {
-    console.error('[facebook] token exchange failed:', err.message);
+    console.error('[facebook] connect failed:', err.message);
     res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+router.post('/connect', protect, adminOnly, handleConnect);
+router.post('/tokens/exchange', protect, adminOnly, handleConnect);
+
+router.get('/status', protect, adminOnly, async (req, res) => {
+  try {
+    const connection = await getConnection();
+    res.json({ ok: true, ...publicConnectionView(connection) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load Facebook status' });
   }
 });
 
 router.get('/pages', protect, adminOnly, async (req, res) => {
   try {
     const connection = await getConnection();
-    if (!connection) {
-      return res.json({ connected: false, pages: [], selectedPageId: '' });
-    }
+    const view = publicConnectionView(connection);
     res.json({
-      connected: true,
-      stale: Boolean(connection.stale),
-      staleReason: connection.staleReason || '',
-      selectedPageId: connection.selectedPageId || '',
-      userTokenExpiresAt: connection.facebookUserTokenExpiresAt,
-      pages: (connection.pages || []).map((page) => ({
-        pageId: page.pageId,
-        pageName: page.pageName,
-        tasks: page.tasks
-      }))
+      connected: view.status === 'connected',
+      stale: view.status === 'expired',
+      staleReason: view.facebookLastError,
+      selectedPageId: view.selectedPageId,
+      userTokenExpiresAt: view.facebookUserTokenExpiresAt,
+      pages: view.pages
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load Facebook pages' });
@@ -65,13 +79,18 @@ router.post('/pages/select', protect, adminOnly, async (req, res) => {
   }
 });
 
+router.post('/disconnect', protect, adminOnly, async (req, res) => {
+  try {
+    const result = await disconnectFacebook();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to disconnect Facebook' });
+  }
+});
+
 router.get('/tokens/debug', protect, adminOnly, async (req, res) => {
   try {
-    const connection = await getConnection();
-    const page = connection?.pages?.find((item) => item.pageId === connection.selectedPageId)
-      || connection?.pages?.[0];
-    const inputToken = String(req.query.inputToken || page?.pageAccessToken || connection?.facebookUserTokenLong || '').trim();
-    const info = await debugToken(inputToken);
+    const info = await debugToken();
     res.json({ ok: true, ...info });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });

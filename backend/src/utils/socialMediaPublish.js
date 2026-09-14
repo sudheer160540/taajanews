@@ -20,7 +20,7 @@
 
 const crypto = require('crypto');
 const axios = require('axios');
-const { getFacebookPageAuth, markFacebookStale, isGraph190 } = require('./facebookToken');
+const { getFacebookPageAuth, markFacebookStale, isGraph190, graphBase } = require('./facebookToken');
 
 const GRAPH_VERSION = 'v26.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -80,10 +80,15 @@ const buildArticleUrl = (article) => {
 const getImageUrl = (article) =>
   article?.featuredImage?.url || article?.featuredImage?.appUrl || '';
 
+const getPlayStoreUrl = () =>
+  env('ANDROID_APP_URL') || 'https://play.google.com/store/apps/details?id=com.taajanews.app&hl=en_IN';
+
+const getPlayStoreLabel = () => env('ANDROID_APP_LINK_NAME') || 'Download TAAJA News';
+
 const buildCaption = (headline, url) => {
-  const title = String(headline || '').trim();
-  if (title && url) return `${title}\n\n${url}`;
-  return title || url || '';
+  const text = String(headline || '').trim();
+  const link = `${getPlayStoreLabel()}\n${url || getPlayStoreUrl()}`;
+  return text ? `${text}\n\n${link}` : link;
 };
 
 const percentEncode = (value) =>
@@ -217,7 +222,7 @@ const postFacebook = async ({ headline, url, imageUrl }) => {
   }
 
   const caption = buildCaption(headline, url);
-  const photoUrl = `${GRAPH_BASE}/${auth.pageId}/photos`;
+  const photoUrl = `${graphBase()}/${auth.pageId}/photos`;
   console.log(`[social] facebook POST ${photoUrl} url=${imageUrl} source=${auth.source || 'unknown'}`);
   try {
     const { data } = await graphFormPost(photoUrl, {
@@ -315,8 +320,9 @@ const postX = async ({ headline, url, imageUrl }) => {
     return { skipped: 'missing_credentials' };
   }
 
-  const maxHeadline = Math.max(1, X_LIMIT - X_URL_WEIGHT - 2);
-  const text = `${truncate(headline, maxHeadline)}\n${url}`.trim();
+  const linkLabel = getPlayStoreLabel();
+  const maxHeadline = Math.max(1, X_LIMIT - X_URL_WEIGHT - linkLabel.length - 3);
+  const text = `${truncate(headline, maxHeadline)}\n${linkLabel}\n${url}`.trim();
 
   let mediaId = '';
   if (imageUrl) {
@@ -363,7 +369,7 @@ const publishToSocialMedia = async (article, flags = {}) => {
   }
 
   const headline = pickSocialText(article);
-  const url = buildArticleUrl(article);
+  const url = getPlayStoreUrl();
   if (!headline && !url) {
     return { skipped: 'missing_headline' };
   }
