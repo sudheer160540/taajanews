@@ -1,16 +1,18 @@
 /**
- * Facebook token lifecycle: short user token → long-lived user → Page tokens.
- * Publish must use Page access_token only. Never log tokens or App Secret.
+ * Facebook Page token lifecycle.
+ * Short user token → long-lived user token (~60d) → Page token (usually no expiry).
+ * Publish uses Page token + POST /{pageId}/photos only. Never publish_actions /me/feed.
  */
 
 const axios = require('axios');
 const FacebookConnection = require('../models/FacebookConnection');
+const { encryptSecret, decryptSecret } = require('./facebookCrypto');
 
-const GRAPH_VERSION = 'v26.0';
-const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const CONNECTION_KEY = 'default';
-
 const env = (key) => String(process.env[key] || '').trim();
+
+const graphVersion = () => env('FACEBOOK_GRAPH_VERSION') || 'v26.0';
+const graphBase = () => `https://graph.facebook.com/${graphVersion()}`;
 
 const graphError = (err, fallback) => {
   const e = err.response?.data?.error;
@@ -22,6 +24,45 @@ const graphError = (err, fallback) => {
 };
 
 const isGraph190 = (err) => Number(err.response?.data?.error?.code) === 190;
+
+const getConnection = () => FacebookConnection.findOne({ key: CONNECTION_KEY });
+
+const publicConnectionView = (connection) => {
+  if (!connection) {
+    return {
+      status: 'disconnected',
+      facebookPageId: '',
+      facebookPageName: '',
+      facebookUserTokenExpiresAt: null,
+      facebookConnectedAt: null,
+      facebookLastError: '',
+      selectedPageId: '',
+      pages: []
+    };
+  }
+  return {
+    status: connection.facebookConnectionStatus || 'disconnected',
+    facebookPageId: connection.facebookPageId || '',
+    facebookPageName: connection.facebookPageName || '',
+    facebookUserTokenExpiresAt: connection.facebookUserTokenExpiresAt,
+    facebookConnectedAt: connection.facebookConnectedAt,
+    facebookLastError: connection.facebookLastError || '',
+    selectedPageId: connection.selectedPageId || '',
+    pages: (connection.pages || []).map((page) => ({
+      pageId: page.pageId,
+      pageName: page.pageName,
+      tasks: page.tasks
+    }))
+  };
+};
+
+const selectedPageFrom = (connection, preferredPageId) => {
+  if (!connection) return null;
+  return connection.pages.find((item) => item.pageId === connection.selectedPageId)
+    || connection.pages.find((item) => item.pageId === preferredPageId)
+    || connection.pages[0]
+    || null;
+};
 
 const exchangeShortLivedUserToken = async (shortLivedUserToken) => {
   const appId = env('FACEBOOK_APP_ID');
@@ -38,7 +79,7 @@ const exchangeShortLivedUserToken = async (shortLivedUserToken) => {
   }
 
   try {
-    const { data } = await axios.get(`${GRAPH_BASE}/oauth/access_token`, {
+    const { data } = await axios.get(`${graphBase()}/oauth/access_token`, {
       params: {
         grant_type: 'fb_exchange_token',
         client_id: appId,
@@ -66,7 +107,7 @@ const exchangeShortLivedUserToken = async (shortLivedUserToken) => {
 
 const fetchPages = async (longLivedUserToken) => {
   try {
-    const { data } = await axios.get(`${GRAPH_BASE}/me/accounts`, {
+    const { data } = await axios.get(`${graphBase()}/me/accounts`, {
       params: {
         fields: 'id,name,access_token,tasks',
         access_token: longLivedUserToken
@@ -86,18 +127,24 @@ const fetchPages = async (longLivedUserToken) => {
   }
 };
 
-const getConnection = () => FacebookConnection.findOne({ key: CONNECTION_KEY });
-
-const persistExchange = async ({ longLivedUserToken, expiresIn, pages, userId }) => {
+const persistConnected = async ({ longLivedUserToken, expiresIn, pages, userId }) => {
   const preferredPageId = env('FACEBOOK_PAGE_ID');
   const selected = pages.find((page) => page.pageId === preferredPageId) || pages[0];
+  const encryptedPages = pages.map((page) => ({
+    ...page,
+    pageAccessToken: encryptSecret(page.pageAccessToken)
+  }));
   const payload = {
-    facebookUserTokenLong: longLivedUserToken,
+    facebookUserAccessTokenLong: encryptSecret(longLivedUserToken),
     facebookUserTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-    pages,
+    facebookPageId: selected?.pageId || '',
+    facebookPageAccessToken: selected ? encryptSecret(selected.pageAccessToken) : '',
+    facebookPageName: selected?.pageName || '',
+    facebookConnectionStatus: 'connected',
+    facebookConnectedAt: new Date(),
+    facebookLastError: '',
+    pages: encryptedPages,
     selectedPageId: selected?.pageId || '',
-    stale: false,
-    staleReason: '',
     updatedBy: userId || null
   };
   return FacebookConnection.findOneAndUpdate(
@@ -107,7 +154,7 @@ const persistExchange = async ({ longLivedUserToken, expiresIn, pages, userId })
   );
 };
 
-const exchangeAndStore = async (shortLivedUserToken, userId) => {
+const connectWithShortLivedToken = async (shortLivedUserToken, userId) => {
   const exchanged = await exchangeShortLivedUserToken(shortLivedUserToken);
   const pages = await fetchPages(exchanged.longLivedUserToken);
   if (!pages.length) {
@@ -115,23 +162,14 @@ const exchangeAndStore = async (shortLivedUserToken, userId) => {
     error.statusCode = 400;
     throw error;
   }
-  const saved = await persistExchange({ ...exchanged, pages, userId });
-  return {
-    userTokenExpiresIn: exchanged.expiresIn,
-    userTokenExpiresAt: saved.facebookUserTokenExpiresAt,
-    selectedPageId: saved.selectedPageId,
-    pages: saved.pages.map((page) => ({
-      pageId: page.pageId,
-      pageName: page.pageName,
-      tasks: page.tasks
-    }))
-  };
+  const saved = await persistConnected({ ...exchanged, pages, userId });
+  return publicConnectionView(saved);
 };
 
 const selectPage = async (pageId) => {
   const connection = await getConnection();
-  if (!connection) {
-    const error = new Error('Facebook is not connected. Exchange a short-lived token first.');
+  if (!connection || connection.facebookConnectionStatus === 'disconnected') {
+    const error = new Error('Facebook is not connected. POST /api/facebook/connect first.');
     error.statusCode = 400;
     throw error;
   }
@@ -142,101 +180,79 @@ const selectPage = async (pageId) => {
     throw error;
   }
   connection.selectedPageId = page.pageId;
-  connection.stale = false;
-  connection.staleReason = '';
+  connection.facebookPageId = page.pageId;
+  connection.facebookPageName = page.pageName;
+  connection.facebookPageAccessToken = page.pageAccessToken;
+  connection.facebookConnectionStatus = 'connected';
+  connection.facebookLastError = '';
   await connection.save();
-  return { selectedPageId: connection.selectedPageId, pageName: page.pageName };
+  return {
+    selectedPageId: connection.selectedPageId,
+    facebookPageName: page.pageName,
+    status: 'connected'
+  };
 };
 
-const markFacebookStale = async (reason = 'Facebook session expired — reconnect') => {
+const markFacebookExpired = async (reason = 'Facebook session expired — reconnect') => {
   await FacebookConnection.findOneAndUpdate(
     { key: CONNECTION_KEY },
-    { stale: true, staleReason: reason }
+    {
+      facebookConnectionStatus: 'expired',
+      facebookLastError: reason,
+      stale: undefined
+    }
   );
 };
 
-/** Never return a user token — /photos with a user token triggers deprecated publish_actions. */
-const resolvePageTokenFromUserToken = async (userToken, preferredPageId) => {
-  const { data } = await axios.get(`${GRAPH_BASE}/me/accounts`, {
-    params: { fields: 'id,name,access_token,tasks', access_token: userToken },
-    timeout: 20000
-  });
-  const pages = (data.data || [])
-    .map((page) => ({
-      pageId: String(page.id),
-      pageName: page.name || '',
-      pageAccessToken: page.access_token || '',
-      tasks: page.tasks || []
-    }))
-    .filter((page) => page.pageId && page.pageAccessToken);
-  const page = pages.find((item) => item.pageId === preferredPageId) || pages[0];
-  if (!page) {
-    const error = new Error('No Facebook Pages on this token. Need pages_show_list + Page admin.');
-    error.statusCode = 400;
-    throw error;
-  }
-  return { page, pages };
+const disconnectFacebook = async () => {
+  await FacebookConnection.findOneAndUpdate(
+    { key: CONNECTION_KEY },
+    {
+      facebookUserAccessTokenLong: '',
+      facebookUserTokenExpiresAt: null,
+      facebookPageId: '',
+      facebookPageAccessToken: '',
+      facebookPageName: '',
+      facebookConnectionStatus: 'disconnected',
+      facebookConnectedAt: null,
+      facebookLastError: '',
+      pages: [],
+      selectedPageId: ''
+    },
+    { upsert: true }
+  );
+  return { status: 'disconnected' };
 };
 
-/** Page id + Page access token only. User tokens are exchanged via /me/accounts. */
+/** Page id + Page token for publish. Never returns a user token. */
 const getFacebookPageAuth = async () => {
   const preferredPageId = env('FACEBOOK_PAGE_ID');
   const connection = await getConnection();
-  if (connection && !connection.stale) {
-    const page = connection.pages.find((item) => item.pageId === connection.selectedPageId)
-      || connection.pages.find((item) => item.pageId === preferredPageId)
-      || connection.pages[0];
-    if (page?.pageAccessToken) {
-      return { pageId: page.pageId, token: page.pageAccessToken, source: 'db' };
+  const status = connection?.facebookConnectionStatus;
+
+  if (connection && status === 'connected') {
+    const page = selectedPageFrom(connection, preferredPageId);
+    const token = decryptSecret(page?.pageAccessToken || connection.facebookPageAccessToken);
+    const pageId = page?.pageId || connection.facebookPageId;
+    if (pageId && token) {
+      return { pageId, token, source: 'db' };
     }
   }
 
-  const envToken = env('FACEBOOK_PAGE_ACCESS_TOKEN');
-  if (!envToken) {
-    if (connection?.stale) {
-      return {
-        skipped: 'facebook_reconnect_required',
-        error: connection.staleReason || 'Facebook session expired — reconnect'
-      };
-    }
-    return { skipped: 'missing_credentials' };
-  }
-
-  try {
-    const { page, pages } = await resolvePageTokenFromUserToken(envToken, preferredPageId);
-    await persistExchange({
-      longLivedUserToken: envToken,
-      expiresIn: 0,
-      pages,
-      userId: null
-    });
-    console.log(`[social] facebook resolved Page token via /me/accounts page=${page.pageId}`);
-    return { pageId: page.pageId, token: page.pageAccessToken, source: 'me_accounts' };
-  } catch (err) {
-    if (isGraph190(err)) {
-      await markFacebookStale('Facebook session expired — reconnect');
-      return { skipped: 'facebook_reconnect_required', error: 'Facebook session expired — reconnect' };
-    }
-    // Env token may already be a Page token (cannot call /me/accounts).
-    if (preferredPageId) {
-      try {
-        await axios.get(`${GRAPH_BASE}/${preferredPageId}`, {
-          params: { fields: 'id,name', access_token: envToken },
-          timeout: 15000
-        });
-        return { pageId: preferredPageId, token: envToken, source: 'env_page' };
-      } catch (pageErr) {
-        console.log(`[social] facebook env token is not a usable Page token: ${graphError(pageErr)}`);
-      }
-    }
+  if (status === 'expired') {
     return {
       skipped: 'facebook_reconnect_required',
-      error: graphError(err, 'Facebook needs a Page token. POST /api/facebook/tokens/exchange')
+      error: connection.facebookLastError || 'Facebook session expired — reconnect'
     };
   }
+
+  return {
+    skipped: 'facebook_reconnect_required',
+    error: 'Facebook is not connected. Admin: POST /api/facebook/connect with a short-lived user token.'
+  };
 };
 
-const debugToken = async (inputToken) => {
+const debugStoredPageToken = async () => {
   const appId = env('FACEBOOK_APP_ID');
   const appSecret = env('FACEBOOK_APP_SECRET');
   if (!appId || !appSecret) {
@@ -244,13 +260,16 @@ const debugToken = async (inputToken) => {
     error.statusCode = 500;
     throw error;
   }
+  const connection = await getConnection();
+  const page = selectedPageFrom(connection, env('FACEBOOK_PAGE_ID'));
+  const inputToken = decryptSecret(page?.pageAccessToken || connection?.facebookPageAccessToken);
   if (!inputToken) {
-    const error = new Error('inputToken is required');
+    const error = new Error('No stored Page token. POST /api/facebook/connect first.');
     error.statusCode = 400;
     throw error;
   }
   try {
-    const { data } = await axios.get(`${GRAPH_BASE}/debug_token`, {
+    const { data } = await axios.get(`${graphBase()}/debug_token`, {
       params: {
         input_token: inputToken,
         access_token: `${appId}|${appSecret}`
@@ -263,7 +282,8 @@ const debugToken = async (inputToken) => {
       expiresAt: info.expires_at || 0,
       scopes: info.scopes || [],
       type: info.type || '',
-      appId: info.app_id || ''
+      appId: info.app_id || '',
+      status: connection?.facebookConnectionStatus || 'disconnected'
     };
   } catch (err) {
     const error = new Error(graphError(err, 'Facebook debug_token failed'));
@@ -273,13 +293,17 @@ const debugToken = async (inputToken) => {
 };
 
 module.exports = {
-  GRAPH_BASE,
+  graphBase,
   isGraph190,
   graphError,
-  exchangeAndStore,
+  connectWithShortLivedToken,
+  exchangeAndStore: connectWithShortLivedToken,
   getConnection,
+  publicConnectionView,
   selectPage,
-  markFacebookStale,
+  markFacebookExpired,
+  markFacebookStale: markFacebookExpired,
+  disconnectFacebook,
   getFacebookPageAuth,
-  debugToken
+  debugToken: debugStoredPageToken
 };
