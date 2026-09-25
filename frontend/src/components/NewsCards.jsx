@@ -1,5 +1,5 @@
 import { Box, Typography, CardActionArea, Chip } from '@mui/material';
-import { PlayCircleFilled as PlayCircleFilledIcon } from '@mui/icons-material';
+import { PlayCircleFilled as PlayCircleFilledIcon, AccessTime as AccessTimeIcon } from '@mui/icons-material';
 import { getYoutubeEmbedId } from '../utils/youtube';
 
 export const IMAGE_PLACEHOLDER =
@@ -129,12 +129,15 @@ export const NewsGridCard = ({ article, onNavigate, lang, t }) => {
           {article.title}
         </Typography>
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
         <CategoryPill label={categoryName} color={categoryColor} />
         {timeAgo && (
-          <Typography variant="caption" color="text.secondary">
-            {timeAgo}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <AccessTimeIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+            <Typography variant="caption" color="text.secondary">
+              {timeAgo}
+            </Typography>
+          </Box>
         )}
       </Box>
     </CardActionArea>
