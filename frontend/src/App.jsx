@@ -19,6 +19,7 @@ const Videos = lazy(() => import('./pages/Videos'));
 const DeleteAccount = lazy(() => import('./pages/DeleteAccount'));
 const AboutUs = lazy(() => import('./pages/AboutUs'));
 const EditorialPolicy = lazy(() => import('./pages/EditorialPolicy'));
+const AdvertisingPolicy = lazy(() => import('./pages/AdvertisingPolicy'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsAndConditions = lazy(() => import('./pages/TermsAndConditions'));
 const ContactUs = lazy(() => import('./pages/ContactUs'));
@@ -134,6 +135,7 @@ function App() {
           <Route path="videos" element={<Videos />} />
           <Route path="about" element={<AboutUs />} />
           <Route path="editorial-policy" element={<EditorialPolicy />} />
+          <Route path="advertising-policy" element={<AdvertisingPolicy />} />
           <Route path="privacy-policy" element={<PrivacyPolicy />} />
           <Route path="terms" element={<TermsAndConditions />} />
           <Route path="delete-account" element={<DeleteAccount />} />

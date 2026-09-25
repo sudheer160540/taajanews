@@ -5,6 +5,7 @@ const footerLinks = [
   { label: 'Terms & Conditions', path: '/terms' },
   { label: 'Privacy Policy', path: '/privacy-policy' },
   { label: 'Editorial Policy', path: '/editorial-policy' },
+  { label: 'Advertising Policy', path: '/advertising-policy' },
   { label: 'About Us', path: '/about' },
   { label: 'Contact Us', path: '/contact' },
   { label: 'Delete Account', path: '/delete-account' },
