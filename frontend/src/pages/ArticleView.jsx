@@ -586,7 +586,7 @@ const ArticleView = () => {
           <Grid container spacing={2}>
             {relatedArticles.map((related) => (
               <Grid item xs={12} sm={6} key={related._id}>
-                <NewsGridCard article={related} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} />
+                <NewsGridCard article={related} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} t={t} />
               </Grid>
             ))}
           </Grid>

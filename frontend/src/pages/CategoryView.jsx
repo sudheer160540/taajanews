@@ -215,7 +215,7 @@ const CategoryView = () => {
           <Grid container spacing={2}>
             {articles.map((article) => (
               <Grid item xs={12} sm={6} md={4} key={article._id}>
-                <NewsGridCard article={article} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} />
+                <NewsGridCard article={article} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} t={t} />
               </Grid>
             ))}
           </Grid>

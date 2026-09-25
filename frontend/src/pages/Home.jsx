@@ -546,7 +546,7 @@ const Home = () => {
                 <Grid container spacing={2}>
                   {listArticles.map((article) => (
                     <Grid item xs={12} sm={6} key={article._id}>
-                      <NewsGridCard article={article} onNavigate={goToArticle} lang={lang} />
+                      <NewsGridCard article={article} onNavigate={goToArticle} lang={lang} t={t} />
                     </Grid>
                   ))}
                 </Grid>

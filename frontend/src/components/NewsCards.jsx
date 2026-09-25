@@ -10,6 +10,19 @@ const getCategoryName = (category, lang) => {
   return typeof category.name === 'string' ? category.name : category.name[lang] || category.name.en;
 };
 
+/** Relative time, e.g. "4 గంటల క్రితం" / "4 hours ago" — same units as the home feed. */
+const formatTimeAgo = (dateString, t) => {
+  if (!dateString) return '';
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return `1 ${t('minsAgo')}`;
+  if (mins < 60) return `${mins} ${t('minsAgo')}`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ${t('hoursAgo')}`;
+  const days = Math.floor(hrs / 24);
+  return `${days} ${t('daysAgo')}`;
+};
+
 /** Small red pill for the article's category — used under the headline on every card. */
 export const CategoryPill = ({ label, color, sx }) => {
   if (!label) return null;
@@ -65,11 +78,12 @@ const PlayOverlay = () => (
  * used everywhere articles are listed as a grid (home feed, category pages,
  * related stories) — modeled on navadishadaily.com's listing cards.
  */
-export const NewsGridCard = ({ article, onNavigate, lang }) => {
+export const NewsGridCard = ({ article, onNavigate, lang, t }) => {
   const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
   const imageUrl = article.featuredImage?.url || IMAGE_PLACEHOLDER;
   const categoryName = getCategoryName(article.category, lang);
   const categoryColor = article.category?.color;
+  const timeAgo = t ? formatTimeAgo(article.publishedAt, t) : '';
 
   return (
     <CardActionArea
@@ -115,7 +129,14 @@ export const NewsGridCard = ({ article, onNavigate, lang }) => {
           {article.title}
         </Typography>
       </Box>
-      <CategoryPill label={categoryName} color={categoryColor} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+        <CategoryPill label={categoryName} color={categoryColor} />
+        {timeAgo && (
+          <Typography variant="caption" color="text.secondary">
+            {timeAgo}
+          </Typography>
+        )}
+      </Box>
     </CardActionArea>
   );
 };
