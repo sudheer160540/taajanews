@@ -6,17 +6,14 @@ import {
   Container,
   Typography,
   Grid,
-  Card,
-  CardContent,
-  CardMedia,
-  CardActionArea,
   Chip,
   Breadcrumbs,
   Skeleton,
   Pagination
 } from '@mui/material';
-import { NavigateNext as NavNextIcon, AccessTime as TimeIcon } from '@mui/icons-material';
+import { NavigateNext as NavNextIcon } from '@mui/icons-material';
 import { categoriesApi, articlesApi } from '../services/api';
+import { NewsGridCard } from '../components/NewsCards';
 import { useLocation } from '../contexts/LocationContext';
 import Seo from '../components/Seo';
 import { truncate } from '../utils/seo';
@@ -88,14 +85,6 @@ const CategoryView = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
   };
 
   if (loading) {
@@ -223,57 +212,10 @@ const CategoryView = () => {
         </Box>
       ) : (
         <>
-          <Grid container spacing={3}>
+          <Grid container spacing={2}>
             {articles.map((article) => (
               <Grid item xs={12} sm={6} md={4} key={article._id}>
-                <Card sx={{ height: '100%' }}>
-                  <CardActionArea onClick={() => navigate(`/article/${article.slug}`)}>
-                    {article.featuredImage?.url && (
-                      <CardMedia
-                        component="img"
-                        height={180}
-                        image={article.featuredImage.url}
-                        alt={article.title}
-                      />
-                    )}
-                    <CardContent>
-                      <Typography
-                        variant="h6"
-                        fontWeight={600}
-                        sx={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          mb: 1
-                        }}
-                      >
-                        {article.title}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          mb: 2
-                        }}
-                      >
-                        {article.summary}
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TimeIcon fontSize="small" color="action" />
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDate(article.publishedAt)} • {article.readingTime} {t('minRead')}
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
+                <NewsGridCard article={article} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} />
               </Grid>
             ))}
           </Grid>
