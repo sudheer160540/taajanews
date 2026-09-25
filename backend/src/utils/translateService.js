@@ -87,9 +87,9 @@ const parsePlagiarismTarget = () => {
 
 const parsePlagiarismRetries = () => {
   const raw = process.env.SOURCE_PLAGIARISM_RETRIES;
-  if (raw === undefined || raw === '') return 2;
+  if (raw === undefined || raw === '') return 1;
   const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed)) return 2;
+  if (Number.isNaN(parsed)) return 1;
   return Math.min(5, Math.max(0, parsed));
 };
 
@@ -546,12 +546,16 @@ const parseSourceSet = (envKey) => {
 const getTeluguSourceSet = () => parseSourceSet('TELUGU_SOURCES');
 const getEnglishSourceSet = () => parseSourceSet('ENGLISH_SOURCES');
 
-/** Super Lead (stored in Article.summary) — words or sentence band */
+/**
+ * Super Lead (stored in Article.summary) — words or sentence band.
+ * Defaults keep it within the 500-character rule in NEWS_EDITORIAL_CORE_RULES
+ * (~60-90 English words).
+ */
 const getSuperLeadLimits = () => {
-  const minWords = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_WORDS, 10) || 500);
-  const maxWords = Math.max(minWords, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_WORDS, 10) || 600);
-  const minSentences = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_SENTENCES, 10) || 5);
-  const maxSentences = Math.max(minSentences, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_SENTENCES, 10) || 8);
+  const minWords = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_WORDS, 10) || 50);
+  const maxWords = Math.max(minWords, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_WORDS, 10) || 90);
+  const minSentences = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_SENTENCES, 10) || 3);
+  const maxSentences = Math.max(minSentences, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_SENTENCES, 10) || 5);
   return { minWords, maxWords, minSentences, maxSentences };
 };
 
@@ -655,6 +659,7 @@ async function extractSourceFacts(rawText, options = {}) {
       }
     ],
     temperature: strictRewrite ? 0.35 : 0.1,
+    max_tokens: 1500,
     response_format: { type: 'json_object' }
   });
 
@@ -692,12 +697,12 @@ const buildGenerationUserPrompt = ({
     `Plagiarism target: ${getPlagiarismTargetLabel()} lexical and phrase overlap with any source.\n\n` +
     `Return ONLY JSON with:\n` +
     `1) "title" — HEADLINE: complete, compelling, fresh angle; single line; max ${headline.maxChars} characters.\n` +
-    `2) "summary" — SUPER LEAD: ${superLead.minWords}-${superLead.maxWords} words OR ${superLead.minSentences}-${superLead.maxSentences} short sentences; inverted pyramid; 5W-1H.\n` +
-    `3) "content" — DETAILED STORY: ${detailed.minWords}-${detailed.maxWords} words; background where needed; new paragraph every 4-5 sentences; sub-headings only if truly needed.\n\n` +
+    `2) "summary" — SUPER LEAD: ${superLead.minSentences}-${superLead.maxSentences} short sentences (${superLead.minWords}-${superLead.maxWords} words, max 500 characters); inverted pyramid; 5W-1H.\n` +
+    `3) "content" — DETAILED STORY: ${detailed.minWords}-${detailed.maxWords} words; do not repeat the Super Lead; do not pad — if the fact sheet is thin, stay near the minimum; background where needed; new paragraph every 4-5 sentences; sub-headings only if truly needed.\n\n` +
     `Write like a human editor. Vary sentence length. Do not mirror the fact-sheet bullet order paragraph by paragraph.\n` +
     `${strictNote}` +
     `${sourceTitleNote}\n` +
-    `Fact sheet (your ONLY source of truth):\n${JSON.stringify(factSheet, null, 2)}\n\n` +
+    `Fact sheet (your ONLY source of truth):\n${JSON.stringify(factSheet)}\n\n` +
     'Return ONLY: {"title":"...","summary":"...","content":"..."}'
   );
 };
@@ -708,7 +713,7 @@ const buildGenerationUserPrompt = ({
  *
  * @param {string} rawText - full source article body
  * @param {string} anchorLang - te | en | hi
- * @param {{ sourceTitle?: string, strictRewrite?: boolean }} [options]
+ * @param {{ sourceTitle?: string, strictRewrite?: boolean, factSheet?: object }} [options]
  */
 async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const trimmed = String(rawText || '').trim();
@@ -726,7 +731,8 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   const sourceTitle = String(options.sourceTitle || '').trim();
   const strictRewrite = Boolean(options.strictRewrite);
 
-  const factSheet = await extractSourceFacts(trimmed, { strictRewrite });
+  // Callers may pass a fact sheet from a previous attempt to skip re-extraction.
+  const factSheet = options.factSheet || (await extractSourceFacts(trimmed, { strictRewrite }));
 
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
@@ -746,6 +752,7 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
       }
     ],
     temperature: strictRewrite ? 0.62 : 0.52,
+    max_tokens: parseInt(process.env.SOURCE_GENERATION_MAX_TOKENS, 10) || 6000,
     response_format: { type: 'json_object' }
   });
 
@@ -778,7 +785,7 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
 
   content = cleanNewsText(truncateToWordCount(content, detailed.maxWords));
 
-  return { title, summary, content };
+  return { title, summary, content, factSheet };
 }
 
 /** Convert a free-form tag into a lowercase, hyphenated slug (e.g. "HITEC City" → "hitec-city"). */
@@ -904,6 +911,7 @@ async function buildSourceArticleMultilingual(input, options = {}) {
 
   let bestDraft = null;
   let bestScore = 101;
+  let factSheet = null;
 
   if (checkPlagiarism) {
     console.log(
@@ -916,8 +924,10 @@ async function buildSourceArticleMultilingual(input, options = {}) {
     const strictRewrite = attempt > 0;
     const draft = await generateSummaryAndContent(contentTrimmed, anchorLang, {
       sourceTitle: titleTrimmed,
-      strictRewrite
+      strictRewrite,
+      factSheet
     });
+    factSheet = draft.factSheet;
 
     if (!checkPlagiarism) {
       bestDraft = draft;
