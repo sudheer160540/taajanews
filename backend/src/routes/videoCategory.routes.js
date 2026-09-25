@@ -4,7 +4,7 @@ const Joi = require('joi');
 const router = express.Router();
 const VideoCategory = require('../models/VideoCategory');
 const Video = require('../models/Video');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, canAccessScreen } = require('../middleware/auth');
 
 const categoryBodySchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
@@ -21,6 +21,8 @@ const categoryUpdateSchema = Joi.object({
 }).min(1);
 
 const manageVideos = authorize('admin', 'chief-editor');
+// Read-only category list for anyone with the Videos screen (incl. technical-staff)
+const viewVideoCategories = canAccessScreen('videos');
 
 const validateBody = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.body, { abortEarly: false, stripUnknown: true });
@@ -53,7 +55,7 @@ router.get('/public', async (req, res) => {
 // @route   GET /api/video-categories
 // @desc    List video categories (admin)
 // @access  Private/Admin
-router.get('/', protect, manageVideos, async (req, res) => {
+router.get('/', protect, viewVideoCategories, async (req, res) => {
   try {
     const { isActive, page = 1, limit = 50 } = req.query;
     const query = {};
@@ -90,7 +92,7 @@ router.get('/', protect, manageVideos, async (req, res) => {
 // @route   GET /api/video-categories/:id
 // @desc    Get single video category
 // @access  Private/Admin
-router.get('/:id', protect, manageVideos, async (req, res) => {
+router.get('/:id', protect, viewVideoCategories, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid category id' });

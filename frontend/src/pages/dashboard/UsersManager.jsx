@@ -32,6 +32,11 @@ import {
   Snackbar,
   Tabs,
   Tab,
+  FormGroup,
+  FormControlLabel,
+  FormHelperText,
+  FormLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -42,15 +47,49 @@ import {
 import { usersApi, authApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
-const ROLES = ['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'];
+const ROLES = ['user', 'reporter', 'sub-editor', 'chief-editor', 'admin', 'technical-staff'];
 const ROLE_LABELS = {
   'user': 'User',
   'reporter': 'Reporter',
   'sub-editor': 'Sub-Editor',
   'chief-editor': 'Chief Editor',
-  'admin': 'Admin'
+  'admin': 'Admin',
+  'technical-staff': 'Technical Staff'
 };
-const emptyForm = { name: '', email: '', password: '', role: 'user' };
+// Dashboard screens a technical-staff user can be granted
+const SCREEN_OPTIONS = [
+  { value: 'epapers', label: 'E-Papers', path: '/dashboard/epapers' },
+  { value: 'videos', label: 'Videos', path: '/dashboard/videos' }
+];
+const SCREEN_LABELS = Object.fromEntries(SCREEN_OPTIONS.map((s) => [s.value, s.label]));
+const emptyForm = { name: '', email: '', password: '', role: 'user', screenAccess: [] };
+
+const ScreenAccessPicker = ({ value, onChange, error }) => (
+  <FormControl error={!!error} component="fieldset">
+    <FormLabel component="legend">Visible screens</FormLabel>
+    <FormGroup row>
+      {SCREEN_OPTIONS.map((opt) => (
+        <FormControlLabel
+          key={opt.value}
+          control={
+            <Checkbox
+              checked={value.includes(opt.value)}
+              onChange={(e) => onChange(
+                e.target.checked
+                  ? [...value, opt.value]
+                  : value.filter((v) => v !== opt.value)
+              )}
+            />
+          }
+          label={`${opt.label} (${opt.path})`}
+        />
+      ))}
+    </FormGroup>
+    <FormHelperText>
+      {error || 'Technical staff can upload drafts only. Chief Editor / Admin publish.'}
+    </FormHelperText>
+  </FormControl>
+);
 
 const UsersManager = () => {
   const { t } = useTranslation();
@@ -73,6 +112,11 @@ const UsersManager = () => {
   const [form, setForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState({});
   const [adding, setAdding] = useState(false);
+
+  // Screen access (technical staff)
+  const [screenDialog, setScreenDialog] = useState({ open: false, user: null, screens: [], changeRole: false });
+  const [screenError, setScreenError] = useState(null);
+  const [savingScreens, setSavingScreens] = useState(false);
 
   // Delete User
   const [deleteDialog, setDeleteDialog] = useState({ open: false, user: null });
@@ -122,6 +166,11 @@ const UsersManager = () => {
   };
 
   const handleRoleChange = async (role) => {
+    // Technical staff need screens picked before the role is saved
+    if (role === 'technical-staff') {
+      openScreenDialog(selectedUser, true);
+      return;
+    }
     try {
       await usersApi.updateRole(selectedUser._id, role);
       setSuccess(`User role updated to ${role}`);
@@ -141,6 +190,39 @@ const UsersManager = () => {
       setError(err.response?.data?.error || 'Failed to update status');
     }
     handleMenuClose();
+  };
+
+  // ── Screen Access ───────────────────────────────────────
+  const openScreenDialog = (user, changeRole = false) => {
+    handleMenuClose();
+    setScreenError(null);
+    setScreenDialog({
+      open: true,
+      user,
+      screens: changeRole ? [] : (user?.screenAccess || []),
+      changeRole
+    });
+  };
+
+  const handleScreenSave = async () => {
+    const { user, screens, changeRole } = screenDialog;
+    if (!screens.length) { setScreenError('Select at least one screen'); return; }
+    setSavingScreens(true);
+    try {
+      if (changeRole) {
+        await usersApi.updateRole(user._id, 'technical-staff', screens);
+        showSnack(`${user.name} is now Technical Staff`);
+      } else {
+        await usersApi.updateScreenAccess(user._id, screens);
+        showSnack('Screen access updated');
+      }
+      setScreenDialog({ open: false, user: null, screens: [], changeRole: false });
+      fetchUsers();
+    } catch (err) {
+      setScreenError(err.response?.data?.error || 'Failed to update screen access');
+    } finally {
+      setSavingScreens(false);
+    }
   };
 
   // ── Add User ────────────────────────────────────────────
@@ -163,6 +245,9 @@ const UsersManager = () => {
     else if (!/\S+@\S+\.\S+/.test(form.email)) errors.email = 'Invalid email address';
     if (!form.password) errors.password = 'Password is required';
     else if (form.password.length < 6) errors.password = 'Minimum 6 characters';
+    if (form.role === 'technical-staff' && !form.screenAccess.length) {
+      errors.screenAccess = 'Select at least one screen';
+    }
     return errors;
   };
 
@@ -171,7 +256,10 @@ const UsersManager = () => {
     if (Object.keys(errors).length) { setFormErrors(errors); return; }
     setAdding(true);
     try {
-      await authApi.createAdmin({ ...form });
+      await authApi.createAdmin({
+        ...form,
+        screenAccess: form.role === 'technical-staff' ? form.screenAccess : []
+      });
       setAddOpen(false);
       showSnack(`User "${form.name}" created successfully`);
       fetchUsers();
@@ -209,6 +297,7 @@ const UsersManager = () => {
       case 'chief-editor': return 'secondary';
       case 'sub-editor': return 'warning';
       case 'reporter': return 'primary';
+      case 'technical-staff': return 'info';
       default: return 'default';
     }
   };
@@ -311,6 +400,13 @@ const UsersManager = () => {
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
                       <Chip label={ROLE_LABELS[user.role] || user.role} size="small" color={getRoleColor(user.role)} />
+                      {user.role === 'technical-staff' && (
+                        <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                          {(user.screenAccess || []).map((s) => (
+                            <Chip key={s} label={SCREEN_LABELS[s] || s} size="small" variant="outlined" />
+                          ))}
+                        </Box>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -358,6 +454,11 @@ const UsersManager = () => {
           </MenuItem>
         ))}
         <MenuItem divider />
+        {selectedUser?.role === 'technical-staff' && (
+          <MenuItem onClick={() => openScreenDialog(selectedUser)}>
+            Edit Screen Access
+          </MenuItem>
+        )}
         <MenuItem onClick={handleStatusToggle}>
           {selectedUser?.isActive ? 'Deactivate User' : 'Activate User'}
         </MenuItem>
@@ -421,6 +522,16 @@ const UsersManager = () => {
               ))}
             </Select>
           </FormControl>
+          {form.role === 'technical-staff' && (
+            <ScreenAccessPicker
+              value={form.screenAccess}
+              error={formErrors.screenAccess}
+              onChange={(screens) => {
+                setForm((prev) => ({ ...prev, screenAccess: screens }));
+                setFormErrors((prev) => ({ ...prev, screenAccess: undefined }));
+              }}
+            />
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
           <Button onClick={() => setAddOpen(false)} disabled={adding}>Cancel</Button>
@@ -431,6 +542,44 @@ const UsersManager = () => {
             startIcon={adding ? <CircularProgress size={16} color="inherit" /> : <PersonAddIcon />}
           >
             {adding ? 'Creating...' : 'Create User'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Screen Access Dialog ─────────────────────────── */}
+      <Dialog
+        open={screenDialog.open}
+        onClose={() => !savingScreens && setScreenDialog({ open: false, user: null, screens: [], changeRole: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {screenDialog.changeRole ? 'Set as Technical Staff' : 'Edit Screen Access'}
+          {screenDialog.user && (
+            <Typography variant="body2" color="text.secondary">
+              {screenDialog.user.name} ({screenDialog.user.email})
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          <ScreenAccessPicker
+            value={screenDialog.screens}
+            error={screenError}
+            onChange={(screens) => {
+              setScreenDialog((prev) => ({ ...prev, screens }));
+              setScreenError(null);
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setScreenDialog({ open: false, user: null, screens: [], changeRole: false })}
+            disabled={savingScreens}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleScreenSave} variant="contained" disabled={savingScreens}>
+            {savingScreens ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>

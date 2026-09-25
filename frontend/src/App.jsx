@@ -38,6 +38,15 @@ const VideosManager = lazy(() => import('./pages/dashboard/VideosManager'));
 const VideoCategoriesManager = lazy(() => import('./pages/dashboard/VideoCategoriesManager'));
 const Profile = lazy(() => import('./pages/dashboard/Profile'));
 
+// Technical staff have no article dashboard — land on their first granted screen.
+const DashboardHome = () => {
+  const { isTechnicalStaff, screenAccess } = useAuth();
+  if (isTechnicalStaff) {
+    return <Navigate to={screenAccess[0] ? `/dashboard/${screenAccess[0]}` : '/dashboard/profile'} replace />;
+  }
+  return <Dashboard />;
+};
+
 const LoadingScreen = () => (
   <Box
     sx={{
@@ -52,8 +61,19 @@ const LoadingScreen = () => (
   </Box>
 );
 
-const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false, requireAdmin = false, requireManageVideos = false }) => {
-  const { loading, isAuthenticated, isReporter, isAdmin, canManageVideos } = useAuth();
+const ProtectedRoute = ({
+  children,
+  requireAuth = false,
+  requireDashboard = false,
+  requireReporter = false,
+  requireAdmin = false,
+  requireManageVideos = false,
+  requireScreen = null
+}) => {
+  const {
+    loading, isAuthenticated, isReporter, isAdmin, canManageVideos,
+    canAccessDashboard, canAccessEpapers, canAccessVideos
+  } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -63,7 +83,19 @@ const ProtectedRoute = ({ children, requireAuth = false, requireReporter = false
     return <Navigate to="/auth/login" replace />;
   }
 
+  if (requireDashboard && !canAccessDashboard) {
+    return <Navigate to="/" replace />;
+  }
+
   if (requireReporter && !isReporter) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireScreen === 'epapers' && !canAccessEpapers) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireScreen === 'videos' && !canAccessVideos) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -120,23 +152,23 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute requireAuth requireReporter>
+            <ProtectedRoute requireAuth requireDashboard>
               <DashboardLayout />
             </ProtectedRoute>
           }
         >
-          <Route index element={<Dashboard />} />
+          <Route index element={<DashboardHome />} />
           <Route path="profile" element={<Profile />} />
-          <Route path="articles" element={<ArticlesList />} />
-          <Route path="articles/new" element={<ArticleEditor />} />
-          <Route path="articles/edit/:id" element={<ArticleEditor />} />
+          <Route path="articles" element={<ProtectedRoute requireReporter><ArticlesList /></ProtectedRoute>} />
+          <Route path="articles/new" element={<ProtectedRoute requireReporter><ArticleEditor /></ProtectedRoute>} />
+          <Route path="articles/edit/:id" element={<ProtectedRoute requireReporter><ArticleEditor /></ProtectedRoute>} />
           <Route path="categories" element={<ProtectedRoute requireAdmin><CategoriesManager /></ProtectedRoute>} />
           <Route path="users" element={<ProtectedRoute requireAdmin><UsersManager /></ProtectedRoute>} />
           <Route path="locations" element={<ProtectedRoute requireAdmin><LocationsManager /></ProtectedRoute>} />
           <Route path="languages" element={<ProtectedRoute requireAdmin><LanguagesManager /></ProtectedRoute>} />
           <Route path="promotions" element={<ProtectedRoute requireAdmin><PromotionsManager /></ProtectedRoute>} />
-          <Route path="epapers" element={<EPaperManager />} />
-          <Route path="videos" element={<ProtectedRoute requireManageVideos><VideosManager /></ProtectedRoute>} />
+          <Route path="epapers" element={<ProtectedRoute requireScreen="epapers"><EPaperManager /></ProtectedRoute>} />
+          <Route path="videos" element={<ProtectedRoute requireScreen="videos"><VideosManager /></ProtectedRoute>} />
           <Route path="video-categories" element={<ProtectedRoute requireManageVideos><VideoCategoriesManager /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

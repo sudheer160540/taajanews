@@ -151,14 +151,24 @@ router.get('/me', protect, async (req, res) => {
 // @access  Private/Admin
 router.post('/admin/create', protect, adminOnly, async (req, res) => {
   try {
-    const { name, email, password, role = 'user' } = req.body;
+    const { name, email, password, role = 'user', screenAccess = [] } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email and password are required' });
     }
 
-    if (!['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'].includes(role)) {
+    if (!User.ROLES.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    let screens = [];
+    if (role === 'technical-staff') {
+      screens = [...new Set(Array.isArray(screenAccess) ? screenAccess : [])];
+      if (!screens.length || screens.some((s) => !User.SCREEN_ACCESS.includes(s))) {
+        return res.status(400).json({
+          error: `Technical staff needs at least one screen: ${User.SCREEN_ACCESS.join(', ')}`
+        });
+      }
     }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -166,7 +176,7 @@ router.post('/admin/create', protect, adminOnly, async (req, res) => {
       return res.status(400).json({ error: 'Email already in use' });
     }
 
-    const user = await User.create({ name, email, password, role });
+    const user = await User.create({ name, email, password, role, screenAccess: screens });
 
     res.status(201).json({
       message: 'User created successfully',

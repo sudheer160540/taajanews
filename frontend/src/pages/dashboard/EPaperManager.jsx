@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -22,8 +21,6 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Switch,
-  FormControlLabel,
   Alert,
   Chip,
   Grid,
@@ -49,6 +46,12 @@ const INITIAL_FORM = {
   status: 'active'
 };
 
+const STATUS_OPTIONS = [
+  { value: 'draft', label: 'Draft', color: 'warning' },
+  { value: 'active', label: 'Active', color: 'success' },
+  { value: 'inactive', label: 'Inactive', color: 'default' }
+];
+
 const getAreaName = (area) => {
   if (!area) return '-';
   if (typeof area.name === 'string') return area.name;
@@ -57,7 +60,8 @@ const getAreaName = (area) => {
 };
 
 const EPaperManager = () => {
-  const { isAdmin, loading: authLoading } = useAuth();
+  // Access to this screen is enforced by the route; canPublishMedia = admin / chief-editor
+  const { canPublishMedia, loading: authLoading } = useAuth();
   const [epapers, setEpapers] = useState([]);
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,10 +82,10 @@ const EPaperManager = () => {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) {
+    if (!authLoading) {
       fetchEpapers();
     }
-  }, [page, rowsPerPage, filterStatus, isAdmin]);
+  }, [page, rowsPerPage, filterStatus, authLoading]);
 
   const fetchAreas = async () => {
     try {
@@ -124,7 +128,7 @@ const EPaperManager = () => {
       });
     } else {
       setEditingEPaper(null);
-      setFormData({ ...INITIAL_FORM });
+      setFormData({ ...INITIAL_FORM, status: canPublishMedia ? 'active' : 'draft' });
     }
     setError(null);
     setDialogOpen(true);
@@ -184,16 +188,19 @@ const EPaperManager = () => {
         title: formData.title.trim(),
         date: formData.date,
         pdfUrl: formData.pdfUrl,
-        status: formData.status,
         area: formData.area || null
       };
+      // Technical staff cannot publish — backend keeps their uploads as draft
+      if (canPublishMedia) payload.status = formData.status;
 
       if (editingEPaper) {
         await epapersApi.update(editingEPaper._id, payload);
         setSuccess('E-paper updated successfully');
       } else {
         await epapersApi.create(payload);
-        setSuccess('E-paper created successfully');
+        setSuccess(canPublishMedia
+          ? 'E-paper created successfully'
+          : 'E-paper saved as draft. An editor will review and publish it.');
       }
 
       fetchEpapers();
@@ -239,9 +246,13 @@ const EPaperManager = () => {
     );
   }
 
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  // Technical staff can only change their own drafts
+  const canModify = (epaper) => canPublishMedia || epaper.status === 'draft';
+
+  const getStatusChip = (status) => {
+    const opt = STATUS_OPTIONS.find((o) => o.value === status) || STATUS_OPTIONS[2];
+    return <Chip label={opt.label} size="small" color={opt.color} />;
+  };
 
   return (
     <Box>
@@ -257,6 +268,12 @@ const EPaperManager = () => {
           Upload E-Paper
         </Button>
       </Box>
+
+      {!canPublishMedia && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Uploads are saved as drafts. A Chief Editor or Admin will publish them.
+        </Alert>
+      )}
 
       {error && !dialogOpen && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>
@@ -274,8 +291,9 @@ const EPaperManager = () => {
             onChange={(e) => { setFilterStatus(e.target.value); setPage(0); }}
           >
             <MenuItem value="">All</MenuItem>
-            <MenuItem value="active">Active</MenuItem>
-            <MenuItem value="inactive">Inactive</MenuItem>
+            {STATUS_OPTIONS.map((opt) => (
+              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+            ))}
           </Select>
         </FormControl>
       </Box>
@@ -320,13 +338,7 @@ const EPaperManager = () => {
                         {getAreaName(epaper.area)}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={epaper.status}
-                        size="small"
-                        color={epaper.status === 'active' ? 'success' : 'default'}
-                      />
-                    </TableCell>
+                    <TableCell>{getStatusChip(epaper.status)}</TableCell>
                     <TableCell>
                       {epaper.pdfUrl && (
                         <Link href={epaper.pdfUrl} target="_blank" rel="noopener noreferrer" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -336,12 +348,18 @@ const EPaperManager = () => {
                       )}
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleOpenDialog(epaper)} color="primary">
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => handleDelete(epaper._id)} color="error">
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                      {canModify(epaper) ? (
+                        <>
+                          <IconButton size="small" onClick={() => handleOpenDialog(epaper)} color="primary">
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => handleDelete(epaper._id)} color="error">
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">Published</Typography>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -439,18 +457,25 @@ const EPaperManager = () => {
             </Grid>
 
             <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.status === 'active'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      status: e.target.checked ? 'active' : 'inactive'
-                    }))}
-                  />
-                }
-                label={formData.status === 'active' ? 'Active' : 'Inactive'}
-              />
+              {canPublishMedia ? (
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={formData.status}
+                    label="Status"
+                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Status:</Typography>
+                  {getStatusChip('draft')}
+                </Box>
+              )}
             </Grid>
           </Grid>
         </DialogContent>

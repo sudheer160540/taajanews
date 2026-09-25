@@ -3,10 +3,26 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Video = require('../models/Video');
 const VideoCategory = require('../models/VideoCategory');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, canAccessScreen, isTechnicalStaff } = require('../middleware/auth');
 const { deleteBlob } = require('../config/azure');
 
-const manageVideos = authorize('admin', 'chief-editor');
+// Admin, chief-editor, or technical-staff with the "videos" screen
+const manageVideos = canAccessScreen('videos');
+
+/**
+ * Technical staff may only touch their own drafts; publishing is reserved for
+ * admin and chief-editor.
+ */
+const assertStaffCanModify = (video, user) => {
+  if (!isTechnicalStaff(user)) return null;
+  if (String(video.createdBy?._id || video.createdBy) !== String(user._id)) {
+    return 'You can only manage videos you uploaded';
+  }
+  if (video.status !== 'draft') {
+    return 'Only draft videos can be changed. Contact an editor.';
+  }
+  return null;
+};
 
 const extractBlobName = (blobUrl) => {
   if (!blobUrl) return null;
@@ -281,6 +297,7 @@ router.get('/', protect, manageVideos, async (req, res) => {
     const { status, videoCategory, page = 1, limit = 20 } = req.query;
 
     const query = {};
+    if (isTechnicalStaff(req.user)) query.createdBy = req.user._id;
     if (status) query.status = status;
     if (videoCategory) {
       if (!mongoose.Types.ObjectId.isValid(videoCategory)) {
@@ -411,6 +428,10 @@ router.get('/:id', protect, manageVideos, async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
+    if (isTechnicalStaff(req.user) && String(video.createdBy?._id) !== String(req.user._id)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
     res.json({ video });
   } catch (error) {
     console.error('Get video error:', error);
@@ -440,7 +461,8 @@ router.post('/', protect, manageVideos, async (req, res) => {
       videoUrl,
       thumbnail: thumbnail || null,
       videoCategory: resolvedCategory ?? null,
-      status: status || 'draft',
+      // Technical staff uploads always start as draft for editor approval
+      status: isTechnicalStaff(req.user) ? 'draft' : (status || 'draft'),
       createdBy: req.user._id
     });
 
@@ -463,7 +485,11 @@ router.put('/:id', protect, manageVideos, async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    const allowedUpdates = ['title', 'description', 'videoUrl', 'thumbnail', 'status', 'videoCategory'];
+    const denied = assertStaffCanModify(existingVideo, req.user);
+    if (denied) return res.status(403).json({ error: denied });
+
+    const allowedUpdates = ['title', 'description', 'videoUrl', 'thumbnail', 'videoCategory'];
+    if (!isTechnicalStaff(req.user)) allowedUpdates.push('status');
     const updates = {};
     Object.keys(req.body).forEach(key => {
       if (allowedUpdates.includes(key)) {
@@ -509,6 +535,9 @@ router.delete('/:id', protect, manageVideos, async (req, res) => {
     if (!video) {
       return res.status(404).json({ error: 'Video not found' });
     }
+
+    const denied = assertStaffCanModify(video, req.user);
+    if (denied) return res.status(403).json({ error: denied });
 
     // Delete blobs from Azure
     const videoBlobName = extractBlobName(video.videoUrl);

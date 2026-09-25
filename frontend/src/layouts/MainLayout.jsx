@@ -35,7 +35,7 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const routerLocation = useRouterLocation();
 
-  const { user, isAuthenticated, isReporter, logout } = useAuth();
+  const { user, isAuthenticated, canAccessDashboard, logout } = useAuth();
   const { city, area, clearLocation } = useLocation();
 
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
@@ -198,7 +198,7 @@ const MainLayout = () => {
           <Typography variant="body2" color="text.secondary">{user?.email}</Typography>
         </MenuItem>
         <Divider />
-        {isReporter && (
+        {canAccessDashboard && (
           <MenuItem onClick={() => { setUserMenuAnchor(null); navigate('/dashboard'); }}>
             <DashboardIcon fontSize="small" sx={{ mr: 1 }} />
             {t('dashboard')}

@@ -131,6 +131,33 @@ const editorOrAdmin = (req, res, next) => {
 };
 
 /**
+ * Roles that may upload media (articles, e-papers, videos)
+ */
+const uploaderRoles = (req, res, next) => {
+  if (!req.user || !['reporter', 'sub-editor', 'chief-editor', 'admin', 'technical-staff'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Upload access required' });
+  }
+  next();
+};
+
+const isTechnicalStaff = (user) => user?.role === 'technical-staff';
+
+/**
+ * Dashboard screen access (epapers | videos).
+ * Admin and chief-editor always pass; technical-staff only for screens
+ * granted in user.screenAccess.
+ */
+const canAccessScreen = (screen) => (req, res, next) => {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ error: 'Not authorized' });
+  }
+  if (['admin', 'chief-editor'].includes(user.role)) return next();
+  if (isTechnicalStaff(user) && (user.screenAccess || []).includes(screen)) return next();
+  return res.status(403).json({ error: `No access to ${screen}` });
+};
+
+/**
  * Generate short-lived access token (default 15 minutes)
  */
 const generateAccessToken = (userId) => {
@@ -200,6 +227,9 @@ module.exports = {
   reporterOrAdmin,
   editorOrAdmin,
   chiefEditorOnly,
+  uploaderRoles,
+  canAccessScreen,
+  isTechnicalStaff,
   generateToken,
   generateAccessToken,
   createRefreshToken,
