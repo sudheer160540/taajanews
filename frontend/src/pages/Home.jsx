@@ -8,7 +8,6 @@ import {
   Grid,
   Chip,
   Skeleton,
-  IconButton,
   Button,
   Paper,
   CardActionArea
@@ -23,6 +22,7 @@ import {
   PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
 import { articlesApi } from '../services/api';
+import { NewsGridCard } from '../components/NewsCards';
 import { useLocation } from '../contexts/LocationContext';
 import { getYoutubeEmbedId } from '../utils/youtube';
 import Seo from '../components/Seo';
@@ -253,99 +253,6 @@ const HeroSideCard = ({ article, onNavigate, t }) => {
         </Typography>
       </Box>
     </CardActionArea>
-  );
-};
-
-const ArticleListRow = ({ article, onNavigate, t }) => {
-  const hasVideo = !!getYoutubeEmbedId(article.youtubeUrl);
-  const imageUrl = article.featuredImage?.url || IMAGE_PLACEHOLDER;
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        display: 'flex',
-        gap: 2,
-        p: 1.5,
-        mb: 1.5,
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: '#fff',
-        transition: 'box-shadow 0.2s',
-        '&:hover': { boxShadow: '0 4px 12px rgba(72, 117, 188, 0.12)' }
-      }}
-    >
-      <CardActionArea
-        onClick={() => onNavigate(article.slug)}
-        sx={{
-          width: { xs: 100, sm: 140 },
-          minWidth: { xs: 100, sm: 140 },
-          height: { xs: 72, sm: 96 },
-          borderRadius: 1.5,
-          overflow: 'hidden',
-          flexShrink: 0
-        }}
-      >
-        <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-          <Box
-            component="img"
-            src={imageUrl}
-            alt=""
-            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-          {hasVideo && <PlayBadgeOverlay />}
-        </Box>
-      </CardActionArea>
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <Typography
-          component="button"
-          onClick={() => onNavigate(article.slug)}
-          variant="subtitle1"
-          fontWeight={700}
-          sx={{
-            textAlign: 'left',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            color: 'text.primary',
-            p: 0,
-            mb: 0.5,
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            '&:hover': { color: 'primary.main' }
-          }}
-        >
-          {article.title}
-        </Typography>
-        {article.summary && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{
-              mb: 1,
-              display: { xs: 'none', sm: '-webkit-box' },
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden'
-            }}
-          >
-            {article.summary}
-          </Typography>
-        )}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ color: 'text.secondary' }}>
-            <ArticleMetaRow article={article} t={t} />
-          </Box>
-          <IconButton size="small" sx={{ color: 'primary.main' }} aria-label={t('bookmark')}>
-            <BookmarkIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      </Box>
-    </Paper>
   );
 };
 
@@ -621,11 +528,13 @@ const Home = () => {
             <SectionTitle>{t('latestNews')}</SectionTitle>
 
             {loading ? (
-              <>
+              <Grid container spacing={2}>
                 {[1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} variant="rounded" height={110} sx={{ mb: 1.5 }} />
+                  <Grid item xs={12} sm={6} key={i}>
+                    <Skeleton variant="rounded" height={120} />
+                  </Grid>
                 ))}
-              </>
+              </Grid>
             ) : articles.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 8 }}>
                 <Typography variant="h6" color="text.secondary">
@@ -634,9 +543,13 @@ const Home = () => {
               </Box>
             ) : (
               <>
-                {listArticles.map((article) => (
-                  <ArticleListRow key={article._id} article={article} onNavigate={goToArticle} t={t} />
-                ))}
+                <Grid container spacing={2}>
+                  {listArticles.map((article) => (
+                    <Grid item xs={12} sm={6} key={article._id}>
+                      <NewsGridCard article={article} onNavigate={goToArticle} lang={lang} t={t} />
+                    </Grid>
+                  ))}
+                </Grid>
                 {pagination.hasMore && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
                     <Button

@@ -10,8 +10,6 @@ import {
   Divider,
   IconButton,
   Button,
-  Card,
-  CardContent,
   Grid,
   Skeleton,
   TextField,
@@ -37,6 +35,7 @@ import {
   PlayCircleFilled as PlayCircleFilledIcon
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
+import { NewsGridCard, MoreNewsRail } from '../components/NewsCards';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSRData } from '../contexts/SSRDataContext';
 import { v4 as uuidv4 } from 'uuid';
@@ -254,7 +253,7 @@ const ArticleView = () => {
       : article.category?.name?.[lang] || article.category?.name?.en;
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
       <Seo
         title={article.title}
         description={seoDescription}
@@ -273,6 +272,8 @@ const ArticleView = () => {
           categoryName
         })}
       />
+      <Grid container spacing={3}>
+      <Grid item xs={12} md={8}>
       {/* Breadcrumb */}
       <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ mb: 2 }}>
         <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -306,7 +307,7 @@ const ArticleView = () => {
             ...(playingVideo && hasVideo
               ? { aspectRatio: '16 / 9' }
               : hasImage
-                ? { height: { xs: 240, sm: 320, md: 420 } }
+                ? { height: { xs: 220, sm: 280, md: 320 } }
                 : {})
           }}
         >
@@ -585,24 +586,25 @@ const ArticleView = () => {
           <Grid container spacing={2}>
             {relatedArticles.map((related) => (
               <Grid item xs={12} sm={6} key={related._id}>
-                <Card
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/article/${related.slug}`)}
-                >
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600}>
-                      {related.title}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {formatDate(related.publishedAt)}
-                    </Typography>
-                  </CardContent>
-                </Card>
+                <NewsGridCard article={related} onNavigate={(slug) => navigate(`/article/${slug}`)} lang={lang} t={t} />
               </Grid>
             ))}
           </Grid>
         </Box>
       )}
+      </Grid>
+
+      {/* More News rail — mirrors the reference site's sidebar */}
+      <Grid item xs={12} md={4}>
+        <Box sx={{ position: { md: 'sticky' }, top: { md: 88 } }}>
+          <MoreNewsRail
+            articles={relatedArticles.slice(0, 12)}
+            onNavigate={(slug) => navigate(`/article/${slug}`)}
+            title={t('moreNewsTitle')}
+          />
+        </Box>
+      </Grid>
+      </Grid>
     </Container>
   );
 };
