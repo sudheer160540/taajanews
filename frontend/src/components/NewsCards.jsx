@@ -114,31 +114,33 @@ export const NewsGridCard = ({ article, onNavigate, lang, t }) => {
           />
           {hasVideo && <PlayOverlay />}
         </Box>
-        <Typography
-          variant="subtitle2"
-          fontWeight={700}
-          sx={{
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            color: 'text.primary'
-          }}
-        >
-          {article.title}
-        </Typography>
-      </Box>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
-        <CategoryPill label={categoryName} color={categoryColor} />
-        {timeAgo && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <AccessTimeIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
-            <Typography variant="caption" color="text.secondary">
-              {timeAgo}
-            </Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="subtitle2"
+            fontWeight={700}
+            sx={{
+              lineHeight: 1.4,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              color: 'text.primary'
+            }}
+          >
+            {article.title}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <CategoryPill label={categoryName} color={categoryColor} />
+            {timeAgo && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <AccessTimeIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+                <Typography variant="caption" color="text.secondary">
+                  {timeAgo}
+                </Typography>
+              </Box>
+            )}
           </Box>
-        )}
+        </Box>
       </Box>
     </CardActionArea>
   );
