@@ -36,7 +36,7 @@ const Login = () => {
 
   const redirectByRole = (userData) => {
     const role = userData?.role;
-    if (role === 'admin' || role === 'reporter') {
+    if (role === 'admin' || role === 'reporter' || role === 'technical-staff') {
       navigate('/dashboard');
     } else {
       navigate('/');

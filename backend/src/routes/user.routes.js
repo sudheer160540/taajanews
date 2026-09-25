@@ -437,9 +437,9 @@ router.put('/:id/yellow-page', protect, validate(schemas.updateYelloPage), async
 // @access  Private/Admin
 router.put('/:id/role', protect, adminOnly, async (req, res) => {
   try {
-    const { role } = req.body;
+    const { role, screenAccess } = req.body;
 
-    if (!['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'].includes(role)) {
+    if (!User.ROLES.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
@@ -447,9 +447,22 @@ router.put('/:id/role', protect, adminOnly, async (req, res) => {
       return res.status(400).json({ error: 'Cannot change your own role' });
     }
 
+    const update = { role };
+    if (role === 'technical-staff') {
+      const screens = [...new Set(Array.isArray(screenAccess) ? screenAccess : [])];
+      if (!screens.length || screens.some((s) => !User.SCREEN_ACCESS.includes(s))) {
+        return res.status(400).json({
+          error: `Technical staff needs at least one screen: ${User.SCREEN_ACCESS.join(', ')}`
+        });
+      }
+      update.screenAccess = screens;
+    } else {
+      update.screenAccess = [];
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { role },
+      update,
       { new: true }
     );
 
@@ -464,6 +477,41 @@ router.put('/:id/role', protect, adminOnly, async (req, res) => {
   } catch (error) {
     console.error('Update role error:', error);
     res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+// @route   PUT /api/users/:id/screen-access
+// @desc    Set dashboard screens for a technical-staff user (admin only)
+// @access  Private/Admin
+router.put('/:id/screen-access', protect, adminOnly, async (req, res) => {
+  try {
+    const { screenAccess } = req.body;
+    const screens = [...new Set(Array.isArray(screenAccess) ? screenAccess : [])];
+
+    if (!screens.length || screens.some((s) => !User.SCREEN_ACCESS.includes(s))) {
+      return res.status(400).json({
+        error: `Select at least one screen: ${User.SCREEN_ACCESS.join(', ')}`
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.role !== 'technical-staff') {
+      return res.status(400).json({ error: 'Screen access applies to technical staff only' });
+    }
+
+    user.screenAccess = screens;
+    await user.save();
+
+    res.json({
+      message: 'Screen access updated',
+      user: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Update screen access error:', error);
+    res.status(500).json({ error: 'Failed to update screen access' });
   }
 });
 

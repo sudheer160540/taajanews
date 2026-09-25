@@ -132,8 +132,15 @@ export const AuthProvider = ({ children }) => {
   const canPublish = ['sub-editor', 'chief-editor', 'admin'].includes(user?.role);
   const canArchiveArticles = ['chief-editor', 'admin'].includes(user?.role);
   const canDeleteArticles = ['chief-editor', 'admin'].includes(user?.role);
+  // Video categories + publishing e-papers/videos
   const canManageVideos = ['chief-editor', 'admin'].includes(user?.role);
+  const canPublishMedia = canManageVideos;
   const isAdmin = user?.role === 'admin';
+  const isTechnicalStaff = user?.role === 'technical-staff';
+  const screenAccess = isTechnicalStaff ? (user?.screenAccess || []) : [];
+  const canAccessEpapers = canPublishMedia || screenAccess.includes('epapers');
+  const canAccessVideos = canPublishMedia || screenAccess.includes('videos');
+  const canAccessDashboard = isReporter || isTechnicalStaff;
 
   const value = {
     user,
@@ -142,6 +149,12 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
     isAdmin,
     canManageVideos,
+    canPublishMedia,
+    isTechnicalStaff,
+    screenAccess,
+    canAccessEpapers,
+    canAccessVideos,
+    canAccessDashboard,
     isEditor,
     canPublish,
     canArchiveArticles,

@@ -45,14 +45,29 @@ const DashboardLayout = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const { user, isAdmin, canManageVideos, logout } = useAuth();
+  const {
+    user, isAdmin, isReporter, canManageVideos, canAccessEpapers, canAccessVideos, logout
+  } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Technical staff see only Profile + their granted media screens
   const menuItems = [
-    { path: '/dashboard', label: t('dashboard'), icon: <DashboardIcon /> },
+    ...(isReporter ? [{ path: '/dashboard', label: t('dashboard'), icon: <DashboardIcon /> }] : []),
     { path: '/dashboard/profile', label: t('profile'), icon: <AccountCircleIcon /> },
-    { path: '/dashboard/articles', label: t('myArticles'), icon: <ArticleIcon /> },
-    { path: '/dashboard/articles/new', label: t('createArticle'), icon: <AddIcon /> },
+    ...(isReporter
+      ? [
+        { path: '/dashboard/articles', label: t('myArticles'), icon: <ArticleIcon /> },
+        { path: '/dashboard/articles/new', label: t('createArticle'), icon: <AddIcon /> },
+      ]
+      : []),
+  ];
+
+  const mediaMenuItems = [
+    ...(canAccessVideos ? [{ path: '/dashboard/videos', label: 'Videos', icon: <VideoIcon /> }] : []),
+    ...(canManageVideos
+      ? [{ path: '/dashboard/video-categories', label: 'Video Categories', icon: <VideoCategoryIcon /> }]
+      : []),
+    ...(canAccessEpapers ? [{ path: '/dashboard/epapers', label: 'E-Papers', icon: <EPaperIcon /> }] : []),
   ];
 
   const adminMenuItems = [
@@ -60,7 +75,6 @@ const DashboardLayout = () => {
     { path: '/dashboard/users', label: t('manageUsers'), icon: <PeopleIcon /> },
     { path: '/dashboard/languages', label: 'Manage Languages', icon: <LanguageIcon /> },
     { path: '/dashboard/promotions', label: 'Promotions', icon: <CampaignIcon /> },
-    { path: '/dashboard/epapers', label: 'E-Papers', icon: <EPaperIcon /> },
   ];
 
   const drawer = (
@@ -129,37 +143,27 @@ const DashboardLayout = () => {
         ))}
       </List>
 
-      {canManageVideos && (
+      {mediaMenuItems.length > 0 && (
         <>
           <Divider />
           <Typography variant="overline" sx={{ px: 2, py: 1, display: 'block' }}>
-            {isAdmin ? 'Admin' : 'Editorial'}
+            {isAdmin ? 'Admin' : canManageVideos ? 'Editorial' : 'Media'}
           </Typography>
           <List>
-            <ListItem disablePadding>
-              <ListItemButton
-                selected={location.pathname === '/dashboard/videos'}
-                onClick={() => {
-                  navigate('/dashboard/videos');
-                  if (isMobile) setMobileOpen(false);
-                }}
-              >
-                <ListItemIcon><VideoIcon /></ListItemIcon>
-                <ListItemText primary="Videos" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton
-                selected={location.pathname === '/dashboard/video-categories'}
-                onClick={() => {
-                  navigate('/dashboard/video-categories');
-                  if (isMobile) setMobileOpen(false);
-                }}
-              >
-                <ListItemIcon><VideoCategoryIcon /></ListItemIcon>
-                <ListItemText primary="Video Categories" />
-              </ListItemButton>
-            </ListItem>
+            {mediaMenuItems.map((item) => (
+              <ListItem key={item.path} disablePadding>
+                <ListItemButton
+                  selected={location.pathname === item.path}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (isMobile) setMobileOpen(false);
+                  }}
+                >
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.label} />
+                </ListItemButton>
+              </ListItem>
+            ))}
           </List>
         </>
       )}

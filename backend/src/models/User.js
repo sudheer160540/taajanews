@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const ROLES = ['user', 'reporter', 'sub-editor', 'chief-editor', 'admin', 'technical-staff'];
+// Dashboard screens a technical-staff user can be granted.
+const SCREEN_ACCESS = ['epapers', 'videos'];
+
 // Base User Schema
 const userSchema = new mongoose.Schema({
   email: {
@@ -38,9 +42,14 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'reporter', 'sub-editor', 'chief-editor', 'admin'],
+    enum: ROLES,
     default: 'user'
   },
+  // Screens visible to technical-staff (ignored for other roles)
+  screenAccess: [{
+    type: String,
+    enum: SCREEN_ACCESS
+  }],
   avatar: {
     type: String,
     default: null
@@ -233,6 +242,7 @@ userSchema.methods.toPublicJSON = function() {
     phone: this.phone || null,
     authProvider: this.authProvider || 'local',
     role: this.role,
+    screenAccess: this.screenAccess || [],
     avatar: this.avatar,
     profilePhoto: this.profilePhoto && this.profilePhoto.url
       ? {
@@ -259,6 +269,9 @@ userSchema.virtual('articles', {
   localField: '_id',
   foreignField: 'author'
 });
+
+userSchema.statics.ROLES = ROLES;
+userSchema.statics.SCREEN_ACCESS = SCREEN_ACCESS;
 
 const User = mongoose.model('User', userSchema);
 

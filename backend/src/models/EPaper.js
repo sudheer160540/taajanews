@@ -23,7 +23,8 @@ const epaperSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'inactive'],
+    // draft = uploaded by technical staff, awaiting editor approval
+    enum: ['draft', 'active', 'inactive'],
     default: 'active'
   },
   createdBy: {

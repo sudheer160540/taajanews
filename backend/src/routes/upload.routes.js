@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const sharp = require('sharp');
 const { getUploadUrl, getReadUrl, deleteBlob, containerClient } = require('../config/azure');
-const { protect, reporterOrAdmin } = require('../middleware/auth');
+const { protect, uploaderRoles } = require('../middleware/auth');
 
 const MAX_FEATURED_IMAGE_WIDTH = 2400;
 const WEBP_QUALITY = 100;
@@ -159,7 +159,7 @@ const cropAndConvertToWebp = async (orientedBuffer, metadata, crop, targetSize =
 // @route   POST /api/upload/file
 // @desc    Upload file through backend (bypasses CORS)
 // @access  Private/Reporter
-router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req, res) => {
+router.post('/file', protect, uploaderRoles, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -265,7 +265,7 @@ router.post('/file', protect, reporterOrAdmin, upload.single('file'), async (req
 // @route   POST /api/upload/sas-token
 // @desc    Get SAS token for direct upload to Azure Blob Storage
 // @access  Private/Reporter
-router.post('/sas-token', protect, reporterOrAdmin, async (req, res) => {
+router.post('/sas-token', protect, uploaderRoles, async (req, res) => {
   try {
     const { filename, contentType } = req.body;
 
@@ -318,7 +318,7 @@ router.post('/sas-token', protect, reporterOrAdmin, async (req, res) => {
 // @route   POST /api/upload/sas-tokens
 // @desc    Get multiple SAS tokens for batch upload
 // @access  Private/Reporter
-router.post('/sas-tokens', protect, reporterOrAdmin, async (req, res) => {
+router.post('/sas-tokens', protect, uploaderRoles, async (req, res) => {
   try {
     const { files } = req.body;
 
@@ -404,7 +404,7 @@ router.post('/read-url', protect, async (req, res) => {
 // @route   DELETE /api/upload/:blobName
 // @desc    Delete a blob
 // @access  Private/Reporter
-router.delete('/:blobName(*)', protect, reporterOrAdmin, async (req, res) => {
+router.delete('/:blobName(*)', protect, uploaderRoles, async (req, res) => {
   try {
     const { blobName } = req.params;
 
@@ -428,7 +428,7 @@ router.delete('/:blobName(*)', protect, reporterOrAdmin, async (req, res) => {
 // @route   POST /api/upload/confirm
 // @desc    Confirm upload completion (optional - for tracking)
 // @access  Private/Reporter
-router.post('/confirm', protect, reporterOrAdmin, async (req, res) => {
+router.post('/confirm', protect, uploaderRoles, async (req, res) => {
   try {
     const { blobUrl, blobName, type = 'image' } = req.body;
 

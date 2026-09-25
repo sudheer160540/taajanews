@@ -34,6 +34,7 @@ import {
   OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { videosApi, videoCategoriesApi, uploadApi } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft', color: 'default' },
@@ -92,6 +93,8 @@ const isYouTubeUrl = (rawUrl) => Boolean(getYouTubeVideoId(rawUrl));
 
 const VideosManager = () => {
   const { t } = useTranslation();
+  // canPublishMedia = admin / chief-editor; technical staff upload drafts only
+  const { canPublishMedia, canManageVideos } = useAuth();
 
   const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -230,12 +233,15 @@ const VideosManager = () => {
         ...formData,
         videoCategory: formData.videoCategory || null
       };
+      if (!canPublishMedia) delete payload.status;
       if (editingVideo) {
         await videosApi.update(editingVideo._id, payload);
         setSuccess('Video updated successfully');
       } else {
         await videosApi.create(payload);
-        setSuccess('Video created successfully');
+        setSuccess(canPublishMedia
+          ? 'Video created successfully'
+          : 'Video saved as draft. An editor will review and publish it.');
       }
       fetchVideos();
       handleCloseDialog();
@@ -278,9 +284,11 @@ const VideosManager = () => {
           Manage Videos
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Button component={RouterLink} to="/dashboard/video-categories" variant="outlined">
-            Manage Categories
-          </Button>
+          {canManageVideos && (
+            <Button component={RouterLink} to="/dashboard/video-categories" variant="outlined">
+              Manage Categories
+            </Button>
+          )}
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()}>
             Add Video
           </Button>
@@ -302,6 +310,12 @@ const VideosManager = () => {
           ))}
         </TextField>
       </Box>
+
+      {!canPublishMedia && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Uploads are saved as drafts. A Chief Editor or Admin will publish them.
+        </Alert>
+      )}
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -369,12 +383,16 @@ const VideosManager = () => {
                       <IconButton size="small" onClick={() => handlePreview(video.videoUrl)} title="Preview">
                         <PlayIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" onClick={() => handleOpenDialog(video)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => handleDelete(video._id)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                      {(canPublishMedia || video.status === 'draft') && (
+                        <>
+                          <IconButton size="small" onClick={() => handleOpenDialog(video)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => handleDelete(video._id)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -425,18 +443,25 @@ const VideosManager = () => {
             ))}
           </TextField>
 
-          <TextField
-            fullWidth
-            select
-            label="Status"
-            value={formData.status}
-            onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-            margin="normal"
-          >
-            {STATUS_OPTIONS.map(opt => (
-              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-            ))}
-          </TextField>
+          {canPublishMedia ? (
+            <TextField
+              fullWidth
+              select
+              label="Status"
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+              margin="normal"
+            >
+              {STATUS_OPTIONS.map(opt => (
+                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
+              <Typography variant="body2" color="text.secondary">Status:</Typography>
+              {getStatusChip('draft')}
+            </Box>
+          )}
 
           <Box sx={{ mt: 2 }}>
             <TextField
