@@ -55,7 +55,7 @@ async function createServer() {
       const lang = pickLang(query);
       const ssrState = await prefetchData(pathname, lang);
       const { appHtml, headTags, lang: renderedLang } = await render(url, { lang, ssrState });
-      const html = applyTemplate(template, { appHtml, headTags, renderedLang, ssrState });
+      const html = applyTemplate(template, { appHtml, headTags, renderedLang, ssrState, pathname });
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
       console.error('[ssr] render failed:', err);

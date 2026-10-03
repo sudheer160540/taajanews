@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { articlesApi, engagementApi } from '../services/api';
 import { NewsGridCard, MoreNewsRail } from '../components/NewsCards';
+import AdSlot from '../components/AdSlot';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSRData } from '../contexts/SSRDataContext';
 import { v4 as uuidv4 } from 'uuid';
@@ -451,6 +452,8 @@ const ArticleView = () => {
         {article.content}
       </Typography>
 
+      <AdSlot slot={import.meta.env.VITE_ADSENSE_SLOT_ARTICLE_BODY} minHeight={120} />
+
       {/* Source Attribution */}
       {article.source && (
         <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1, borderLeft: '3px solid', borderColor: 'primary.main' }}>
@@ -621,6 +624,7 @@ const ArticleView = () => {
             onNavigate={(slug) => navigate(`/article/${slug}`)}
             title={t('moreNewsTitle')}
           />
+          <AdSlot slot={import.meta.env.VITE_ADSENSE_SLOT_ARTICLE_SIDEBAR} minHeight={250} />
         </Box>
       </Grid>
       </Grid>

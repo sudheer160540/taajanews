@@ -72,10 +72,20 @@ export async function renderPage(url) {
   return renderWithTemplate(template, url, pathname, query, render);
 }
 
-export function applyTemplate(template, { appHtml, headTags, renderedLang, ssrState }) {
+// AdSense site verification/crawling reads the raw HTML, so the script is
+// also emitted server-side (the client loader de-duplicates by src).
+const buildAdsenseTag = (pathname) => {
+  const client = process.env.VITE_ADSENSE_CLIENT || process.env.ADSENSE_CLIENT;
+  if (!client) return '';
+  if (/^\/(dashboard|auth|onboarding)/.test(pathname || '')) return '';
+  const src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+  return `<script async src="${src}" crossorigin="anonymous"></script>`;
+};
+
+export function applyTemplate(template, { appHtml, headTags, renderedLang, ssrState, pathname }) {
   const stateScript = `<script>window.__SSR_STATE__ = ${serializeState(ssrState)}</script>`;
   return template
-    .replace('<!--ssr-head-->', headTags)
+    .replace('<!--ssr-head-->', headTags + buildAdsenseTag(pathname))
     .replace('<!--ssr-outlet-->', appHtml)
     .replace('<!--ssr-state-->', stateScript)
     .replace('<html lang="en">', `<html lang="${renderedLang}">`);
@@ -85,5 +95,5 @@ export async function renderWithTemplate(template, url, pathname, query, render)
   const lang = pickLang(query);
   const ssrState = await prefetchData(pathname, lang);
   const { appHtml, headTags, lang: renderedLang } = await render(url, { lang, ssrState });
-  return applyTemplate(template, { appHtml, headTags, renderedLang, ssrState });
+  return applyTemplate(template, { appHtml, headTags, renderedLang, ssrState, pathname });
 }

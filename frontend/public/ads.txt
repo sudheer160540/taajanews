@@ -1,0 +1,2 @@
+# Replace with your AdSense publisher id (digits only after "pub-"), then redeploy:
+# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

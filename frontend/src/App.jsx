@@ -5,6 +5,7 @@ import { Box, CircularProgress } from '@mui/material';
 
 // Critical path for first paint on `/` — keep eager
 import MainLayout from './layouts/MainLayout';
+import GoogleTags from './components/GoogleTags';
 import Home from './pages/Home';
 
 // Deferred routes — loaded only when navigated to
@@ -116,6 +117,7 @@ function App() {
   // Protected routes handle their own auth-loading state via <ProtectedRoute>.
   return (
     <Suspense fallback={<LoadingScreen />}>
+      <GoogleTags />
       <Routes>
         {/* Onboarding (optional — accessible but not forced) */}
         <Route path="/onboarding" element={<Onboarding />} />

@@ -10,7 +10,7 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|favicon\\.svg|logo\\.png|slogo\\.png|robots\\.txt|\\.well-known/).*)",
+      "source": "/((?!api/|assets/|favicon\\.svg|logo\\.png|slogo\\.png|robots\\.txt|ads\\.txt|\\.well-known/).*)",
       "destination": "/api/ssr?path=$1"
     }
   ]
