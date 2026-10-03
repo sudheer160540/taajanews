@@ -1334,12 +1334,15 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
     if (searchTerm) {
       const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
+      // Also match the author's account name (e.g. "B.Srinivas")
+      const authorIds = (await User.find({ name: regex }).select('_id').limit(200).lean()).map((u) => u._id);
       andConditions.push({
         $or: [
           { slug: regex },
           { articleId: regex },
           { reporterName: regex },
           { sourceUrl: regex },
+          { author: { $in: authorIds } },
           {
             $expr: {
               $gt: [

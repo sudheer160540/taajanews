@@ -331,7 +331,7 @@ const ArticlesList = () => {
       <TextField
         fullWidth
         size="small"
-        placeholder="Search articles by title, slug, article ID, reporter, or source URL..."
+        placeholder="Search articles by title, slug, article ID, author, reporter, or source URL..."
         value={searchInput}
         onChange={handleSearchChange}
         sx={{ mb: 2 }}
