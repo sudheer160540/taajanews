@@ -303,12 +303,8 @@ const ArticleView = () => {
             mb: 3,
             borderRadius: 2,
             overflow: 'hidden',
-            bgcolor: playingVideo && hasVideo ? 'black' : 'transparent',
-            ...(playingVideo && hasVideo
-              ? { aspectRatio: '16 / 9' }
-              : hasImage
-                ? { height: { xs: 220, sm: 280, md: 320 } }
-                : {})
+            bgcolor: playingVideo && hasVideo ? 'black' : 'grey.900',
+            ...(playingVideo && hasVideo ? { aspectRatio: '16 / 9' } : {})
           }}
         >
           {playingVideo && hasVideo ? (
@@ -330,17 +326,40 @@ const ArticleView = () => {
           ) : (
             <>
               {hasImage && (
-                <Box
-                  component="img"
-                  src={article.featuredImage.url}
-                  alt={article.featuredImage.alt || article.title}
-                  sx={{
-                    width: '100% !important',
-                    height: '100% !important',
-                    objectFit: 'cover',
-                    display: 'block'
-                  }}
-                />
+                <>
+                  {/* Blurred copy fills any letterbox space so tall/narrow photos
+                      look intentional instead of cropped or boxed in. */}
+                  <Box
+                    component="img"
+                    src={article.featuredImage.url}
+                    alt=""
+                    aria-hidden
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      filter: 'blur(24px) brightness(0.7)',
+                      transform: 'scale(1.15)'
+                    }}
+                  />
+                  {/* Whole photo, never cropped, capped in height. */}
+                  <Box
+                    component="img"
+                    src={article.featuredImage.url}
+                    alt={article.featuredImage.alt || article.title}
+                    sx={{
+                      position: 'relative',
+                      display: 'block',
+                      mx: 'auto',
+                      width: '100%',
+                      height: 'auto',
+                      maxHeight: { xs: 300, sm: 360, md: 400 },
+                      objectFit: 'contain'
+                    }}
+                  />
+                </>
               )}
               {hasVideo && (
                 <IconButton
