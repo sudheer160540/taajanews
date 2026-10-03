@@ -228,9 +228,8 @@ const ArticlesList = () => {
     if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
   };
 
-  // Typed byline wins; otherwise fall back to the account that created the article.
-  const getReporterName = (article) =>
-    article.reporterName?.trim() || article.author?.name || article.createdBy?.name || '-';
+  // The article's author (e.g. "B.Srinivas") is the reporter.
+  const getReporterName = (article) => article.author?.name || '-';
 
   const handleClearSearch = () => {
     setSearchInput('');
