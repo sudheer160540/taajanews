@@ -1289,7 +1289,7 @@ router.get('/manage/stats', protect, reporterOrAdmin, async (req, res) => {
 router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
   try {
     const defaultLang = await languageCache.getDefaultLanguageCode();
-    const { page = 1, limit = 20, status, category, fromDate, toDate, search, lang = defaultLang } = req.query;
+    const { page = 1, limit = 20, status, category, fromDate, toDate, search, reporter, lang = defaultLang } = req.query;
 
     const query = {};
     const andConditions = [];
@@ -1316,6 +1316,22 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
         end.setHours(23, 59, 59, 999);
         query.createdAt.$lte = end;
       }
+    }
+
+    // Reporter name filter: matches the typed reporter byline or the
+    // account name of the author/creator.
+    const reporterTerm = String(reporter || '').trim().slice(0, 100);
+    if (reporterTerm) {
+      const reporterRegex = new RegExp(reporterTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const matchedUsers = await User.find({ name: reporterRegex }).select('_id').limit(200).lean();
+      const userIds = matchedUsers.map((u) => u._id);
+      andConditions.push({
+        $or: [
+          { reporterName: reporterRegex },
+          { author: { $in: userIds } },
+          { createdBy: { $in: userIds } }
+        ]
+      });
     }
 
     const searchTerm = String(search || '').trim().slice(0, 100);

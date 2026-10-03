@@ -58,6 +58,8 @@ const ArticlesList = () => {
   const [toDate, setToDate] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [reporterInput, setReporterInput] = useState('');
+  const [reporterSearch, setReporterSearch] = useState('');
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
@@ -69,13 +71,15 @@ const ArticlesList = () => {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const searchDebounceRef = useRef(null);
+  const reporterDebounceRef = useRef(null);
 
   useEffect(() => {
     fetchArticles();
-  }, [page, rowsPerPage, statusFilter, fromDate, toDate, search]);
+  }, [page, rowsPerPage, statusFilter, fromDate, toDate, search, reporterSearch]);
 
   useEffect(() => () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
   }, []);
 
   const fetchArticles = async () => {
@@ -86,6 +90,7 @@ const ArticlesList = () => {
       if (fromDate) params.fromDate = fromDate;
       if (toDate) params.toDate = toDate;
       if (search) params.search = search;
+      if (reporterSearch) params.reporter = reporterSearch;
 
       const response = await articlesApi.getManaged(params);
       setArticles(response.data.articles);
@@ -206,6 +211,27 @@ const ArticlesList = () => {
     }, 300);
   };
 
+  const handleReporterChange = (e) => {
+    const value = e.target.value;
+    setReporterInput(value);
+    if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
+    reporterDebounceRef.current = setTimeout(() => {
+      setReporterSearch(value.trim());
+      setPage(0);
+    }, 300);
+  };
+
+  const handleClearReporter = () => {
+    setReporterInput('');
+    setReporterSearch('');
+    setPage(0);
+    if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
+  };
+
+  // Typed byline wins; otherwise fall back to the account that created the article.
+  const getReporterName = (article) =>
+    article.reporterName?.trim() || article.author?.name || article.createdBy?.name || '-';
+
   const handleClearSearch = () => {
     setSearchInput('');
     setSearch('');
@@ -267,8 +293,11 @@ const ArticlesList = () => {
     setStatusFilter('');
     setSearchInput('');
     setSearch('');
+    setReporterInput('');
+    setReporterSearch('');
     setPage(0);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
   };
 
   return (
@@ -342,6 +371,28 @@ const ArticlesList = () => {
 
         <TextField
           size="small"
+          placeholder="Reporter name"
+          value={reporterInput}
+          onChange={handleReporterChange}
+          sx={{ minWidth: 200 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon color="action" fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: reporterInput ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={handleClearReporter} aria-label="Clear reporter search">
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null
+          }}
+        />
+
+        <TextField
+          size="small"
           label="From Date"
           type="date"
           value={fromDate}
@@ -360,7 +411,7 @@ const ArticlesList = () => {
           sx={{ minWidth: 160 }}
         />
 
-        {(fromDate || toDate || statusFilter || search) && (
+        {(fromDate || toDate || statusFilter || search || reporterSearch) && (
           <Button
             size="small"
             variant="outlined"
@@ -389,6 +440,7 @@ const ArticlesList = () => {
                 )}
                 <TableCell>Title</TableCell>
                 <TableCell>Category</TableCell>
+                <TableCell>Reporter</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Views</TableCell>
                 <TableCell>Date</TableCell>
@@ -398,13 +450,13 @@ const ArticlesList = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 7 : 6} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 8 : 7} align="center" sx={{ py: 4 }}>
                     {t('loading')}
                   </TableCell>
                 </TableRow>
               ) : articles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 7 : 6} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 8 : 7} align="center" sx={{ py: 4 }}>
                     {t('noResults')}
                   </TableCell>
                 </TableRow>
@@ -442,6 +494,14 @@ const ArticlesList = () => {
                         size="small"
                         variant="outlined"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {getReporterName(article)}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <Chip
