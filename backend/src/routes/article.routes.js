@@ -1318,13 +1318,16 @@ router.get('/manage/list', protect, reporterOrAdmin, async (req, res) => {
       }
     }
 
-    // Reporter name filter: matches the article author's name.
+    // Author/reporter name filter: matches the author's account name or the
+    // typed reporter name.
     const reporterTerm = String(reporter || '').trim().slice(0, 100);
     if (reporterTerm) {
       const reporterRegex = new RegExp(reporterTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       const matchedUsers = await User.find({ name: reporterRegex }).select('_id').limit(200).lean();
       const userIds = matchedUsers.map((u) => u._id);
-      andConditions.push({ author: { $in: userIds } });
+      andConditions.push({
+        $or: [{ author: { $in: userIds } }, { reporterName: reporterRegex }]
+      });
     }
 
     const searchTerm = String(search || '').trim().slice(0, 100);

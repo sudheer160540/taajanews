@@ -228,8 +228,8 @@ const ArticlesList = () => {
     if (reporterDebounceRef.current) clearTimeout(reporterDebounceRef.current);
   };
 
-  // The article's author (e.g. "B.Srinivas") is the reporter.
-  const getReporterName = (article) => article.author?.name || '-';
+  const getAuthorName = (article) => article.author?.name || '-';
+  const getReporterName = (article) => article.reporterName?.trim() || '-';
 
   const handleClearSearch = () => {
     setSearchInput('');
@@ -370,10 +370,10 @@ const ArticlesList = () => {
 
         <TextField
           size="small"
-          placeholder="Reporter name"
+          placeholder="Author or reporter name"
           value={reporterInput}
           onChange={handleReporterChange}
-          sx={{ minWidth: 200 }}
+          sx={{ minWidth: 240 }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -439,6 +439,7 @@ const ArticlesList = () => {
                 )}
                 <TableCell>Title</TableCell>
                 <TableCell>Category</TableCell>
+                <TableCell>Author</TableCell>
                 <TableCell>Reporter</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Views</TableCell>
@@ -449,13 +450,13 @@ const ArticlesList = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 8 : 7} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 9 : 8} align="center" sx={{ py: 4 }}>
                     {t('loading')}
                   </TableCell>
                 </TableRow>
               ) : articles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 8 : 7} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={isAdmin ? 9 : 8} align="center" sx={{ py: 4 }}>
                     {t('noResults')}
                   </TableCell>
                 </TableRow>
@@ -497,7 +498,15 @@ const ArticlesList = () => {
                     <TableCell>
                       <Typography
                         variant="body2"
-                        sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        sx={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {getAuthorName(article)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        sx={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       >
                         {getReporterName(article)}
                       </Typography>
