@@ -6,16 +6,23 @@
  *   0 * * * * cd /path/to/taaja_news/backend && npm run process-source-articles
  */
 
-require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const mongoose = require('mongoose');
 const languageCache = require('../utils/languageCache');
 const { processNewSourceArticles } = require('../jobs/sourceArticleProcessor');
 const { notifySourceBatchSummaryTelegram } = require('../utils/telegramNotification');
 
-const REQUIRED_ENV = ['MONGODB_URL', 'OPEN_API_KEY', 'AUTOMATION_AUTHOR_ID'];
+function requiredEnvKeys() {
+  const provider = (process.env.TRANSLATE_TYPE || 'openai').trim().toLowerCase();
+  const base = ['MONGODB_URL', 'AUTOMATION_AUTHOR_ID'];
+  if (provider === 'gemini') return [...base, 'GEMINI_API_KEY'];
+  if (provider === 'anthropic') return [...base, 'ANTHROPIC_API_KEY'];
+  // openai, sarvam (rewrite still uses OpenAI), or unset
+  return [...base, 'OPEN_API_KEY'];
+}
 
 function validateEnv() {
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+  const missing = requiredEnvKeys().filter((key) => !process.env[key]);
   if (missing.length) {
     console.error(`[source-cron] Missing required env: ${missing.join(', ')}`);
     process.exit(1);
@@ -24,6 +31,8 @@ function validateEnv() {
 
 async function main() {
   validateEnv();
+  const provider = (process.env.TRANSLATE_TYPE || 'openai').trim().toLowerCase() || 'openai';
+  console.log(`[source-cron] AI provider: ${provider}`);
 
   try {
     await mongoose.connect(process.env.MONGODB_URL);

@@ -184,6 +184,10 @@ async function processNewSourceArticles() {
     const label = `${sourceDoc.source}/${sourceDoc.sourceId}`;
 
     try {
+      console.log(
+        `[source-cron] START ${label} title=${String(sourceDoc.title || '').slice(0, 80)} ` +
+        `contentChars=${String(sourceDoc.contentText || '').length}`
+      );
       const article = await createArticleFromSource(sourceDoc, author._id);
       await markSourceComplete(sourceDoc, article._id);
       summary.succeeded++;
