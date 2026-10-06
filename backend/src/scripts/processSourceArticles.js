@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 const languageCache = require('../utils/languageCache');
 const { processNewSourceArticles } = require('../jobs/sourceArticleProcessor');
 const { notifySourceBatchSummaryTelegram } = require('../utils/telegramNotification');
+const { logSourceAiRuntime } = require('../utils/translateService');
 
 function requiredEnvKeys() {
   const provider = (process.env.TRANSLATE_TYPE || 'openai').trim().toLowerCase();
@@ -31,8 +32,7 @@ function validateEnv() {
 
 async function main() {
   validateEnv();
-  const provider = (process.env.TRANSLATE_TYPE || 'openai').trim().toLowerCase() || 'openai';
-  console.log(`[source-cron] AI provider: ${provider}`);
+  logSourceAiRuntime('[source-cron]');
 
   try {
     await mongoose.connect(process.env.MONGODB_URL);

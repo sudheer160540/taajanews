@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const SourceArticle = require('../models/SourceArticle');
 const Article = require('../models/Article');
 const User = require('../models/User');
-const { buildSourceArticleMultilingual } = require('../utils/translateService');
+const { buildSourceArticleMultilingual, logSourceAiRuntime } = require('../utils/translateService');
 const {
   notifySourceArticleProcessedTelegram,
   notifySourceArticleFailedTelegram
@@ -175,6 +175,7 @@ async function processNewSourceArticles() {
   }
 
   const summary = { processed: 0, succeeded: 0, failed: 0, errors: [] };
+  logSourceAiRuntime('[source-cron]');
 
   for (let i = 0; i < batchSize; i++) {
     const sourceDoc = await claimNextSourceArticle();

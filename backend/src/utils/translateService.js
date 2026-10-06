@@ -32,7 +32,81 @@ const SARVAM_TRANSLATE_LIMIT = 1000;
 
 // Google Gemini (Generative Language API). Model is configurable via GEMINI_MODEL.
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const getGeminiModel = () => process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const getGeminiModel = () =>
+  String(process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim() || 'gemini-2.0-flash';
+
+const getOpenAIModel = () =>
+  String(process.env.OPENAI_MODEL || 'gpt-4o-mini').trim() || 'gpt-4o-mini';
+
+const getAnthropicModel = () =>
+  String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim() ||
+  'claude-haiku-4-5-20251001';
+
+const API_RETRY_DEFAULT = 4;
+
+/**
+ * Provider + model actually used by source-article processing, plus retry knobs
+ * from env (SOURCE_PLAGIARISM_RETRIES, SOURCE_PLAGIARISM_MAX, SOURCE_CRON_BATCH_SIZE).
+ */
+function resolveSourceAiRuntime() {
+  const provider = getTranslateProvider() || 'openai';
+  let model;
+  let modelEnv = 'OPENAI_MODEL';
+  if (provider === 'gemini') {
+    model = getGeminiModel();
+    modelEnv = 'GEMINI_MODEL';
+  } else if (provider === 'anthropic') {
+    model = getAnthropicModel();
+    modelEnv = 'ANTHROPIC_MODEL';
+  } else if (provider === 'sarvam') {
+    model = `${getOpenAIModel()} (rewrite) + sarvam mayura:v1 (translate)`;
+    modelEnv = 'OPENAI_MODEL+SARVAM';
+  } else {
+    model = getOpenAIModel();
+    modelEnv = 'OPENAI_MODEL';
+  }
+
+  const plagiarism = getSourcePlagiarismConfig();
+  const batchSize = Math.max(1, parseInt(process.env.SOURCE_CRON_BATCH_SIZE, 10) || 5);
+  const apiRetries = Math.max(
+    0,
+    parseInt(process.env.SOURCE_API_RETRIES, 10) || API_RETRY_DEFAULT
+  );
+
+  return {
+    provider,
+    model,
+    modelEnv,
+    batchSize,
+    apiRetries,
+    plagiarismRetries: plagiarism.retries,
+    plagiarismRetriesEnv: process.env.SOURCE_PLAGIARISM_RETRIES === undefined ||
+      process.env.SOURCE_PLAGIARISM_RETRIES === ''
+      ? 'default'
+      : 'env',
+    plagiarismMaxAttempts: plagiarism.maxAttempts,
+    plagiarismTarget: plagiarism.target,
+    plagiarismTargetEnv:
+      process.env.SOURCE_PLAGIARISM_MAX === undefined || process.env.SOURCE_PLAGIARISM_MAX === ''
+        ? 'default'
+        : 'env'
+  };
+}
+
+function logSourceAiRuntime(prefix = '[source-cron]') {
+  const rt = resolveSourceAiRuntime();
+  console.log(
+    `${prefix} AI picked provider=${rt.provider} model=${rt.model} (from ${rt.modelEnv})`
+  );
+  console.log(
+    `${prefix} retries config: plagiarismRetries=${rt.plagiarismRetries} ` +
+    `(SOURCE_PLAGIARISM_RETRIES ${rt.plagiarismRetriesEnv}, maxAttempts=${rt.plagiarismMaxAttempts} ` +
+    `= 1 first try + ${rt.plagiarismRetries} rewrite retries) ` +
+    `plagiarismTarget=${rt.plagiarismTarget}% (SOURCE_PLAGIARISM_MAX ${rt.plagiarismTargetEnv}) ` +
+    `apiBackoffRetries=${rt.apiRetries} (429/5xx) batchSize=${rt.batchSize} (SOURCE_CRON_BATCH_SIZE)`
+  );
+  return rt;
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -40,7 +114,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Retry an async API call on rate limits (429), transient 5xx, and network
  * errors, using exponential backoff and honoring a Retry-After header.
  */
-async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API request' } = {}) {
+async function withRetry(fn, { retries, baseDelayMs = 1500, label = 'API request' } = {}) {
+  const maxRetries =
+    retries ?? Math.max(0, parseInt(process.env.SOURCE_API_RETRIES, 10) || API_RETRY_DEFAULT);
   let attempt = 0;
   for (;;) {
     try {
@@ -58,7 +134,7 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
           (typeof status === 'number' && status >= 500 && status < 600) ||
           ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(err?.code));
 
-      if (!isRetriable || attempt >= retries) throw err;
+      if (!isRetriable || attempt >= maxRetries) throw err;
 
       const retryAfterSec = Number(err?.response?.headers?.['retry-after']);
       const delay =
@@ -67,7 +143,9 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
           : baseDelayMs * 2 ** attempt;
 
       attempt += 1;
-      console.warn(`[translate] ${label} failed (${status || err?.code}); retry ${attempt}/${retries} in ${delay}ms`);
+      console.warn(
+        `[translate] ${label} failed (${status || err?.code}); retry ${attempt}/${maxRetries} in ${delay}ms`
+      );
       await sleep(delay);
     }
   }
@@ -418,7 +496,7 @@ async function sarvamTranslate(text, sourceLang, targetLang) {
  */
 async function openaiGenerateText(systemContent, userContent, { temperature = 0.3, json = false, maxTokens } = {}) {
   const request = {
-    model: 'gpt-4o-mini',
+    model: getOpenAIModel(),
     messages: [
       { role: 'system', content: systemContent },
       { role: 'user', content: userContent }
@@ -429,7 +507,7 @@ async function openaiGenerateText(systemContent, userContent, { temperature = 0.
   if (maxTokens) request.max_tokens = maxTokens;
 
   const completion = await withRetry(() => getOpenAI().chat.completions.create(request), {
-    label: 'OpenAI gpt-4o-mini'
+    label: `OpenAI ${getOpenAIModel()}`
   });
 
   return completion.choices[0]?.message?.content?.trim() || '';
@@ -1100,15 +1178,16 @@ async function buildSourceArticleMultilingual(input, options = {}) {
   const sourceLang = resolveAnchorLanguage(source, contentTrimmed);
   const rewriteLang = 'en';
   const provider = getTranslateProvider() || 'openai';
+  const runtime = resolveSourceAiRuntime();
   const checkPlagiarism = resolvePlagiarismChecker(options);
   const { target: plagiarismTarget, retries: plagiarismRetries } = getSourcePlagiarismConfig();
   const maxAttempts = checkPlagiarism ? plagiarismRetries + 1 : 1;
 
   logSource(
     'start',
-    `source=${String(source || 'unknown')} provider=${provider} sourceLang=${sourceLang} ` +
-    `rewriteLang=${rewriteLang} flow=${sourceLang}→en rewrite→te/hi ` +
-    `plagiarism=${checkPlagiarism ? `on target=${plagiarismTarget}% retries=${plagiarismRetries}` : 'off'} ` +
+    `source=${String(source || 'unknown')} provider=${runtime.provider} model=${runtime.model} ` +
+    `sourceLang=${sourceLang} rewriteLang=${rewriteLang} flow=${sourceLang}→en rewrite→te/hi ` +
+    `plagiarism=${checkPlagiarism ? `on target=${plagiarismTarget}% retries=${plagiarismRetries} maxAttempts=${maxAttempts}` : 'off'} ` +
     `titleChars=${titleTrimmed.length} contentChars=${contentTrimmed.length} ` +
     `title=${previewText(titleTrimmed)}`
   );
@@ -1235,6 +1314,10 @@ module.exports = {
   geminiTranslate,
   geminiGenerateText,
   getTranslateProvider,
+  getGeminiModel,
+  getOpenAIModel,
+  resolveSourceAiRuntime,
+  logSourceAiRuntime,
   getTeluguSourceSet,
   getEnglishSourceSet,
   resolveAnchorLanguage,
