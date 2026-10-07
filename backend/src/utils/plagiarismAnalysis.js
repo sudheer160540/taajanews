@@ -133,13 +133,18 @@ async function calculatePlagiarismMatchPercentage(originalText, rewrittenText) {
       { temperature: 0, maxTokens: 16 }
     );
     const parsed = parsePlagiarismScore(raw);
-    if (parsed !== null) return parsed;
+    if (parsed !== null) {
+      console.log(`[plagiarism] method=ai score=${parsed}% raw=${String(raw).slice(0, 40)}`);
+      return parsed;
+    }
     console.warn('[plagiarism] Could not parse AI score, using lexical fallback. Raw:', raw);
   } catch (err) {
     console.error('[plagiarism] AI analysis failed, using lexical fallback:', err.message);
   }
 
-  return calculateLexicalMatchPercentage(original, rewritten);
+  const fallback = calculateLexicalMatchPercentage(original, rewritten);
+  console.log(`[plagiarism] method=lexical score=${fallback ?? 'n/a'}%`);
+  return fallback;
 }
 
 module.exports = {

@@ -32,7 +32,83 @@ const SARVAM_TRANSLATE_LIMIT = 1000;
 
 // Google Gemini (Generative Language API). Model is configurable via GEMINI_MODEL.
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const getGeminiModel = () => process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const getGeminiModel = () =>
+  String(process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim() || 'gemini-2.0-flash';
+
+const getOpenAIModel = () =>
+  String(process.env.OPENAI_MODEL || 'gpt-4o-mini').trim() || 'gpt-4o-mini';
+
+const getAnthropicModel = () =>
+  String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim() ||
+  'claude-haiku-4-5-20251001';
+
+const API_RETRY_DEFAULT = 4;
+
+/**
+ * Provider + model actually used by source-article processing, plus retry knobs
+ * from env (SOURCE_PLAGIARISM_RETRIES, SOURCE_PLAGIARISM_MAX, SOURCE_CRON_BATCH_SIZE).
+ */
+function resolveSourceAiRuntime() {
+  const provider = getTranslateProvider() || 'openai';
+  let model;
+  let modelEnv = 'OPENAI_MODEL';
+  if (provider === 'gemini') {
+    model = getGeminiModel();
+    modelEnv = 'GEMINI_MODEL';
+  } else if (provider === 'anthropic') {
+    model = getAnthropicModel();
+    modelEnv = 'ANTHROPIC_MODEL';
+  } else if (provider === 'sarvam') {
+    model = `${getOpenAIModel()} (rewrite) + sarvam mayura:v1 (translate)`;
+    modelEnv = 'OPENAI_MODEL+SARVAM';
+  } else {
+    model = getOpenAIModel();
+    modelEnv = 'OPENAI_MODEL';
+  }
+
+  const plagiarism = getSourcePlagiarismConfig();
+  const batchSize = Math.max(1, parseInt(process.env.SOURCE_CRON_BATCH_SIZE, 10) || 5);
+  const apiRetries = Math.max(
+    0,
+    parseInt(process.env.SOURCE_API_RETRIES, 10) || API_RETRY_DEFAULT
+  );
+
+  return {
+    provider,
+    model,
+    modelEnv,
+    batchSize,
+    apiRetries,
+    plagiarismRetries: plagiarism.retries,
+    plagiarismRetriesEnv: process.env.SOURCE_PLAGIARISM_RETRIES === undefined ||
+      process.env.SOURCE_PLAGIARISM_RETRIES === ''
+      ? 'default'
+      : 'env',
+    plagiarismMaxAttempts: plagiarism.maxAttempts,
+    plagiarismTarget: plagiarism.target,
+    plagiarismTargetEnv:
+      process.env.SOURCE_PLAGIARISM_MAX === undefined || process.env.SOURCE_PLAGIARISM_MAX === ''
+        ? 'default'
+        : 'env'
+  };
+}
+
+function logSourceAiRuntime(prefix = '[source-cron]') {
+  const rt = resolveSourceAiRuntime();
+  console.log(
+    `${prefix} AI picked provider=${rt.provider} model=${rt.model} (from ${rt.modelEnv})`
+  );
+  console.log(
+    `${prefix} plagiarism: SOURCE_PLAGIARISM_RETRIES=${rt.plagiarismRetries} (${rt.plagiarismRetriesEnv}) ` +
+    `→ extra rewrite retries after first try. totalGenerations=${rt.plagiarismMaxAttempts} ` +
+    `(1 first + ${rt.plagiarismRetries} retries). ` +
+    `Set SOURCE_PLAGIARISM_RETRIES=0 for no retry (1 generation only). ` +
+    `SOURCE_PLAGIARISM_MAX=${rt.plagiarismTarget}% (${rt.plagiarismTargetEnv}) — score must be ≤ this to PASS; ` +
+    `0% almost always uses every retry. ` +
+    `apiBackoffRetries=${rt.apiRetries} (429/5xx) batchSize=${rt.batchSize} (SOURCE_CRON_BATCH_SIZE)`
+  );
+  return rt;
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -40,7 +116,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Retry an async API call on rate limits (429), transient 5xx, and network
  * errors, using exponential backoff and honoring a Retry-After header.
  */
-async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API request' } = {}) {
+async function withRetry(fn, { retries, baseDelayMs = 1500, label = 'API request' } = {}) {
+  const maxRetries =
+    retries ?? Math.max(0, parseInt(process.env.SOURCE_API_RETRIES, 10) || API_RETRY_DEFAULT);
   let attempt = 0;
   for (;;) {
     try {
@@ -58,7 +136,7 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
           (typeof status === 'number' && status >= 500 && status < 600) ||
           ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(err?.code));
 
-      if (!isRetriable || attempt >= retries) throw err;
+      if (!isRetriable || attempt >= maxRetries) throw err;
 
       const retryAfterSec = Number(err?.response?.headers?.['retry-after']);
       const delay =
@@ -67,7 +145,9 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 1500, label = 'API req
           : baseDelayMs * 2 ** attempt;
 
       attempt += 1;
-      console.warn(`[translate] ${label} failed (${status || err?.code}); retry ${attempt}/${retries} in ${delay}ms`);
+      console.warn(
+        `[translate] ${label} failed (${status || err?.code}); retry ${attempt}/${maxRetries} in ${delay}ms`
+      );
       await sleep(delay);
     }
   }
@@ -113,6 +193,27 @@ const getSourcePlagiarismConfig = () => {
 const SOURCE_PLAGIARISM_TARGET = parsePlagiarismTarget();
 const SOURCE_PLAGIARISM_RETRIES = parsePlagiarismRetries();
 
+const SOURCE_LOG_PREVIEW = 140;
+
+function previewText(text) {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!compact) return '(empty)';
+  if (compact.length <= SOURCE_LOG_PREVIEW) return compact;
+  return `${compact.slice(0, SOURCE_LOG_PREVIEW)}…`;
+}
+
+function wordCount(text) {
+  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function logSource(stage, extra = '') {
+  console.log(`[source-translate] ${stage}${extra ? ` | ${extra}` : ''}`);
+}
+
+function elapsedMs(startedAt) {
+  return Date.now() - startedAt;
+}
+
 let defaultPlagiarismChecker = null;
 const resolvePlagiarismChecker = (options = {}) => {
   if (options.checkPlagiarism === false) return null;
@@ -128,6 +229,23 @@ const NEWS_EDITORIAL_PERSONA =
   'You read wire copies, agency feeds, and rival reports, extract verified facts, then publish an entirely original story in a natural human newsroom voice. ' +
   'You never file copy that mirrors source wording, sentence rhythm, or paragraph order.';
 
+const buildLanguageStyleConstraints = () => `
+LANGUAGE & STYLE CONSTRAINTS (mandatory — apply while writing and while translating):
+1. Never use the word "మరియు" or "and" (or Hindi "और"). Use only commas (,) to separate items or thoughts.
+2. Use only short, punchy, simple sentences. Strictly avoid compound sentences.
+3. Never use Telugu words like "గవుట్." or "గవర్నమెంట్". Use only "ప్రభుత్వం" or "సర్కార్".
+4. Translate Hindi "स्वाभिमान" strictly as Telugu "ఆత్మాభిమానం" (never స్వాభిమానం).
+5. Address all animals and birds in feminine gender in Telugu (ఆడ జాతి, స్త్రీలింగం).
+6. No honorific suffixes or titles next to names (never శ్రీ, గారు, Sri, Mr., Mrs., श्री). Use the direct name only.
+7. Mandatory designation BEFORE elected representatives' names:
+   - MLA for Assembly members
+   - MP for Parliament members
+   - సీఎం or CM for Chief Minister
+   - గవర్నర్ for Governor
+   - రాష్ట్రపతి for President
+8. Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number.
+`.trim();
+
 const buildNewsEditorialCoreRules = () => `
 EDITORIAL STANDARDS (apply to every language output):
 - The story has two parts: (1) "Super Lead" — brief lead summary; (2) "Detailed Story" — full report.
@@ -136,18 +254,25 @@ EDITORIAL STANDARDS (apply to every language output):
 - 5W-1H: cover Who, What, Where, When, Why, and How in both parts where relevant.
 - Complete plagiarism-free rewrite: narrate a brand-new story from verified facts. Do NOT reuse source vocabulary, clause order, or paragraph flow. Target ${getPlagiarismTargetLabel()} lexical overlap while keeping 100% factual accuracy.
 - Use ACTIVE VOICE.
-- Use only short, simple sentences. Do not use complex, compound, or compound-complex sentences.
-- NEVER use the word "and" (or "మరియు" / "और" / "maruyu") anywhere in any language. Always use a comma (,) to separate items, ideas, or clauses.
-- No honorifics, titles, or suffixes next to names of politicians, celebrities, or any individuals (e.g. NEVER use Garu, Sri, Mr., Mrs., श्री, श्रीमति, Honorable, or official titles like Minister). Use direct names only.
-- Write all numbers as digits only (e.g. 30, 17, 5). Do NOT add the spelled-out word in brackets after a number, and do not repeat the number in words in any language.
 - Do not invent facts, names, dates, places, or quotes not supported by the fact sheet.
 
+${buildLanguageStyleConstraints()}
+
+HEADLINE COMPLETENESS (mandatory — never ship a cut-off title):
+- The headline must be a finished news heading a reader can understand alone: WHO did WHAT (and to whom / where).
+- Never end on a hanging participle, connector, or half clause. Compress extra details; do NOT chop the last words of a longer line.
+- Forbidden Telugu endings: చేస్తూ, అంటూ, అని, కోసం, గురించి, ఆశ్రయించిన, చేసిన, ఇచ్చిన (unless the object that follows is already in the headline).
+- BAD: "ఏపీలో బీసీ రిజర్వేషన్ల పరిమితులపై హైకోర్టు తీర్పును సవాలు చేస్తూ సుప్రీంకోర్టును ఆశ్రయించిన"
+- GOOD: "బీసీ రిజర్వేషన్ పరిమితిపై హైకోర్టు తీర్పును సవాల్ చేస్తూ సుప్రీంకోర్టులో పిటిషన్"
+- Forbidden English endings: to, for, after, as, by, with, and, of, in, on.
+
 CHARACTER & SPACE CONSTRAINTS:
-- The Super Lead is strictly restricted to 500 characters. To keep within this limit in English, always use short forms: "CPS" (Contributory Pension Scheme), "Govt." (Government), "EHS" (Employees Health Scheme), "DA" (Dearness Allowance).
+- Headline: 55 to 70 characters in EVERY language. Prefer ~65. Hard cap 80. Stay complete; never cut mid-thought.
+- Super Lead: 300 to 450 characters in EVERY language. Prefer ~380. Hard cap 450.
+- In English Super Lead only, short forms are allowed: "CPS" (Contributory Pension Scheme), "Govt." (Government), "EHS" (Employees Health Scheme), "DA" (Dearness Allowance). Never carry those English short forms into Telugu.
 
 LANGUAGE & TRANSLATION SPECIFICS:
-- Telugu: always refer to and compare animals/birds using the feminine gender (జంతువులు/పక్షులను ఆడ జాతిగా, స్త్రీలింగంలో సంబోధించాలి).
-- Hindi: instead of the word "maruyu"/"और", always use a comma (,).
+- Hindi: instead of "और", always use a comma (,).
 - Hindi specific spellings (use exactly):
   * Racha Konda → "राचाकोंडा" (never रचाकोंडा)
   * Kothagudem → "कोत्तागुडेम"
@@ -195,12 +320,67 @@ ${strictRewrite ? `STRICT REWRITE PASS: your previous draft scored too high on p
 Return ONLY valid JSON with keys "title" (headline), "summary" (Super Lead), and "content" (Detailed Story). The values must be PLAIN TEXT (no markdown, no #, no *). No markdown code fences.`;
 };
 
-const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) =>
-  `${NEWS_EDITORIAL_PERSONA}
-Translate/adapt the following ${fieldLabel} into ${targetLangName}, applying ALL rules below to the ${targetLangName} output.
+const buildNewsTranslationSystemPrompt = (targetLangName, fieldLabel) => {
+  const lang = String(targetLangName || '').toLowerCase();
+  const langCode = lang.includes('telugu') ? 'te' : lang.includes('hindi') ? 'hi' : 'en';
+  return `${NEWS_EDITORIAL_PERSONA}
+You are adapting an original English rewrite into ${targetLangName} for the ${fieldLabel}.
+This is not a literal translation. Keep every fact, name, number, date, quote, and designation. Change sentence structure and word choice so it reads as original ${targetLangName} reporting.
+Do not reconstruct or echo the original source article's Telugu or Hindi phrasing even if you recognize the story.
 ${buildNewsEditorialCoreRules()}
-Preserve the inverted-pyramid structure and factual meaning. Keep the same paragraph and sub-heading structure as the source: if the source has sub-headings, keep them as plain-text lines on their own with a blank line before and after; if it has none, do NOT add any.
-Return ONLY the translated text in ${targetLangName} as PLAIN TEXT, nothing else.`;
+${buildLanguageStyleConstraints(langCode)}
+${buildNewsOriginalityRules()}
+Preserve inverted-pyramid meaning. Keep the English rewrite's paragraph and sub-heading layout as plain text: if it has sub-headings, keep them as plain-text lines with a blank line before and after; if it has none, do NOT add any.
+${fieldLabel === 'headline' ? `HEADLINE: finished thought only (who + what). 55–70 characters, hard cap 80. Compress; never chop the last words. Never end on ఆశ్రయించిన / చేస్తూ / to / for.` : fieldLabel.includes('Super Lead') ? `LENGTH: the ${targetLangName} Super Lead MUST be 300–450 characters. Hard cap 450. Compress if needed; keep all key facts.` : ''}
+Return ONLY the ${targetLangName} text as PLAIN TEXT, nothing else.`;
+};
+
+const PIVOT_TO_ENGLISH_SYSTEM =
+  'You are a news desk translator. Convert the text into natural English. ' +
+  'Preserve every fact, name, number, date, quote, and designation. Do not add or invent facts. ' +
+  'Use fluent English wording — not a word-for-word calque. Return ONLY the English text as PLAIN TEXT.';
+
+function buildTranslateSystemAndUser(text, targetLangName, options = {}) {
+  const mode = options.mode || 'plain';
+  const fieldType = options.fieldType || 'content';
+  const fieldLabels = {
+    title: 'headline',
+    summary: 'Super Lead section',
+    content: 'Detailed Story section'
+  };
+  const fieldLabel = fieldLabels[fieldType] || 'text';
+
+  if (mode === 'pivot') {
+    return {
+      systemContent: PIVOT_TO_ENGLISH_SYSTEM,
+      userContent: `Convert this ${fieldLabel} to natural English:\n\n${text}`,
+      temperature: 0.25
+    };
+  }
+
+  if (mode === 'news') {
+    const lengthRule =
+      fieldType === 'title'
+        ? ' Keep 55–70 characters (hard cap 80). The headline MUST be a complete thought (who + what). Never end hanging like "ఆశ్రయించిన" or "to/for". Compress extra clauses instead of cutting the last words.'
+        : fieldType === 'summary'
+          ? ' Keep the result between 300 and 450 characters (hard cap 450).'
+          : '';
+    return {
+      systemContent: buildNewsTranslationSystemPrompt(targetLangName, fieldLabel),
+      userContent:
+        `Rewrite this ${fieldLabel} in ${targetLangName} from the English meaning. ` +
+        `Do not restore original-source wording.${lengthRule}\n\n${text}`,
+      temperature: 0.42
+    };
+  }
+
+  return {
+    systemContent:
+      'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.',
+    userContent: `Translate the following text to ${targetLangName}:\n\n${text}`,
+    temperature: 0.3
+  };
+}
 
 const FACT_EXTRACTION_SYSTEM_PROMPT =
   'You are a senior news desk fact checker. Read the source once and extract verified facts only. ' +
@@ -318,7 +498,7 @@ async function sarvamTranslate(text, sourceLang, targetLang) {
  */
 async function openaiGenerateText(systemContent, userContent, { temperature = 0.3, json = false, maxTokens } = {}) {
   const request = {
-    model: 'gpt-4o-mini',
+    model: getOpenAIModel(),
     messages: [
       { role: 'system', content: systemContent },
       { role: 'user', content: userContent }
@@ -329,7 +509,7 @@ async function openaiGenerateText(systemContent, userContent, { temperature = 0.
   if (maxTokens) request.max_tokens = maxTokens;
 
   const completion = await withRetry(() => getOpenAI().chat.completions.create(request), {
-    label: 'OpenAI gpt-4o-mini'
+    label: `OpenAI ${getOpenAIModel()}`
   });
 
   return completion.choices[0]?.message?.content?.trim() || '';
@@ -338,31 +518,18 @@ async function openaiGenerateText(systemContent, userContent, { temperature = 0.
 /**
  * @param {string} text
  * @param {string} targetLangName - e.g. "Telugu", "English", "Hindi"
- * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
+ * @param {{ mode?: 'plain'|'news'|'pivot', fieldType?: 'title'|'summary'|'content' }} [options]
  */
 async function openaiTranslate(text, targetLangName, options = {}) {
   if (!text || !text.trim()) return '';
 
-  const mode = options.mode || 'plain';
-  const fieldType = options.fieldType || 'content';
-  const fieldLabels = {
-    title: 'headline',
-    summary: 'Super Lead section',
-    content: 'Detailed Story section'
-  };
-  const fieldLabel = fieldLabels[fieldType] || 'text';
+  const { systemContent, userContent, temperature } = buildTranslateSystemAndUser(
+    text,
+    targetLangName,
+    options
+  );
 
-  const systemContent =
-    mode === 'news'
-      ? buildNewsTranslationSystemPrompt(targetLangName, fieldLabel)
-      : 'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.';
-
-  const userContent =
-    mode === 'news'
-      ? `Translate this ${fieldLabel} to ${targetLangName}:\n\n${text}`
-      : `Translate the following text to ${targetLangName}:\n\n${text}`;
-
-  return openaiGenerateText(systemContent, userContent, { temperature: 0.3 });
+  return openaiGenerateText(systemContent, userContent, { temperature });
 }
 
 /**
@@ -421,6 +588,21 @@ async function geminiGenerateText(
 /** Active translation/generation provider from TRANSLATE_TYPE (openai | sarvam | gemini | anthropic). */
 const getTranslateProvider = () => (process.env.TRANSLATE_TYPE || '').trim().toLowerCase();
 
+/**
+ * JSON/text generation for source-article rewrite. Gemini when TRANSLATE_TYPE=gemini;
+ * otherwise OpenAI (including sarvam, which cannot rewrite).
+ */
+async function generateProviderText(systemContent, userContent, options = {}) {
+  if (getTranslateProvider() === 'gemini') {
+    return geminiGenerateText(systemContent, userContent, {
+      temperature: options.temperature,
+      json: options.json,
+      maxOutputTokens: options.maxTokens
+    });
+  }
+  return openaiGenerateText(systemContent, userContent, options);
+}
+
 /** True when the active translation/generation provider is Gemini. */
 const isGeminiProvider = () => getTranslateProvider() === 'gemini';
 
@@ -430,35 +612,22 @@ const isGeminiProvider = () => getTranslateProvider() === 'gemini';
  *
  * @param {string} text
  * @param {string} targetLangName - e.g. "Telugu", "English", "Hindi"
- * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
+ * @param {{ mode?: 'plain'|'news'|'pivot', fieldType?: 'title'|'summary'|'content' }} [options]
  */
 async function geminiTranslate(text, targetLangName, options = {}) {
   if (!text || !text.trim()) return '';
 
-  const mode = options.mode || 'plain';
-  const fieldType = options.fieldType || 'content';
-  const fieldLabels = {
-    title: 'headline',
-    summary: 'Super Lead section',
-    content: 'Detailed Story section'
-  };
-  const fieldLabel = fieldLabels[fieldType] || 'text';
+  const { systemContent, userContent, temperature } = buildTranslateSystemAndUser(
+    text,
+    targetLangName,
+    options
+  );
 
-  const systemContent =
-    mode === 'news'
-      ? buildNewsTranslationSystemPrompt(targetLangName, fieldLabel)
-      : 'You are a professional translator. Translate the given text accurately while preserving meaning, tone, and formatting. Return ONLY the translated text, nothing else.';
-
-  const userContent =
-    mode === 'news'
-      ? `Translate this ${fieldLabel} to ${targetLangName}:\n\n${text}`
-      : `Translate the following text to ${targetLangName}:\n\n${text}`;
-
-  return geminiGenerateText(systemContent, userContent, { temperature: 0.3 });
+  return geminiGenerateText(systemContent, userContent, { temperature });
 }
 
 /**
- * @param {{ mode?: 'plain'|'news', fieldType?: 'title'|'summary'|'content' }} [options]
+ * @param {{ mode?: 'plain'|'news'|'pivot', fieldType?: 'title'|'summary'|'content' }} [options]
  */
 async function translateField(text, sourceLang, targetLang, options = {}) {
   if (!text || !String(text).trim()) return '';
@@ -547,16 +716,17 @@ const getTeluguSourceSet = () => parseSourceSet('TELUGU_SOURCES');
 const getEnglishSourceSet = () => parseSourceSet('ENGLISH_SOURCES');
 
 /**
- * Super Lead (stored in Article.summary) — words or sentence band.
- * Defaults keep it within the 500-character rule in NEWS_EDITORIAL_CORE_RULES
- * (~60-90 English words).
+ * Super Lead (stored in Article.summary).
+ * Character band 300–450. Hard cap 450.
  */
 const getSuperLeadLimits = () => {
+  const minChars = Math.max(100, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_CHARS, 10) || 300);
+  const maxChars = Math.max(minChars, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_CHARS, 10) || 450);
   const minWords = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_WORDS, 10) || 50);
   const maxWords = Math.max(minWords, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_WORDS, 10) || 90);
   const minSentences = Math.max(1, parseInt(process.env.SOURCE_SUPER_LEAD_MIN_SENTENCES, 10) || 3);
   const maxSentences = Math.max(minSentences, parseInt(process.env.SOURCE_SUPER_LEAD_MAX_SENTENCES, 10) || 5);
-  return { minWords, maxWords, minSentences, maxSentences };
+  return { minChars, maxChars, minWords, maxWords, minSentences, maxSentences };
 };
 
 /** Detailed Story (stored in Article.content) */
@@ -566,10 +736,12 @@ const getDetailedStoryLimits = () => {
   return { minWords, maxWords };
 };
 
-/** Headline (stored in Article.title) */
+/** Headline (stored in Article.title) — target 55–70, hard cap 80. */
 const getHeadlineLimits = () => {
-  const maxChars = Math.max(40, parseInt(process.env.SOURCE_TITLE_MAX_CHARS, 10) || 200);
-  return { maxChars };
+  const minChars = Math.max(40, parseInt(process.env.SOURCE_TITLE_MIN_CHARS, 10) || 55);
+  const targetMax = Math.max(minChars, parseInt(process.env.SOURCE_TITLE_TARGET_CHARS, 10) || 70);
+  const maxChars = Math.max(targetMax, parseInt(process.env.SOURCE_TITLE_MAX_CHARS, 10) || 80);
+  return { minChars, targetMax, maxChars };
 };
 
 const cleanHeadline = (text) =>
@@ -598,8 +770,52 @@ const truncateAtSentence = (text, maxChars) => {
   if (punctMatch && punctMatch[1].length >= maxChars * 0.5) {
     return punctMatch[1].trim();
   }
+  const spaceIdx = cut.lastIndexOf(' ');
+  if (spaceIdx >= Math.floor(maxChars * 0.6)) {
+    return cut.slice(0, spaceIdx).trim();
+  }
   return cut.trim();
 };
+
+const INCOMPLETE_HEADLINE_TE =
+  /(చేస్తూ|అంటూ|అని|కోసం|గురించి|ద్వారా|ఆశ్రయించిన|చేసిన|ఇచ్చిన|వేసిన|పెట్టిన|అయిన|చేపట్టిన|కోరిన|వేడుకున్న)$/;
+const INCOMPLETE_HEADLINE_EN =
+  /\b(to|for|after|as|by|with|and|the|a|an|in|on|of|from|that|who|which|into)$/i;
+const INCOMPLETE_HEADLINE_HI = /(करते हुए|के लिए|की|के|से|पर|को|ने|हुआ|हुई|हुए)$/;
+
+function isIncompleteHeadline(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return true;
+  if (/[-–,]$/.test(trimmed)) return true;
+  const last = trimmed.split(/\s+/).pop() || '';
+  return (
+    INCOMPLETE_HEADLINE_TE.test(last) ||
+    INCOMPLETE_HEADLINE_EN.test(last) ||
+    INCOMPLETE_HEADLINE_HI.test(last)
+  );
+}
+
+function enforceFieldChars(text, fieldType) {
+  if (fieldType === 'title') {
+    const cleaned = cleanHeadline(text);
+    const { maxChars } = getHeadlineLimits();
+    if (cleaned.length <= maxChars) return cleaned;
+    const sliced = truncateAtSentence(cleaned, maxChars);
+    if (isIncompleteHeadline(sliced)) {
+      logSource(
+        'title.skipTruncate',
+        `keepComplete chars=${cleaned.length} slicedWouldBe=${previewText(sliced)}`
+      );
+      return cleaned;
+    }
+    return sliced;
+  }
+  if (fieldType === 'summary') {
+    const { maxChars } = getSuperLeadLimits();
+    return truncateAtSentence(cleanNewsText(text), maxChars);
+  }
+  return cleanNewsText(text);
+}
 
 const truncateToWordCount = (text, maxWords) => {
   const str = String(text || '').trim();
@@ -642,6 +858,7 @@ async function extractSourceFacts(rawText, options = {}) {
   }
 
   const strictRewrite = Boolean(options.strictRewrite);
+  logSource('facts.start', `strict=${strictRewrite} chars=${trimmed.length}`);
   const systemPrompt = strictRewrite
     ? `${FACT_EXTRACTION_SYSTEM_PROMPT} Restate every fact in completely different neutral wording. Shuffle the order of array items.`
     : FACT_EXTRACTION_SYSTEM_PROMPT;
@@ -649,29 +866,27 @@ async function extractSourceFacts(rawText, options = {}) {
     ? 'Extract verified facts only. Restate each fact in fresh words. Do not copy any sentence from the source.\n\n'
     : 'Extract verified facts only. Do not copy any sentence from the source.\n\n';
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: userPrefix + trimmed.slice(0, 12000)
-      }
-    ],
-    temperature: strictRewrite ? 0.35 : 0.1,
-    max_tokens: 1500,
-    response_format: { type: 'json_object' }
-  });
-
-  const responseText = completion.choices[0]?.message?.content?.trim();
+  const responseText = await generateProviderText(
+    systemPrompt,
+    userPrefix + trimmed.slice(0, 12000),
+    { temperature: strictRewrite ? 0.35 : 0.1, json: true, maxTokens: 1500 }
+  );
   if (!responseText) {
-    throw new Error('OpenAI returned empty fact extraction response');
+    throw new Error('Fact extraction returned an empty response');
   }
 
   try {
-    return parseJsonObject(responseText);
+    const facts = parseJsonObject(responseText);
+    const who = Array.isArray(facts.who) ? facts.who.length : 0;
+    const quotes = Array.isArray(facts.quotes) ? facts.quotes.length : 0;
+    const numbers = Array.isArray(facts.numbers) ? facts.numbers.length : 0;
+    logSource(
+      'facts.done',
+      `strict=${strictRewrite} who=${who} quotes=${quotes} numbers=${numbers} what=${previewText(facts.what)}`
+    );
+    return facts;
   } catch {
-    throw new Error('Failed to parse fact extraction JSON from OpenAI');
+    throw new Error('Failed to parse fact extraction JSON');
   }
 }
 
@@ -696,8 +911,8 @@ const buildGenerationUserPrompt = ({
     `You are the Senior Generalist Editor. Write a fresh ${languageName} news story using ONLY the fact sheet below — not the original feed wording.\n\n` +
     `Plagiarism target: ${getPlagiarismTargetLabel()} lexical and phrase overlap with any source.\n\n` +
     `Return ONLY JSON with:\n` +
-    `1) "title" — HEADLINE: complete, compelling, fresh angle; single line; max ${headline.maxChars} characters.\n` +
-    `2) "summary" — SUPER LEAD: ${superLead.minSentences}-${superLead.maxSentences} short sentences (${superLead.minWords}-${superLead.maxWords} words, max 500 characters); inverted pyramid; 5W-1H.\n` +
+    `1) "title" — HEADLINE: a FINISHED thought (who + what); single line; ${headline.minChars}–${headline.targetMax} characters, hard cap ${headline.maxChars}. Compress extra clauses. NEVER cut the last words. NEVER end on ఆశ్రయించిన, చేస్తూ, అంటూ, అని, to, for, after.\n` +
+    `2) "summary" — SUPER LEAD: ${superLead.minChars}-${superLead.maxChars} characters (never over ${superLead.maxChars}); ${superLead.minSentences}-${superLead.maxSentences} short sentences; inverted pyramid; 5W-1H.\n` +
     `3) "content" — DETAILED STORY: ${detailed.minWords}-${detailed.maxWords} words; do not repeat the Super Lead; do not pad — if the fact sheet is thin, stay near the minimum; background where needed; new paragraph every 4-5 sentences; sub-headings only if truly needed.\n\n` +
     `Write like a human editor. Vary sentence length. Do not mirror the fact-sheet bullet order paragraph by paragraph.\n` +
     `${strictNote}` +
@@ -707,9 +922,32 @@ const buildGenerationUserPrompt = ({
   );
 };
 
+async function repairIncompleteHeadline(title, languageName, factSheet, headline) {
+  const broken = cleanHeadline(title);
+  logSource('title.incomplete.repair', `lang=${languageName} broken=${previewText(broken)}`);
+  const factHint = factSheet ? JSON.stringify(factSheet).slice(0, 1200) : '';
+  const repaired = await generateProviderText(
+    'You write complete newspaper headlines only. Return ONLY the headline as plain text.',
+    `This ${languageName} headline is incomplete (hanging last word). Rewrite it as a FINISHED news heading.\n` +
+      `Rules: who + what must be clear. ${headline.minChars}–${headline.targetMax} characters, hard cap ${headline.maxChars}. ` +
+      `Compress extra clauses. Never chop the last words. Never end on ఆశ్రయించిన, చేస్తూ, అంటూ, అని, to, for, after.\n` +
+      `Broken headline: ${broken}\n` +
+      (factHint ? `Facts:\n${factHint}\n` : '') +
+      'Return ONLY the complete headline.',
+    { temperature: 0.35, maxTokens: 200 }
+  );
+  const next = enforceFieldChars(repaired, 'title');
+  if (!next || isIncompleteHeadline(next)) {
+    logSource('title.incomplete.unfixed', `kept=${previewText(broken)}`);
+    return broken;
+  }
+  logSource('title.incomplete.fixed', `chars=${next.length} title=${previewText(next)}`);
+  return next;
+}
+
 /**
- * OpenAI: rewrite source into headline + Super Lead + Detailed Story in anchor language.
- * Sarvam cannot summarize; this step always uses OpenAI.
+ * Rewrite source into headline + Super Lead + Detailed Story in anchor language.
+ * Uses Gemini when TRANSLATE_TYPE=gemini; otherwise OpenAI (Sarvam cannot rewrite).
  *
  * @param {string} rawText - full source article body
  * @param {string} anchorLang - te | en | hi
@@ -734,56 +972,57 @@ async function generateSummaryAndContent(rawText, anchorLang, options = {}) {
   // Callers may pass a fact sheet from a previous attempt to skip re-extraction.
   const factSheet = options.factSheet || (await extractSourceFacts(trimmed, { strictRewrite }));
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: buildNewsGenerationSystemPrompt(strictRewrite) },
-      {
-        role: 'user',
-        content: buildGenerationUserPrompt({
-          languageName,
-          headline,
-          superLead,
-          detailed,
-          sourceTitle,
-          factSheet,
-          strictRewrite
-        })
-      }
-    ],
-    temperature: strictRewrite ? 0.62 : 0.52,
-    max_tokens: parseInt(process.env.SOURCE_GENERATION_MAX_TOKENS, 10) || 6000,
-    response_format: { type: 'json_object' }
-  });
-
-  const responseText = completion.choices[0]?.message?.content?.trim();
+  const responseText = await generateProviderText(
+    buildNewsGenerationSystemPrompt(strictRewrite),
+    buildGenerationUserPrompt({
+      languageName,
+      headline,
+      superLead,
+      detailed,
+      sourceTitle,
+      factSheet,
+      strictRewrite
+    }),
+    {
+      temperature: strictRewrite ? 0.62 : 0.52,
+      json: true,
+      maxTokens: parseInt(process.env.SOURCE_GENERATION_MAX_TOKENS, 10) || 6000
+    }
+  );
   if (!responseText) {
-    throw new Error('OpenAI returned empty summary/content generation response');
+    throw new Error('Summary/content generation returned an empty response');
   }
 
   let parsed;
   try {
     parsed = parseJsonObject(responseText);
   } catch {
-    throw new Error('Failed to parse summary/content JSON from OpenAI');
+    throw new Error('Failed to parse summary/content JSON');
   }
 
-  let title = cleanHeadline(parsed.title);
-  let summary = cleanNewsText(parsed.summary);
+  let title = enforceFieldChars(parsed.title, 'title');
+  let summary = enforceFieldChars(parsed.summary, 'summary');
   let content = cleanNewsText(parsed.content);
 
   if (!title) {
     // Fallback: derive a headline from the Super Lead rather than reuse the scraped title.
-    title = cleanHeadline(truncateAtSentence(summary, headline.maxChars));
+    title = enforceFieldChars(summary, 'title');
   }
-  if (title.length > headline.maxChars) {
-    title = truncateAtSentence(title, headline.maxChars);
+  if (isIncompleteHeadline(title)) {
+    title = await repairIncompleteHeadline(title, languageName, factSheet, headline);
   }
 
   if (!summary) throw new Error('Generated Super Lead (summary) is empty');
   if (!content) throw new Error('Generated Detailed Story (content) is empty');
 
   content = cleanNewsText(truncateToWordCount(content, detailed.maxWords));
+
+  logSource(
+    'rewrite.en.done',
+    `strict=${strictRewrite} titleChars=${title.length}/${headline.maxChars} ` +
+    `summaryChars=${summary.length}/${superLead.maxChars} ` +
+    `contentWords=${wordCount(content)} title=${previewText(title)}`
+  );
 
   return { title, summary, content, factSheet };
 }
@@ -799,7 +1038,7 @@ const slugifyTag = (raw) =>
     .replace(/^-+|-+$/g, '');
 
 /**
- * Generate 4–5 concise topic tags (lowercase slugs) from article text using OpenAI.
+ * Generate 4–5 concise topic tags (lowercase slugs) from article text.
  * Tags cover key people, places, organizations, and topics. Returns [] on failure
  * so tag generation never blocks article creation.
  */
@@ -808,28 +1047,14 @@ async function generateTags(text, { min = 4, max = 5 } = {}) {
   if (!trimmed) return [];
 
   try {
-    const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a news SEO editor. Extract concise topic tags from an article: key people, places, organizations, and themes. ' +
-            'Tags must be in lowercase English, 1 to 3 words each. ' +
-            'Return ONLY valid JSON: {"tags": ["tag one", "tag two", ...]}. No markdown.'
-        },
-        {
-          role: 'user',
-          content:
-            `Generate ${min} to ${max} relevant tags for the following article. ` +
-            `Return ONLY {"tags": [...]}.\n\n${trimmed}`
-        }
-      ],
-      temperature: 0.3,
-      response_format: { type: 'json_object' }
-    });
-
-    const responseText = completion.choices[0]?.message?.content?.trim();
+    const responseText = await generateProviderText(
+      'You are a news SEO editor. Extract concise topic tags from an article: key people, places, organizations, and themes. ' +
+        'Tags must be in lowercase English, 1 to 3 words each. ' +
+        'Return ONLY valid JSON: {"tags": ["tag one", "tag two", ...]}. No markdown.',
+      `Generate ${min} to ${max} relevant tags for the following article. ` +
+        `Return ONLY {"tags": [...]}.\n\n${trimmed}`,
+      { temperature: 0.3, json: true }
+    );
     if (!responseText) return [];
 
     let parsed;
@@ -858,16 +1083,17 @@ async function generateTags(text, { min = 4, max = 5 } = {}) {
 }
 
 /**
- * Expand text to te/en/hi without re-translating the anchor language.
+ * Expand rewritten text to te/en/hi.
+ * English is the translation hub:
+ *   1) Keep the rewritten text in the anchor language (no round-trip).
+ *   2) If anchor is not English, translate it to English first.
+ *   3) Translate from English into the remaining languages (e.g. te → en → hi).
+ *
  * @param {'title'|'summary'|'content'} [fieldType]
  */
 async function toTrilingual(text, anchorLang, fieldType = 'content') {
-  // Titles are single-line; keep them clean but without forced heading spacing.
   const isTitle = fieldType === 'title';
-  const clean = (value) => {
-    const cleaned = cleanNewsText(value);
-    return isTitle ? cleaned.replace(/\s*\n\s*/g, ' ').trim() : cleaned;
-  };
+  const clean = (value) => enforceFieldChars(value, fieldType);
 
   const trimmed = clean(text);
   const result = { te: '', en: '', hi: '' };
@@ -877,14 +1103,30 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
     throw new Error(`Unsupported anchor language: ${anchorLang}`);
   }
 
-  result[anchorLang] = trimmed;
-
-  const others = ALL_LANG_CODES.filter((lang) => lang !== anchorLang);
   const translateOptions = { mode: 'news', fieldType };
+  result[anchorLang] = trimmed;
+  logSource(`expand.${fieldType}.keep`, `lang=${anchorLang} chars=${trimmed.length}`);
 
-  // Sequential (not parallel) to avoid bursting provider rate limits (e.g. Gemini 429).
-  for (const lang of others) {
-    result[lang] = clean(await translateField(trimmed, anchorLang, lang, translateOptions));
+  let englishText = trimmed;
+  if (anchorLang !== 'en') {
+    const startedAt = Date.now();
+    englishText = clean(await translateField(trimmed, anchorLang, 'en', translateOptions));
+    result.en = englishText;
+    logSource(
+      `expand.${fieldType}.${anchorLang}→en`,
+      `ms=${elapsedMs(startedAt)} chars=${englishText.length} preview=${previewText(englishText)}`
+    );
+  }
+
+  const remaining = ALL_LANG_CODES.filter((lang) => lang !== 'en' && lang !== anchorLang);
+  // Sequential to avoid bursting provider rate limits (e.g. Gemini 429).
+  for (const lang of remaining) {
+    const startedAt = Date.now();
+    result[lang] = clean(await translateField(englishText, 'en', lang, translateOptions));
+    logSource(
+      `expand.${fieldType}.en→${lang}`,
+      `ms=${elapsedMs(startedAt)} chars=${result[lang].length} preview=${previewText(result[lang])}`
+    );
   }
 
   return result;
@@ -897,6 +1139,36 @@ async function toTrilingual(text, anchorLang, fieldType = 'content') {
  * @param {{ title?: string, contentText: string, source?: string }} input
  * @param {{ checkPlagiarism?: (original: string, rewritten: string) => Promise<number|null> }} [options]
  */
+async function pivotSourceToEnglish(text, sourceLang, fieldType) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) {
+    logSource(`pivot.${fieldType}.skip`, 'empty');
+    return '';
+  }
+  if (sourceLang === 'en') {
+    logSource(
+      `pivot.${fieldType}.skip`,
+      `already-en chars=${trimmed.length} preview=${previewText(trimmed)}`
+    );
+    return trimmed;
+  }
+  const startedAt = Date.now();
+  logSource(
+    `pivot.${fieldType}.start`,
+    `${sourceLang}→en chars=${trimmed.length} preview=${previewText(trimmed)}`
+  );
+  const pivoted = await translateField(trimmed, sourceLang, 'en', {
+    mode: 'pivot',
+    fieldType
+  });
+  const out = fieldType === 'title' ? cleanHeadline(pivoted) : cleanNewsText(pivoted);
+  logSource(
+    `pivot.${fieldType}.done`,
+    `ms=${elapsedMs(startedAt)} chars=${out.length} preview=${previewText(out)}`
+  );
+  return out;
+}
+
 async function buildSourceArticleMultilingual(input, options = {}) {
   const { title, contentText, source } = input;
   const titleTrimmed = String(title || '').trim();
@@ -904,80 +1176,128 @@ async function buildSourceArticleMultilingual(input, options = {}) {
 
   if (!contentTrimmed) throw new Error('Source article has no contentText');
 
-  const anchorLang = resolveAnchorLanguage(source, contentTrimmed);
+  const pipelineStartedAt = Date.now();
+  const sourceLang = resolveAnchorLanguage(source, contentTrimmed);
+  const rewriteLang = 'en';
+  const provider = getTranslateProvider() || 'openai';
+  const runtime = resolveSourceAiRuntime();
   const checkPlagiarism = resolvePlagiarismChecker(options);
   const { target: plagiarismTarget, retries: plagiarismRetries } = getSourcePlagiarismConfig();
   const maxAttempts = checkPlagiarism ? plagiarismRetries + 1 : 1;
 
-  let bestDraft = null;
+  logSource(
+    'start',
+    `source=${String(source || 'unknown')} provider=${runtime.provider} model=${runtime.model} ` +
+    `sourceLang=${sourceLang} rewriteLang=${rewriteLang} flow=${sourceLang}→en rewrite→te/hi ` +
+    `plagiarism=${checkPlagiarism ? `on target=${plagiarismTarget}% retries=${plagiarismRetries} maxAttempts=${maxAttempts}` : 'off'} ` +
+    `titleChars=${titleTrimmed.length} contentChars=${contentTrimmed.length} ` +
+    `title=${previewText(titleTrimmed)}`
+  );
+
+  const englishBody = await pivotSourceToEnglish(contentTrimmed, sourceLang, 'content');
+  if (!englishBody) throw new Error('Failed to pivot source article to English');
+  const englishTitle = await pivotSourceToEnglish(titleTrimmed, sourceLang, 'title');
+
+  let bestPack = null;
   let bestScore = 101;
   let factSheet = null;
 
-  if (checkPlagiarism) {
-    console.log(
-      `[source-translate] config target=${plagiarismTarget}% retries=${plagiarismRetries} ` +
-      `maxAttempts=${maxAttempts} source=${String(source || 'unknown')} lang=${anchorLang}`
-    );
-  }
-
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const attemptStartedAt = Date.now();
     const strictRewrite = attempt > 0;
-    const draft = await generateSummaryAndContent(contentTrimmed, anchorLang, {
-      sourceTitle: titleTrimmed,
+    logSource(
+      'attempt.start',
+      `${attempt + 1}/${maxAttempts} strict=${strictRewrite} extractFacts=${!factSheet}`
+    );
+
+    const draft = await generateSummaryAndContent(englishBody, rewriteLang, {
+      sourceTitle: englishTitle,
       strictRewrite,
       factSheet
     });
     factSheet = draft.factSheet;
 
+    logSource('expand.start', `attempt=${attempt + 1} fields=title,summary,content hub=en`);
+    const titleMap = await toTrilingual(draft.title, rewriteLang, 'title');
+    const headlineLimits = getHeadlineLimits();
+    for (const lang of ALL_LANG_CODES) {
+      if (isIncompleteHeadline(titleMap[lang])) {
+        titleMap[lang] = await repairIncompleteHeadline(
+          titleMap[lang],
+          SUPPORTED_LANGUAGES[lang],
+          factSheet,
+          headlineLimits
+        );
+      }
+    }
+    const summaryMap = await toTrilingual(draft.summary, rewriteLang, 'summary');
+    const contentMap = await toTrilingual(draft.content, rewriteLang, 'content');
+    const pack = { titleMap, summaryMap, contentMap };
+
+    logSource(
+      'expand.done',
+      `teTitle=${previewText(titleMap.te)} enTitle=${previewText(titleMap.en)} hiTitle=${previewText(titleMap.hi)} ` +
+      `teContentWords=${wordCount(contentMap.te)} enContentWords=${wordCount(contentMap.en)} hiContentWords=${wordCount(contentMap.hi)}`
+    );
+
     if (!checkPlagiarism) {
-      bestDraft = draft;
+      bestPack = pack;
+      bestScore = 101;
+      logSource('plagiarism.skip', 'checker disabled');
       break;
     }
 
-    const score = await checkPlagiarism(contentTrimmed, draft.content);
+    const rewrittenForCheck = contentMap[sourceLang] || contentMap.en;
+    logSource(
+      'plagiarism.compare',
+      `originalLang=${sourceLang} originalChars=${contentTrimmed.length} ` +
+      `rewrittenChars=${String(rewrittenForCheck || '').length} ` +
+      `originalPreview=${previewText(contentTrimmed)} ` +
+      `rewrittenPreview=${previewText(rewrittenForCheck)}`
+    );
+    const score = await checkPlagiarism(contentTrimmed, rewrittenForCheck);
     const normalizedScore = score == null ? 101 : score;
 
     if (normalizedScore < bestScore) {
       bestScore = normalizedScore;
-      bestDraft = draft;
+      bestPack = pack;
     }
 
-    console.log(
-      `[source-translate] plagiarism=${normalizedScore}% attempt=${attempt + 1}/${maxAttempts} ` +
-      `target=${plagiarismTarget}% source=${String(source || 'unknown')} lang=${anchorLang}` +
-      (normalizedScore <= plagiarismTarget ? ' PASS' : ' RETRY')
+    const passed = normalizedScore <= plagiarismTarget;
+    logSource(
+      'plagiarism.result',
+      `score=${normalizedScore}% best=${bestScore}% target=${plagiarismTarget}% ` +
+      `attempt=${attempt + 1}/${maxAttempts} ms=${elapsedMs(attemptStartedAt)} ` +
+      `${passed ? 'PASS' : 'RETRY'}`
     );
 
-    if (normalizedScore <= plagiarismTarget) break;
+    if (passed) break;
   }
 
-  if (!bestDraft) {
+  if (!bestPack) {
     throw new Error('Failed to generate rewritten source article');
   }
 
-  const { title: anchorTitle, summary, content } = bestDraft;
-
-  // Sequential to keep provider request bursts low (avoids 429 rate limits).
-  const titleMap = await toTrilingual(anchorTitle, anchorLang, 'title');
-  const summaryMap = await toTrilingual(summary, anchorLang, 'summary');
-  const contentMap = await toTrilingual(content, anchorLang, 'content');
-
-  // Generate tags from English text when available (slugs read best in English),
-  // falling back to the anchor-language headline + story.
   const tagSourceText = [
-    titleMap.en || titleMap[anchorLang],
-    contentMap.en || contentMap[anchorLang]
+    bestPack.titleMap.en,
+    bestPack.contentMap.en
   ]
     .filter(Boolean)
     .join('\n\n');
   const tags = await generateTags(tagSourceText);
 
+  logSource(
+    'done',
+    `ms=${elapsedMs(pipelineStartedAt)} plagiarism=${bestScore <= 100 ? `${bestScore}%` : 'n/a'} ` +
+    `tags=${tags.join(',') || 'none'} teTitle=${previewText(bestPack.titleMap.te)}`
+  );
+
   return {
-    title: titleMap,
-    summary: summaryMap,
-    content: contentMap,
+    title: bestPack.titleMap,
+    summary: bestPack.summaryMap,
+    content: bestPack.contentMap,
     tags,
-    anchorLang,
+    anchorLang: sourceLang,
     plagiarismScore: bestScore <= 100 ? bestScore : null
   };
 }
@@ -996,6 +1316,10 @@ module.exports = {
   geminiTranslate,
   geminiGenerateText,
   getTranslateProvider,
+  getGeminiModel,
+  getOpenAIModel,
+  resolveSourceAiRuntime,
+  logSourceAiRuntime,
   getTeluguSourceSet,
   getEnglishSourceSet,
   resolveAnchorLanguage,
@@ -1011,6 +1335,7 @@ module.exports = {
   SOURCE_PLAGIARISM_RETRIES,
   extractSourceFacts,
   NEWS_EDITORIAL_CORE_RULES,
+  buildLanguageStyleConstraints,
   buildNewsGenerationSystemPrompt,
   buildNewsTranslationSystemPrompt
 };

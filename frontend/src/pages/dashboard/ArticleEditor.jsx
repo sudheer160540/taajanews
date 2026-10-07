@@ -973,16 +973,16 @@ const ArticleEditor = () => {
                   label={`Title (${languages[langTab]?.name || 'English'})${languages[langTab]?.isDefault ? ' *' : ''}`}
                   value={article.title[currentLang] || ''}
                   onChange={(e) => {
-                    if (e.target.value.length <= 200) handleChange('title', e.target.value, currentLang);
+                    if (e.target.value.length <= 80) handleChange('title', e.target.value, currentLang);
                   }}
                   margin="normal"
                   multiline
                   rows={3}
                   required={languages[langTab]?.isDefault}
                   placeholder={languages[langTab]?.isDefault ? '' : `Optional - will fallback to ${defaultLang}`}
-                  helperText={`${(article.title[currentLang] || '').length} / 200`}
-                  error={(article.title[currentLang] || '').length >= 200}
-                  inputProps={{ maxLength: 200 }}
+                  helperText={`${(article.title[currentLang] || '').length} / 80 (55–70)`}
+                  error={(article.title[currentLang] || '').length > 80}
+                  inputProps={{ maxLength: 80 }}
                   disabled={isReporterLockedOut}
                 />
                 <TextField
@@ -990,16 +990,16 @@ const ArticleEditor = () => {
                   label={`Summary (${languages[langTab]?.name || 'English'})${languages[langTab]?.isDefault ? ' *' : ''}`}
                   value={article.summary[currentLang] || ''}
                   onChange={(e) => {
-                    if (e.target.value.length <= 500) handleChange('summary', e.target.value, currentLang);
+                    if (e.target.value.length <= 450) handleChange('summary', e.target.value, currentLang);
                   }}
                   margin="normal"
                   multiline
                   rows={5}
                   required={languages[langTab]?.isDefault}
                   placeholder={languages[langTab]?.isDefault ? '' : `Optional - will fallback to ${defaultLang}`}
-                  helperText={`${(article.summary[currentLang] || '').length} / 500`}
-                  error={(article.summary[currentLang] || '').length >= 500}
-                  inputProps={{ maxLength: 500 }}
+                  helperText={`${(article.summary[currentLang] || '').length} / 450 (300–450)`}
+                  error={(article.summary[currentLang] || '').length > 450}
+                  inputProps={{ maxLength: 450 }}
                   disabled={isReporterLockedOut}
                 />
                 <TextField

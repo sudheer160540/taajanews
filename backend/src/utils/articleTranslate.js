@@ -4,11 +4,15 @@ const {
   openaiGenerateText,
   getTranslateProvider,
   cleanNewsText,
-  slugifyTag
+  slugifyTag,
+  buildLanguageStyleConstraints
 } = require('./translateService');
 
-const TITLE_LIMIT = 200;
-const SUPERLEAD_LIMIT = 500;
+const TITLE_LIMIT = 80;
+const SUPERLEAD_LIMIT = 450;
+const TITLE_MIN = 55;
+const TITLE_TARGET = 70;
+const SUPERLEAD_MIN = 300;
 const CONTENT_LIMIT = 10000;
 
 const FIELD_LIMITS = {
@@ -146,9 +150,9 @@ const buildTranslateSystemPrompt = (fieldType, sourceName, targetName) => {
 
   const fieldRule =
     fieldType === 'title'
-      ? `- This is a headline. The ${targetName} headline MUST carry the SAME message as the ${sourceName} headline. Never replace it with a different, new, or more creative headline.`
+      ? `- This is a headline. The ${targetName} headline MUST carry the SAME message as the ${sourceName} headline. It MUST be a finished thought (who + what), ${TITLE_MIN}–${TITLE_TARGET} characters, hard cap ${TITLE_LIMIT}. Compress extra clauses. Never chop the last words. Never end hanging like "ఆశ్రయించిన", "చేస్తూ", "to", or "for".`
       : fieldType === 'summary'
-        ? '- Keep it a single short summary paragraph, same facts and same emphasis as the source.'
+        ? `- Keep it a single short summary paragraph, same facts and same emphasis as the source. Length MUST be ${SUPERLEAD_MIN}–${SUPERLEAD_LIMIT} characters (never over ${SUPERLEAD_LIMIT}).`
         : '- Keep the same paragraph breaks, the same order of information, and the same level of detail as the source.';
 
   return `You are a professional news translator for a newspaper. Translate the given ${label} from ${sourceName} into ${targetName}.
@@ -162,6 +166,8 @@ ${fieldRule}
 - Keep the translation within ${limit} characters.
 - Output PLAIN TEXT only: no markdown, no #, no *, no section labels, no surrounding quotes, no notes or explanations.
 
+${buildLanguageStyleConstraints()}
+
 Return ONLY the translated ${targetName} text and nothing else.`;
 };
 
@@ -170,8 +176,8 @@ const PERSONA =
 
 /** Creative rewrite of raw source text into headline + superlead + full story. */
 const buildGenerateSystemPrompt = (languageName) => `${PERSONA} Turn the raw article the user provides into a finished news piece written in ${languageName}. Produce three parts:
-- HEADING: a concise, compelling news headline. Must stay below ${TITLE_LIMIT} characters.
-- SUPERLEAD: a short summary of the story. Must stay below ${SUPERLEAD_LIMIT} characters.
+- HEADING: a concise, compelling, FINISHED news headline (who + what). ${TITLE_MIN}–${TITLE_TARGET} characters, hard cap ${TITLE_LIMIT}. Never chop the last words. Never end on ఆశ్రయించిన, చేస్తూ, to, for.
+- SUPERLEAD: a short summary of the story. ${SUPERLEAD_MIN}–${SUPERLEAD_LIMIT} characters, never over ${SUPERLEAD_LIMIT}.
 - FULLNEWS: the full paraphrased article in a journalistic tone matching ${languageName} news writing conventions. Must stay below ${CONTENT_LIMIT} characters.
 
 ORIGINALITY & HUMAN VOICE:
@@ -181,6 +187,8 @@ ORIGINALITY & HUMAN VOICE:
 - Active voice and engaging tone: write primarily in active voice. Keep it punchy and journalistic. Avoid robotic, formulaic, or repetitive sentence patterns.
 - No AI clichés: strictly avoid overused filler such as "In conclusion", "It is important to note", "Testament to", "Delve", "Landscape", "Tapestry".
 - Do not invent facts, names, dates, places, or quotes that the source does not support.
+
+${buildLanguageStyleConstraints()}
 
 Write all three parts in ${languageName} only. Return exactly this format and nothing else — no preamble, no notes, no markdown:
 
