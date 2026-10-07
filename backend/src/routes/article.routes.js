@@ -310,6 +310,15 @@ router.get('/feed', optionalAuth, async (req, res) => {
       pipeline.push({ $match: filterMatch });
     }
 
+    // Drop heavy fields before sort so Mongo stays under the 32MB in-memory sort cap.
+    pipeline.push({
+      $project: {
+        content: 0,
+        sourceOriginalText: 0,
+        seo: 0
+      }
+    });
+
     // ── Stage 3: $sort — newest first, then by trending score ──
     pipeline.push({ $sort: { createdAt: -1, trendingScore: -1 } });
 
@@ -321,17 +330,18 @@ router.get('/feed', optionalAuth, async (req, res) => {
     // ── Lookups + Projection ──
     pipeline.push(...lookupStages, projectStage);
 
-    const feedArticles = await Article.aggregate(pipeline);
+    const aggregateOpts = { allowDiskUse: true };
+    const feedArticles = await Article.aggregate(pipeline, aggregateOpts);
 
     // Prepend pinned article on page 1
     const articles = pinnedArticle ? [pinnedArticle, ...feedArticles] : feedArticles;
 
-    // Count total (without skip/limit) for pagination info
+    // Count total (match only — skip sort of full docs)
     const countPipeline = pipeline.filter(
-      s => !s.$skip && !s.$limit && !s.$lookup && !s.$unwind && !s.$project
+      (s) => s.$match
     );
     countPipeline.push({ $count: 'total' });
-    const countResult = await Article.aggregate(countPipeline);
+    const countResult = await Article.aggregate(countPipeline, aggregateOpts);
     const total = countResult[0]?.total || 0;
 
     res.json({

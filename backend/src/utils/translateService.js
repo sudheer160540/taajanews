@@ -99,10 +99,12 @@ function logSourceAiRuntime(prefix = '[source-cron]') {
     `${prefix} AI picked provider=${rt.provider} model=${rt.model} (from ${rt.modelEnv})`
   );
   console.log(
-    `${prefix} retries config: plagiarismRetries=${rt.plagiarismRetries} ` +
-    `(SOURCE_PLAGIARISM_RETRIES ${rt.plagiarismRetriesEnv}, maxAttempts=${rt.plagiarismMaxAttempts} ` +
-    `= 1 first try + ${rt.plagiarismRetries} rewrite retries) ` +
-    `plagiarismTarget=${rt.plagiarismTarget}% (SOURCE_PLAGIARISM_MAX ${rt.plagiarismTargetEnv}) ` +
+    `${prefix} plagiarism: SOURCE_PLAGIARISM_RETRIES=${rt.plagiarismRetries} (${rt.plagiarismRetriesEnv}) ` +
+    `→ extra rewrite retries after first try. totalGenerations=${rt.plagiarismMaxAttempts} ` +
+    `(1 first + ${rt.plagiarismRetries} retries). ` +
+    `Set SOURCE_PLAGIARISM_RETRIES=0 for no retry (1 generation only). ` +
+    `SOURCE_PLAGIARISM_MAX=${rt.plagiarismTarget}% (${rt.plagiarismTargetEnv}) — score must be ≤ this to PASS; ` +
+    `0% almost always uses every retry. ` +
     `apiBackoffRetries=${rt.apiRetries} (429/5xx) batchSize=${rt.batchSize} (SOURCE_CRON_BATCH_SIZE)`
   );
   return rt;
